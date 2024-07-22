@@ -336,7 +336,7 @@ struct App : BaseApp<App>
 #if defined(DAXA_SIMULATION_MANY_MATERIALS)
         .dt = 0.8e-4f,
 #else
-        .dt = 1e-4f,
+        .dt = 2e-4f,
 #endif
 #endif // DAXA_SIMULATION_WATER_MPM_MLS
         .dx = 1.0f / GRID_DIM,
@@ -514,7 +514,11 @@ struct App : BaseApp<App>
         device.collect_garbage();
     }
 
-    void on_mouse_move(f32 /*unused*/, f32 /*unused*/) {}
+    void on_mouse_move(f32 x, f32 y) {
+        if(gpu_status->flags & MOUSE_DOWN_FLAG) {
+            gpu_input.mouse_pos = {static_cast<f32>(x), static_cast<f32>(y)};
+        }
+    }
     void on_mouse_button(i32 button, i32 action) {
         if (button == GLFW_MOUSE_BUTTON_1)
         {
