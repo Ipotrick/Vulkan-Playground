@@ -14,12 +14,15 @@
 #define GRID_SIZE (GRID_DIM * GRID_DIM * GRID_DIM)
 #define QUALITY 2
 #define SIM_LOOP_COUNT 30
+#define CHECK_RIGID_BODY_FLAG 1
 // #define NUM_PARTICLES 8192 * QUALITY * QUALITY * QUALITY
 #define NUM_PARTICLES 16384 * QUALITY * QUALITY * QUALITY
 // #define NUM_PARTICLES 32768 * QUALITY * QUALITY * QUALITY
 // #define NUM_PARTICLES 65536 * QUALITY * QUALITY * QUALITY
 // #define NUM_PARTICLES 512
 // #define NUM_PARTICLES 64
+#define NUM_RIGID_BOXES 1
+#define TOTAL_AABB_COUNT (NUM_PARTICLES + NUM_RIGID_BOXES)
 
 #define MPM_P2G_COMPUTE_X 64
 #define MPM_GRID_COMPUTE_X 4 
@@ -40,7 +43,8 @@
 #define MAT_WATER 0
 #define MAT_SNOW 1
 #define MAT_JELLY 2
-// #define MAT_SAND 4
+// #define MAT_SAND 3
+#define MAT_RIGID_BOX 4
 #define MAT_COUNT (MAT_JELLY + 1)
 
 struct Camera {
@@ -52,6 +56,7 @@ struct Camera {
 struct GpuInput
 {
   daxa_u32 p_count;
+  daxa_u32 p_count_rigid_boxes;
   daxa_u32vec3 grid_dim;
   daxa_f32 dt;
   daxa_f32 dx;
@@ -137,6 +142,7 @@ DAXA_DECL_PUSH_CONSTANT(ComputePush, p)
 layout(buffer_reference, scalar) buffer PARTICLE_BUFFER {Particle particles[]; }; // Particle buffer
 layout(buffer_reference, scalar) buffer CELL_BUFFER {Cell cells[]; }; // Positions of an object
 layout(buffer_reference, scalar) buffer AABB_BUFFER {Aabb aabbs[]; }; // Positions of an object
+layout(buffer_reference, scalar) buffer RIGID_BODY_AABB_IDS {uint rigid_box_ids[]; }; // Positions of an object
 
 
 Particle get_particle_by_index(daxa_u32 particle_index) {

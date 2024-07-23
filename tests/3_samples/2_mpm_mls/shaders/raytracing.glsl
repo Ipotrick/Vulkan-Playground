@@ -70,7 +70,7 @@ void main()
 layout(location = 0) rayPayloadInEXT hitPayload prd;
 layout(location = 1) rayPayloadEXT bool is_shadowed;
 
-vec3 light_position = vec3(3, 5, -1);
+vec3 light_position = vec3(2, 5, 3);
 vec3 light_intensity = vec3(2.5);
 
 void main()
@@ -97,26 +97,41 @@ void main()
                  (maxC == absN.y) ? vec3(0, sign(normal.y), 0) : vec3(0, 0, sign(normal.z));
 #endif
 
+  if(particle.type == MAT_RIGID_BOX) {
+    vec3 absN = abs(normal);
+    float maxC = max(max(absN.x, absN.y), absN.z);
+    normal     = (maxC == absN.x) ?
+                  vec3(sign(normal.x), 0, 0) :
+                  (maxC == absN.y) ? vec3(0, sign(normal.y), 0) : vec3(0, 0, sign(normal.z));
+
+    // TODO: fix light for rigid box
+    prd.hit_value = vec3(light_intensity * vec3(0.8, 0.7, 0.5));
+
+    return;
+  }
+
   // Vector toward the light
   vec3 L = normalize(light_position - vec3(0));
 
   // Diffuse
   float dotNL = max(dot(normal, L), 0.0);
   float gradient = max( 1.0 / length(particle.v), 1.0);
-  vec3 sphere_color = vec3(1.0);
+  vec3 material_color = vec3(1.0);
   if(particle.type == MAT_WATER)
-    sphere_color = mix(vec3(0.9, 0.9, 1), vec3(0.3, 0.8, 1), gradient);
+    material_color = mix(vec3(0.9, 0.9, 1), vec3(0.3, 0.8, 1), gradient);
   else if(particle.type == MAT_JELLY)
-    sphere_color = mix(vec3(1, 0.6, 0.6), vec3(1, 0.4, 0.4), gradient);
+    material_color = mix(vec3(1, 0.6, 0.6), vec3(1, 0.4, 0.4), gradient);
+  else if(particle.type == MAT_RIGID_BOX)
+    material_color = vec3(0.8, 0.7, 0.5);
     
-  vec3 diffuse = dotNL * sphere_color;
+  vec3 diffuse = dotNL * material_color;
   vec3 specular = vec3(0);
   float attenuation = 0.3;
 
   // Tracing shadow ray only if the light is visible from the surface
   if (dot(normal, L) > 0)
   {
-      vec3 origin = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
+      vec3 origin = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT * 1.0001f;
       vec3 ray_dir = L;
       const uint ray_flags =
           gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
@@ -145,7 +160,7 @@ void main()
       {
           attenuation = 1;
           // Specular
-          // specular = computeSpecular(mat, gl_WorldRayDirectionNV, L, normal);
+          // specular = computeSpecular(mat, gl_WorldRayDirectionEXT, L, normal);
       }
   }
 
@@ -200,11 +215,18 @@ void main()
 #if defined(VOXEL_PARTICLES)
   tHit = hitAabb(aabb, ray);
 #else
-  vec3 center = (aabb.min + aabb.max) * 0.5;
-  // radius inside the AABB
-  float radius = (aabb.max.x - aabb.min.x) * 0.5 * 0.9;
+  
+  Particle particle = get_particle_by_index(i);
 
-  tHit = hitSphere(center, radius, ray);
+  if(particle.type == MAT_RIGID_BOX) {
+    tHit = hitAabb(aabb, ray);
+  } else {
+    vec3 center = (aabb.min + aabb.max) * 0.5;
+    // radius inside the AABB
+    float radius = (aabb.max.x - aabb.min.x) * 0.5 * 0.9;
+
+    tHit = hitSphere(center, radius, ray);
+  }
 #endif
 
   // Report hit point

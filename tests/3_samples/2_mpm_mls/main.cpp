@@ -18,6 +18,10 @@ float random_in_range(float min, float max) {
     return min + static_cast<float>(rand()) / static_cast<float>(RAND_MAX / (max - min));
 }
 
+daxa_u32 unsigned_random_in_range(daxa_u32 min, daxa_u32 max) {
+    return min + static_cast<daxa_u32>(rand()) / static_cast<daxa_u32>(RAND_MAX / (max - min));
+}
+
 daxa_f32mat3x3 make_identity()
 {
     return daxa_f32mat3x3{
@@ -329,6 +333,7 @@ struct App : BaseApp<App>
     });
     GpuInput gpu_input = {
         .p_count = NUM_PARTICLES, 
+        .p_count_rigid_boxes = NUM_RIGID_BOXES,
         .grid_dim = {GRID_DIM, GRID_DIM, GRID_DIM},
 #ifdef DAXA_SIMULATION_WATER_MPM_MLS
         .dt = 1e-3f,
@@ -364,7 +369,7 @@ struct App : BaseApp<App>
     daxa::TaskBuffer task_gpu_status_buffer{{.initial_buffers = {.buffers = std::array{gpu_status_buffer}}, .name = "status_buffer"}};
 
 
-    daxa::usize particles_size = NUM_PARTICLES * sizeof(Particle);
+    daxa::usize particles_size = TOTAL_AABB_COUNT * sizeof(Particle);
     daxa::BufferId particles_buffer = device.create_buffer(daxa::BufferInfo{
         .size = particles_size,
         .name = "particles_buffer",
@@ -380,7 +385,7 @@ struct App : BaseApp<App>
     
     daxa::BufferClearInfo clear_info = {grid_buffer, 0, grid_size, 0};
 
-    daxa::usize aabb_size = NUM_PARTICLES * sizeof(Aabb);
+    daxa::usize aabb_size = TOTAL_AABB_COUNT * sizeof(Aabb);
     daxa::BufferId aabb_buffer = device.create_buffer(daxa::BufferInfo{
         .size = aabb_size,
         .name = "aabb_buffer",
@@ -407,7 +412,7 @@ struct App : BaseApp<App>
         daxa::BlasAabbGeometryInfo{
             .data = device.get_device_address(aabb_buffer).value(),
             .stride = sizeof(daxa_f32mat3x2),
-            .count = NUM_PARTICLES,
+            .count = TOTAL_AABB_COUNT,
             .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
         }};
     // create blas instances info
@@ -642,8 +647,8 @@ struct App : BaseApp<App>
                         .J = 1.0f,
                     };
 
-                    auto min_bound = 0.1; 
-                    auto max_bound = 0.9;   
+                    auto min_bound = 0.1f; 
+                    auto max_bound = 0.9f;   
 
                     if (type == MAT_SNOW) {
                         min_bound = min_bound_s;
@@ -668,6 +673,52 @@ struct App : BaseApp<App>
                         .max = x + daxa_f32vec3{PARTICLE_RADIUS, PARTICLE_RADIUS, PARTICLE_RADIUS},
                     };
 
+                }
+
+                for(u32 i = 0; i < NUM_RIGID_BOXES; i++) {
+                    particles_ptr[NUM_PARTICLES + i] = {
+                        .type = MAT_RIGID_BOX,
+                        .v = {0.0f, 0.0f, 0.0f},
+                        .F = make_identity(),
+                        .C = make_zero(),
+                        .J = 1.0f,
+                    };
+
+                    // TODO: check collisions
+
+                    // auto min_x = unsigned_random_in_range(3, (GRID_DIM - 2) / 2);
+                    // auto min_y = 0;
+                    // auto min_z = unsigned_random_in_range(3, (GRID_DIM - 2) / 2);
+
+                    auto min_x = 10;
+                    auto min_y = 0;
+                    auto min_z = 50;
+                    
+
+                    daxa_f32vec3 min = {
+                        static_cast<f32>(min_x) * gpu_input.dx,
+                        static_cast<f32>(min_y) * gpu_input.dx,
+                        static_cast<f32>(min_z) * gpu_input.dx
+                    };
+
+                    // auto max_x = unsigned_random_in_range(min_x + 1, (GRID_DIM) / 2);
+                    // auto max_y = unsigned_random_in_range(min_y + 1, (GRID_DIM) / 2);
+                    // auto max_z = unsigned_random_in_range(min_z + 1, (GRID_DIM) / 2);
+
+                    auto max_x = 50;
+                    auto max_y = 20;
+                    auto max_z = 80;
+
+                    daxa_f32vec3 max = {
+                        static_cast<f32>(max_x) * gpu_input.dx,
+                        static_cast<f32>(max_y) * gpu_input.dx,
+                        static_cast<f32>(max_z) * gpu_input.dx
+                    };
+
+                    aabb_ptr[NUM_PARTICLES + i] = {
+                        .min = min,
+                        .max = max,
+                    };
                 }
 #endif // DAXA_SIMULATION_WATER_MPM_MLS
                 ti.recorder.copy_buffer_to_buffer({
