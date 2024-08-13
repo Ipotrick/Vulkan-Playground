@@ -292,20 +292,6 @@ void main()
     if(bound_z) {
       cell.v.z = 0;
     }
-#if CHECK_RIGID_BODY_FLAG == 1
-    for(daxa_u32 i = 0; i < deref(config).p_count_rigid_boxes; ++i) {
-      Aabb aabb = get_aabb_by_index(deref(config).p_count + i);
-      uvec3 p_min = uvec3(aabb.min * vec3(GRID_DIM));
-      uvec3 p_max = uvec3(aabb.max * vec3(GRID_DIM));
-
-      // if pixel in the bounding box, set velocity to 0
-      if(pixel_i.x >= p_min.x && pixel_i.x <= p_max.x &&
-         pixel_i.y >= p_min.y && pixel_i.y <= p_max.y &&
-         pixel_i.z >= p_min.z && pixel_i.z <= p_max.z) {
-        cell.v = vec3(0);
-      }
-    }
-#endif
 
     set_cell_by_index(cell_index, cell);
   }

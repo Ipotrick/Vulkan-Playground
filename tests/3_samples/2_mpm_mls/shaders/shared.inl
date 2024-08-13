@@ -22,7 +22,9 @@
 // #define NUM_PARTICLES 512
 // #define NUM_PARTICLES 64
 #define NUM_RIGID_BOXES 1
-#define TOTAL_AABB_COUNT (NUM_PARTICLES + NUM_RIGID_BOXES)
+#define NUM_RIGID_PARTICLES 32768
+// #define TOTAL_AABB_COUNT (NUM_PARTICLES + NUM_RIGID_BOXES)
+#define TOTAL_AABB_COUNT NUM_PARTICLES
 
 #define MPM_P2G_COMPUTE_X 64
 #define MPM_GRID_COMPUTE_X 4 
@@ -47,6 +49,17 @@
 #define MAT_RIGID_BOX 4
 #define MAT_COUNT (MAT_JELLY + 1)
 
+
+#define RIGID_BODY_BOX 0
+#define RIGID_BODY_COUNT (RIGID_BODY_BOX + 1)
+
+
+#if defined(CHECK_RIGID_BODY_FLAG)
+#define BOX_VERTEX_COUNT 8
+#define BOX_INDEX_COUNT 36
+#define BOX_TRIANGLE_COUNT 12
+#endif
+
 struct Camera {
   daxa_f32mat4x4 inv_view;
   daxa_f32mat4x4 inv_proj;
@@ -56,7 +69,10 @@ struct Camera {
 struct GpuInput
 {
   daxa_u32 p_count;
-  daxa_u32 p_count_rigid_boxes;
+  daxa_u32 p_count_rigid_bodies;
+#if defined(CHECK_RIGID_BODY_FLAG)
+  daxa_u32 r_p_count;
+#endif
   daxa_u32vec3 grid_dim;
   daxa_f32 dt;
   daxa_f32 dx;
@@ -82,11 +98,41 @@ struct Particle {
   daxa_f32 J;
 };
 
+struct RigidBody  {
+  daxa_u32 type;
+  daxa_u32 p_count;
+  daxa_u32 p_offset;
+  daxa_u32 triangle_count;
+  daxa_u32 triangle_offset;
+};
+
+struct RigidElement {
+  daxa_f32vec3 v0;
+  daxa_f32vec3 v1;
+  daxa_f32vec3 v2;
+};
+
+struct RigidParticle  {
+  daxa_f32vec3 min;
+  daxa_f32vec3 max;
+  daxa_u32 triangle_id;
+};
+
+struct RigidParticleStatus  {
+  daxa_f32 d;
+  daxa_u32 status;
+};
+
 
 struct Cell {
   daxa_f32vec3 v;
   daxa_f32 m;
   // daxa_f32vec3 f;
+};
+
+struct RigidCell {
+  daxa_f32 d;
+  daxa_u32 status;
 };
 
 struct Aabb {
@@ -716,6 +762,32 @@ daxa_f32 hitAabb(const Aabb aabb, const Ray r)
   daxa_f32 t0     = max(tmin.x, max(tmin.y, tmin.z));
   daxa_f32 t1     = min(tmax.x, min(tmax.y, tmax.z));
   return t1 > max(t0, 0.0) ? t0 : -1.0;
+}
+
+// Credits: https://github.com/taichi-dev/taichi/blob/c5af2f92bc481e99cac2bc548dfa98e188bbcc44/include/taichi/geometry/mesh.h
+// Note: assuming world origin aligns with elem.v[0]
+daxa_f32mat3x3 get_world_to_object_matrix(daxa_f32vec3 v0, daxa_f32vec3 v1, daxa_f32vec3 v2) {
+  daxa_f32vec3 u = v1 - v0;
+  daxa_f32vec3 v = v2 - v0;
+  daxa_f32vec3 w = normalize(cross(u, v));
+  return inverse(daxa_f32mat3x3(u, v, w));
+}
+
+
+#elif defined(__cplusplus) // C++
+#include <cmath> // std::sqrt
+
+inline daxa_f32 length(const daxa_f32vec3 &v) {
+    return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+inline daxa_f32vec3 normalize(const daxa_f32vec3 &v) {
+    daxa_f32 len = length(v);
+    if (len == 0) {
+        // Maneja el caso de la normalización de un vector cero
+        return {0.0f, 0.0f, 0.0f};
+    }
+    return {v.x / len, v.y / len, v.z / len};
 }
 
 #endif // GLSL & HLSL
