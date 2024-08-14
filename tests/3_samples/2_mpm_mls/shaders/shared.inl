@@ -10,6 +10,8 @@
 
 #include "daxa/daxa.inl"
 
+// #define DAXA_SIMULATION_WATER_MPM_MLS
+// #define DAXA_SIMULATION_MANY_MATERIALS
 #define GRID_DIM 128
 #define GRID_SIZE (GRID_DIM * GRID_DIM * GRID_DIM)
 #define QUALITY 2
@@ -19,6 +21,9 @@
 #define NUM_PARTICLES 16384 * QUALITY * QUALITY * QUALITY
 // #define NUM_PARTICLES 32768 * QUALITY * QUALITY * QUALITY
 // #define NUM_PARTICLES 65536 * QUALITY * QUALITY * QUALITY
+// #define NUM_PARTICLES 131072 * QUALITY * QUALITY * QUALITY
+// #define NUM_PARTICLES 262144 * QUALITY * QUALITY * QUALITY
+// #define NUM_PARTICLES 524288 * QUALITY * QUALITY * QUALITY
 // #define NUM_PARTICLES 512
 // #define NUM_PARTICLES 64
 #define NUM_RIGID_BOXES 1
@@ -46,15 +51,14 @@
 #define MAT_SNOW 1
 #define MAT_JELLY 2
 // #define MAT_SAND 3
-#define MAT_RIGID_BOX 4
+#define MAT_RIGID 4
 #define MAT_COUNT (MAT_JELLY + 1)
 
 
+#if defined(CHECK_RIGID_BODY_FLAG)
 #define RIGID_BODY_BOX 0
 #define RIGID_BODY_COUNT (RIGID_BODY_BOX + 1)
 
-
-#if defined(CHECK_RIGID_BODY_FLAG)
 #define BOX_VERTEX_COUNT 8
 #define BOX_INDEX_COUNT 36
 #define BOX_TRIANGLE_COUNT 12
@@ -115,6 +119,7 @@ struct RigidElement {
 struct RigidParticle  {
   daxa_f32vec3 min;
   daxa_f32vec3 max;
+  daxa_u32 rigid_id;
   daxa_u32 triangle_id;
 };
 
@@ -143,6 +148,9 @@ struct Aabb {
 DAXA_DECL_BUFFER_PTR(GpuInput)
 DAXA_DECL_BUFFER_PTR(GpuStatus)
 DAXA_DECL_BUFFER_PTR(Particle)
+#if defined(CHECK_RIGID_BODY_FLAG)
+DAXA_DECL_BUFFER_PTR(RigidParticle)
+#endif
 DAXA_DECL_BUFFER_PTR(Cell)
 DAXA_DECL_BUFFER_PTR(Camera)
 DAXA_DECL_BUFFER_PTR(Aabb)
@@ -154,6 +162,9 @@ struct ComputePush
     daxa_RWBufferPtr(GpuInput) input_ptr;
     daxa_BufferId status_buffer_id;
     daxa_RWBufferPtr(Particle) particles;
+#if defined(CHECK_RIGID_BODY_FLAG)
+    daxa_RWBufferPtr(RigidParticle) rigid_particles;
+#endif
     daxa_RWBufferPtr(Cell) cells;
     daxa_RWBufferPtr(Aabb) aabbs;
     daxa_BufferPtr(Camera) camera;
@@ -180,6 +191,14 @@ struct Ray
 
 #if !defined(__cplusplus)
 
+const daxa_f32vec3 RIGID_BODY_PARTICLE_COLOR = daxa_f32vec3(0.6f, 0.4f, 0.2f);
+const daxa_f32vec3 WATER_HIGH_SPEED_COLOR = daxa_f32vec3(0.3f, 0.5f, 1.0f);
+const daxa_f32vec3 WATER_LOW_SPEED_COLOR = daxa_f32vec3(0.1f, 0.2f, 0.4f);
+const daxa_f32vec3 SNOW_HIGH_SPEED_COLOR = daxa_f32vec3(0.9f, 0.9f, 1.0f);
+const daxa_f32vec3 SNOW_LOW_SPEED_COLOR = daxa_f32vec3(0.5f, 0.5f, 0.6f);
+const daxa_f32vec3 JELLY_HIGH_SPEED_COLOR = daxa_f32vec3(1.0f, 0.5f, 0.5f);
+const daxa_f32vec3 JELLY_LOW_SPEED_COLOR = daxa_f32vec3(0.7f, 0.2f, 0.2f);
+
 #if defined(GL_core_profile) // GLSL
 #extension GL_EXT_shader_atomic_float : enable
 
@@ -187,8 +206,9 @@ DAXA_DECL_PUSH_CONSTANT(ComputePush, p)
 
 layout(buffer_reference, scalar) buffer PARTICLE_BUFFER {Particle particles[]; }; // Particle buffer
 layout(buffer_reference, scalar) buffer CELL_BUFFER {Cell cells[]; }; // Positions of an object
-layout(buffer_reference, scalar) buffer AABB_BUFFER {Aabb aabbs[]; }; // Positions of an object
+layout(buffer_reference, scalar) buffer AABB_BUFFER {Aabb aabbs[]; }; // Particle positions
 layout(buffer_reference, scalar) buffer RIGID_BODY_AABB_IDS {uint rigid_box_ids[]; }; // Positions of an object
+layout(buffer_reference, scalar) buffer RIGID_PARTICLE_BUFFER {RigidParticle particles[]; }; // Particle buffer
 
 
 Particle get_particle_by_index(daxa_u32 particle_index) {
@@ -196,6 +216,13 @@ Particle get_particle_by_index(daxa_u32 particle_index) {
       PARTICLE_BUFFER(p.particles);
   return particle_buffer.particles[particle_index];
 }
+
+#if defined(CHECK_RIGID_BODY_FLAG)
+RigidParticle get_rigid_particle_by_index(daxa_u32 particle_index) {
+  RIGID_PARTICLE_BUFFER rigid_particle_buffer = RIGID_PARTICLE_BUFFER(p.rigid_particles);
+  return rigid_particle_buffer.particles[particle_index];
+}
+#endif
 
 Cell get_cell_by_index(daxa_u32 cell_index) {
   CELL_BUFFER cell_buffer = CELL_BUFFER(p.cells);
@@ -776,6 +803,13 @@ daxa_f32mat3x3 get_world_to_object_matrix(daxa_f32vec3 v0, daxa_f32vec3 v1, daxa
 
 #elif defined(__cplusplus) // C++
 #include <cmath> // std::sqrt
+
+#if defined(DAXA_SIMULATION_MANY_MATERIALS)
+#define MAX_VELOCITY 4.0f
+#else 
+#define MAX_VELOCITY 12.0f
+#endif
+
 
 inline daxa_f32 length(const daxa_f32vec3 &v) {
     return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);

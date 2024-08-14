@@ -79,10 +79,23 @@ void main()
 
   prd.hit_pos = world_pos;
 
-  uint i = gl_PrimitiveID + gl_GeometryIndexEXT + gl_InstanceCustomIndexEXT;
+  uint i = gl_PrimitiveID;
 
-  Aabb aabb = get_aabb_by_index(i);
-  Particle particle = get_particle_by_index(i);
+  Aabb aabb;
+  Particle particle;
+  if(gl_GeometryIndexEXT == 0) {
+    aabb = get_aabb_by_index(i);
+    particle = get_particle_by_index(i);
+  } 
+#if defined(CHECK_RIGID_BODY_FLAG)
+  else {
+    RigidParticle rigid_particle = get_rigid_particle_by_index(i);
+    aabb.min = rigid_particle.min;
+    aabb.max = rigid_particle.max;
+    particle.type = MAT_RIGID;
+    particle.v = vec3(0);
+  }
+#endif
 
   vec3 center = (aabb.min + aabb.max) * 0.5;
 
@@ -97,32 +110,25 @@ void main()
                  (maxC == absN.y) ? vec3(0, sign(normal.y), 0) : vec3(0, 0, sign(normal.z));
 #endif
 
-  if(particle.type == MAT_RIGID_BOX) {
-    vec3 absN = abs(normal);
-    float maxC = max(max(absN.x, absN.y), absN.z);
-    normal     = (maxC == absN.x) ?
-                  vec3(sign(normal.x), 0, 0) :
-                  (maxC == absN.y) ? vec3(0, sign(normal.y), 0) : vec3(0, 0, sign(normal.z));
-
-    // TODO: fix light for rigid box
-    prd.hit_value = vec3(light_intensity * vec3(0.8, 0.7, 0.5));
-
-    return;
-  }
-
   // Vector toward the light
   vec3 L = normalize(light_position - vec3(0));
+  
+  daxa_BufferPtr(GpuInput) config = daxa_BufferPtr(GpuInput)(daxa_id_to_address(p.input_buffer_id));
+  float max_v = deref(config).max_velocity;
 
   // Diffuse
   float dotNL = max(dot(normal, L), 0.0);
-  float gradient = max( 1.0 / length(particle.v), 1.0);
+  float gradient = clamp(pow(length(particle.v) / (max_v/10.f), 0.5f), 0.0, 1.0);
   vec3 material_color = vec3(1.0);
-  if(particle.type == MAT_WATER)
-    material_color = mix(vec3(0.9, 0.9, 1), vec3(0.3, 0.8, 1), gradient);
-  else if(particle.type == MAT_JELLY)
-    material_color = mix(vec3(1, 0.6, 0.6), vec3(1, 0.4, 0.4), gradient);
-  else if(particle.type == MAT_RIGID_BOX)
-    material_color = vec3(0.8, 0.7, 0.5);
+  if(particle.type == MAT_WATER) {
+    material_color = mix(WATER_LOW_SPEED_COLOR, WATER_HIGH_SPEED_COLOR,  gradient);
+  } else if(particle.type == MAT_SNOW) {
+    material_color = mix(SNOW_LOW_SPEED_COLOR, SNOW_HIGH_SPEED_COLOR, gradient);
+  } else if(particle.type == MAT_JELLY) {
+    material_color = mix(JELLY_LOW_SPEED_COLOR, JELLY_HIGH_SPEED_COLOR, gradient);
+  } else if(particle.type == MAT_RIGID) {
+    material_color = RIGID_BODY_PARTICLE_COLOR;
+  }
     
   vec3 diffuse = dotNL * material_color;
   vec3 specular = vec3(0);
@@ -208,25 +214,31 @@ void main()
 
   float tHit = -1;
 
-  uint i = gl_PrimitiveID + gl_GeometryIndexEXT + gl_InstanceCustomIndexEXT;
+  uint i = gl_PrimitiveID;
 
-  Aabb aabb = get_aabb_by_index(i);
+  Aabb aabb;
+  Particle particle;
+  if(gl_GeometryIndexEXT == 0) {
+    aabb = get_aabb_by_index(i);
+    particle = get_particle_by_index(i);
+  } 
+#if defined(CHECK_RIGID_BODY_FLAG)
+  else {
+    RigidParticle rigid_particle = get_rigid_particle_by_index(i);
+    aabb.min = rigid_particle.min;
+    aabb.max = rigid_particle.max;
+    particle.type = MAT_RIGID;
+    particle.v = vec3(0);
+  }
+#endif
 
 #if defined(VOXEL_PARTICLES)
   tHit = hitAabb(aabb, ray);
 #else
-  
-  Particle particle = get_particle_by_index(i);
-
-  if(particle.type == MAT_RIGID_BOX) {
-    tHit = hitAabb(aabb, ray);
-  } else {
-    vec3 center = (aabb.min + aabb.max) * 0.5;
-    // radius inside the AABB
-    float radius = (aabb.max.x - aabb.min.x) * 0.5 * 0.9;
-
-    tHit = hitSphere(center, radius, ray);
-  }
+  vec3 center = (aabb.min + aabb.max) * 0.5;
+  // radius inside the AABB
+  float radius = (aabb.max.x - aabb.min.x) * 0.5 * 0.9;
+  tHit = hitSphere(center, radius, ray);
 #endif
 
   // Report hit point
