@@ -294,6 +294,23 @@ struct App : BaseApp<App>
 #endif
         };
 
+#if defined(CHECK_RIGID_BODY_FLAG)
+        auto rt_rigid_body_closest_hit_shader = daxa::ShaderCompileInfo{
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
+            .source = daxa::ShaderFile{"raytracing.glsl"},
+            .compile_options = {
+                .defines = std::vector{daxa::ShaderDefine{"HIT_TRIANGLE", "1"}},
+            },
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+            .source = daxa::ShaderFile{"raytracing.slang"},
+            .compile_options = {
+                .entry_point = "rigidClosestHitShader",
+            },
+#endif
+        };
+#endif
+
+
         auto rt_intersection_shader = daxa::ShaderCompileInfo{
 #if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
             .source = daxa::ShaderFile{"raytracing.glsl"},  
@@ -313,7 +330,10 @@ struct App : BaseApp<App>
             rt_intersection_shader
         },
         .closest_hit_infos = {
-            rt_closest_hit_shader
+            rt_closest_hit_shader,
+#if defined(CHECK_RIGID_BODY_FLAG)
+            rt_rigid_body_closest_hit_shader,
+#endif
         },
         .miss_hit_infos = {
             rt_miss_shader,
@@ -321,6 +341,31 @@ struct App : BaseApp<App>
         },
         // Groups are in order of their shader indices.
         // NOTE: The order of the groups is important! raygen, miss, hit, callable
+#if defined(CHECK_RIGID_BODY_FLAG)
+        .shader_groups_infos = {
+            daxa::RayTracingShaderGroupInfo{
+                .type = daxa::ShaderGroup::GENERAL,
+                .general_shader_index = 0,
+            },
+            daxa::RayTracingShaderGroupInfo{
+                .type = daxa::ShaderGroup::GENERAL,
+                .general_shader_index = 4,
+            },
+            daxa::RayTracingShaderGroupInfo{
+                .type = daxa::ShaderGroup::GENERAL,
+                .general_shader_index = 5,
+            },
+            daxa::RayTracingShaderGroupInfo{
+                .type = daxa::ShaderGroup::PROCEDURAL_HIT_GROUP,
+                .closest_hit_shader_index = 2,
+                .intersection_shader_index = 1,
+            },
+            daxa::RayTracingShaderGroupInfo {
+                .type = daxa::ShaderGroup::TRIANGLES_HIT_GROUP,
+                .closest_hit_shader_index = 3,
+            },
+        },
+#else
         .shader_groups_infos = {
             daxa::RayTracingShaderGroupInfo{
                 .type = daxa::ShaderGroup::GENERAL,
@@ -340,6 +385,7 @@ struct App : BaseApp<App>
                 .intersection_shader_index = 1,
             },
         },
+#endif
         .max_ray_recursion_depth = 2,
         .push_constant_size = sizeof(ComputePush),
         .name = "ray tracing pipeline",
@@ -450,7 +496,7 @@ struct App : BaseApp<App>
     daxa::TaskBuffer task_camera_buffer{{.initial_buffers = {.buffers = std::array{camera_buffer}}, .name = "camera_buffer_task"}};
     /// create blas instances for tlas:
     daxa::BufferId blas_instances_buffer = device.create_buffer({
-        .size = sizeof(daxa_BlasInstanceData),
+        .size = sizeof(daxa_BlasInstanceData) * 2,
         .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_RANDOM,
         .name = "blas instances array buffer",
     });
@@ -459,6 +505,9 @@ struct App : BaseApp<App>
     daxa::AccelerationStructureBuildSizesInfo blas_build_sizes = {};
     daxa::TlasBuildInfo tlas_build_info = {};
 #if defined(CHECK_RIGID_BODY_FLAG)
+    daxa::BlasBuildInfo blas_build_info_rigid = {};
+    daxa::AccelerationStructureBuildSizesInfo rigid_blas_build_sizes = {};
+    daxa::BlasId rigid_blas = {};
     std::array<daxa::BlasAabbGeometryInfo, 2> geometry = {
         daxa::BlasAabbGeometryInfo{
             .data = device.get_device_address(aabb_buffer).value(),
@@ -473,6 +522,13 @@ struct App : BaseApp<App>
             .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
         }};
     // create blas instances info
+    std::array<daxa::BlasTriangleGeometryInfo, 1> rigid_body_geometry = {
+        daxa::BlasTriangleGeometryInfo{
+            .vertex_data = device.get_device_address(rigid_body_vertex_buffer).value(),
+            .index_data = device.get_device_address(rigid_body_index_buffer).value(),
+            .count = BOX_TRIANGLE_COUNT,
+            .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
+        }};
 #else 
     std::array<daxa::BlasAabbGeometryInfo, 1> geometry = {
         daxa::BlasAabbGeometryInfo{
@@ -486,7 +542,11 @@ struct App : BaseApp<App>
     std::array<daxa::TlasInstanceInfo, 1> blas_instances = std::array{
             daxa::TlasInstanceInfo{
                 .data = device.get_device_address(blas_instances_buffer).value(),
+#if defined(CHECK_RIGID_BODY_FLAG)
+                .count = 2,
+#else
                 .count = 1,
+#endif
                 .is_data_array_of_pointers = false,      // Buffer contains flat array of instances, not an array of pointers to instances.
                 .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
             },
@@ -524,6 +584,7 @@ struct App : BaseApp<App>
         device.destroy_buffer(gpu_status_buffer);
         device.destroy_buffer(particles_buffer);
 #if defined(CHECK_RIGID_BODY_FLAG)
+        device.destroy_blas(rigid_blas);
         device.destroy_buffer(rigid_body_buffer);
         device.destroy_buffer(rigid_body_vertex_buffer);
         device.destroy_buffer(rigid_body_index_buffer);
@@ -1001,6 +1062,8 @@ struct App : BaseApp<App>
         input_task_graph.use_persistent_buffer(task_gpu_status_buffer);
         input_task_graph.use_persistent_buffer(task_particles_buffer);
 #if defined(CHECK_RIGID_BODY_FLAG)
+        input_task_graph.use_persistent_buffer(task_rigid_body_vertex_buffer);
+        input_task_graph.use_persistent_buffer(task_rigid_body_index_buffer);
         input_task_graph.use_persistent_buffer(task_rigid_particles_buffer);
 #endif
         input_task_graph.use_persistent_buffer(task_grid_buffer);
@@ -1014,6 +1077,8 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::HOST_TRANSFER_WRITE, task_gpu_status_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::HOST_TRANSFER_WRITE, task_particles_buffer),
 #if defined(CHECK_RIGID_BODY_FLAG)
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment
                 (daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
 #endif
@@ -1078,6 +1143,8 @@ struct App : BaseApp<App>
         sim_task_graph.use_persistent_buffer(task_gpu_status_buffer);
         sim_task_graph.use_persistent_buffer(task_particles_buffer);
 #if defined(CHECK_RIGID_BODY_FLAG)
+        sim_task_graph.use_persistent_buffer(task_rigid_body_vertex_buffer);
+        sim_task_graph.use_persistent_buffer(task_rigid_body_index_buffer);
         sim_task_graph.use_persistent_buffer(task_rigid_particles_buffer);
 #endif
         sim_task_graph.use_persistent_buffer(task_grid_buffer);
@@ -1100,6 +1167,8 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
 #if defined(CHECK_RIGID_BODY_FLAG)
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
 #endif
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_grid_buffer),
@@ -1116,6 +1185,8 @@ struct App : BaseApp<App>
                     .status_buffer_id = gpu_status_buffer,
                     .particles = device.get_device_address(particles_buffer).value(),
 #if defined(CHECK_RIGID_BODY_FLAG)
+                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
@@ -1133,6 +1204,8 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
 #if defined(CHECK_RIGID_BODY_FLAG)
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
 #endif
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_grid_buffer),
@@ -1149,6 +1222,8 @@ struct App : BaseApp<App>
                     .status_buffer_id = gpu_status_buffer,
                     .particles = device.get_device_address(particles_buffer).value(),
 #if defined(CHECK_RIGID_BODY_FLAG)
+                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
@@ -1166,6 +1241,8 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
 #if defined(CHECK_RIGID_BODY_FLAG)
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
 #endif
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_grid_buffer),
@@ -1183,6 +1260,8 @@ struct App : BaseApp<App>
                     .status_buffer_id = gpu_status_buffer,
                     .particles = device.get_device_address(particles_buffer).value(),
 #if defined(CHECK_RIGID_BODY_FLAG)
+                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
@@ -1200,6 +1279,8 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_status_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
 #if defined(CHECK_RIGID_BODY_FLAG)
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
 #endif
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_grid_buffer),
@@ -1217,6 +1298,8 @@ struct App : BaseApp<App>
                     .status_buffer_id = gpu_status_buffer,
                     .particles = device.get_device_address(particles_buffer).value(),
 #if defined(CHECK_RIGID_BODY_FLAG)
+                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
@@ -1252,16 +1335,19 @@ struct App : BaseApp<App>
 
         if(!blas.is_empty()) {
             device.destroy_blas(blas);
-            // ti.device.destroy_buffer(blas_buffer);
         }
         
 #if defined(CHECK_RIGID_BODY_FLAG)
+        if(!rigid_blas.is_empty()) {
+            device.destroy_blas(rigid_blas);
+        }
+
         if(show_rigid_particles) {
             geometry[1].count = gpu_input.r_p_count;
         } else {
             geometry[1].count = 0;
         }
-#endif 
+#endif
         blas_build_info = daxa::BlasBuildInfo{
             .flags = daxa::AccelerationStructureBuildFlagBits::PREFER_FAST_BUILD, // Is also default
             .dst_blas = {},                                                       // Ignored in get_acceleration_structure_build_sizes.       // Is also default
@@ -1276,8 +1362,28 @@ struct App : BaseApp<App>
         });
 
         blas_build_info.dst_blas = blas;
+#if defined(CHECK_RIGID_BODY_FLAG)
+        blas_build_info_rigid = daxa::BlasBuildInfo{
+            .flags = daxa::AccelerationStructureBuildFlagBits::PREFER_FAST_BUILD, // Is also default
+            .dst_blas = {},                                                       // Ignored in get_acceleration_structure_build_sizes.       // Is also default
+            .geometries = rigid_body_geometry,
+            .scratch_data = {}, // Ignored in get_acceleration_structure_build_sizes.   // Is also default
+        };
+        rigid_blas_build_sizes = device.get_blas_build_sizes(blas_build_info_rigid);
 
+        rigid_blas = device.create_blas({
+            .size = rigid_blas_build_sizes.acceleration_structure_size,
+            .name = "rigid_blas",
+        });
+
+        blas_build_info_rigid.dst_blas = rigid_blas;
+#endif 
+
+#if defined(CHECK_RIGID_BODY_FLAG)
+        task_blas.set_blas({.blas = std::array{blas, rigid_blas}});
+#else
         task_blas.set_blas({.blas = std::array{blas}});
+#endif
 
 
         // BUILDIING TLAS
@@ -1287,6 +1393,37 @@ struct App : BaseApp<App>
             device.destroy_tlas(tlas);
         }
 
+
+#if defined(CHECK_RIGID_BODY_FLAG)
+        // define blas instances
+        // define blas instances
+        auto blas_instance_array = std::array{
+            daxa_BlasInstanceData{
+                .transform = {
+                    {1, 0, 0, 0},
+                    {0, 1, 0, 0},
+                    {0, 0, 1, 0},
+                },
+                .instance_custom_index = 0, // Is also default
+                .mask = 0xFF,
+                .instance_shader_binding_table_record_offset = 0,
+                .flags = {}, // Is also default
+                .blas_device_address = device.get_device_address(blas).value(),
+            },
+            daxa_BlasInstanceData{
+                .transform = {
+                    {1, 0, 0, 0},
+                    {0, 1, 0, 0},
+                    {0, 0, 1, 0},
+                },
+                .instance_custom_index = 1, // Is also default
+                .mask = 0xFF,
+                .instance_shader_binding_table_record_offset = 1,
+                .flags = {}, // Is also default
+                .blas_device_address = device.get_device_address(rigid_blas).value(),
+            }};
+
+#else
         // define blas instances
         auto blas_instance_array = std::array{
             daxa_BlasInstanceData{
@@ -1301,6 +1438,7 @@ struct App : BaseApp<App>
                 .flags = {}, // Is also default
                 .blas_device_address = device.get_device_address(blas).value(),
             }};
+#endif
 
         // copy blas instances to buffer
         std::memcpy(device.get_host_address_as<daxa_BlasInstanceData>(blas_instances_buffer).value(),
@@ -1333,6 +1471,8 @@ struct App : BaseApp<App>
             .attachments = {
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_aabb_buffer),
 #if defined(CHECK_RIGID_BODY_FLAG)
+                daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_rigid_body_vertex_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_rigid_particles_buffer),
 #endif
                 daxa::inl_attachment(daxa::TaskBlasAccess::BUILD_WRITE, task_blas),
@@ -1347,10 +1487,27 @@ struct App : BaseApp<App>
                 ti.recorder.destroy_buffer_deferred(blas_scratch_buffer);
                 // attach scratch buffer to task
                 blas_build_info.scratch_data = device.get_device_address(blas_scratch_buffer).value();
+                
+#if defined(CHECK_RIGID_BODY_FLAG)
+                auto rigid_blas_scratch_buffer = device.create_buffer({
+                    .size = rigid_blas_build_sizes.build_scratch_size,
+                    .name = "rigid blas build scratch buffer",
+                });
+
+                ti.recorder.destroy_buffer_deferred(rigid_blas_scratch_buffer);
+
+                blas_build_info_rigid.scratch_data = device.get_device_address(rigid_blas_scratch_buffer).value();
+
+                // build rigid blas
+                ti.recorder.build_acceleration_structures({
+                    .blas_build_infos = std::array{blas_build_info, blas_build_info_rigid},
+                });
+#else
                 // build blas
                 ti.recorder.build_acceleration_structures({
                     .blas_build_infos = std::array{blas_build_info},
                 });
+#endif
             },
             .name = "blas build",
         });
@@ -1387,6 +1544,8 @@ struct App : BaseApp<App>
         new_task_graph.use_persistent_buffer(task_grid_buffer);
         new_task_graph.use_persistent_buffer(task_aabb_buffer);
 #if defined(CHECK_RIGID_BODY_FLAG)
+        new_task_graph.use_persistent_buffer(task_rigid_body_vertex_buffer);
+        new_task_graph.use_persistent_buffer(task_rigid_body_index_buffer);
         new_task_graph.use_persistent_buffer(task_rigid_particles_buffer);
 #endif
         new_task_graph.use_persistent_buffer(task_camera_buffer);
@@ -1395,39 +1554,14 @@ struct App : BaseApp<App>
 
         imgui_task_attachments.push_back(daxa::inl_attachment(daxa::TaskImageAccess::FRAGMENT_SHADER_SAMPLED, task_render_image));
         record_accel_struct_tasks(new_task_graph);
-        // new_task_graph.add_task({
-        //     .attachments = {
-        //         daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
-        //         daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
-        //         daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_grid_buffer),
-        //         daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_camera_buffer),
-        //         daxa::inl_attachment(daxa::TaskImageAccess::COMPUTE_SHADER_STORAGE_WRITE_ONLY, task_render_image),
-        //     },
-        //     .task = [this](daxa::TaskInterface ti)
-        //     {
-        //         ti.recorder.set_pipeline(*sphere_tracing_compute_pipeline);
-
-        //         ti.recorder.push_constant(ComputePush{
-        //             .image_id = render_image.default_view(),
-        //             .input_buffer_id = gpu_input_buffer,
-        //             .input_ptr = device.get_device_address(gpu_input_buffer).value(),
-                    // .status_buffer_id = gpu_status_buffer,
-        //             .particles = device.get_device_address(particles_buffer).value(),
-        //             .cells = device.get_device_address(grid_buffer).value(),
-        //             .aabbs = device.get_device_address(aabb_buffer).value(),
-        //             .camera = device.get_device_address(camera_buffer).value(),
-        //             .tlas = tlas,
-        //         });
-        //         ti.recorder.dispatch({(size_x + MPM_SHADING_COMPUTE_X - 1) / MPM_SHADING_COMPUTE_X, (size_y + MPM_SHADING_COMPUTE_Y - 1) / MPM_SHADING_COMPUTE_Y});
-        //     },
-        //     .name = ("Draw (Compute)"),
-        // });
         new_task_graph.add_task({
             .attachments = {
                 daxa::inl_attachment(daxa::TaskBufferAccess::RAY_TRACING_SHADER_READ, task_gpu_input_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::RAY_TRACING_SHADER_READ, task_gpu_status_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::RAY_TRACING_SHADER_READ_WRITE, task_particles_buffer),
 #if defined(CHECK_RIGID_BODY_FLAG)
+                daxa::inl_attachment(daxa::TaskBufferAccess::RAY_TRACING_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::RAY_TRACING_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::RAY_TRACING_SHADER_READ_WRITE, task_rigid_particles_buffer),
 #endif
                 daxa::inl_attachment(daxa::TaskBufferAccess::RAY_TRACING_SHADER_READ, task_camera_buffer),
@@ -1445,6 +1579,8 @@ struct App : BaseApp<App>
                     .status_buffer_id = gpu_status_buffer,
                     .particles = device.get_device_address(particles_buffer).value(),
 #if defined(CHECK_RIGID_BODY_FLAG)
+                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),

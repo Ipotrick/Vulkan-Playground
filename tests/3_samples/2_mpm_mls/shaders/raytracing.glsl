@@ -73,6 +73,86 @@ layout(location = 1) rayPayloadEXT bool is_shadowed;
 vec3 light_position = vec3(2, 5, 3);
 vec3 light_intensity = vec3(2.5);
 
+#if defined(HIT_TRIANGLE)
+
+hitAttributeEXT vec2 attribs;
+
+void main()
+{
+  vec3 world_pos = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
+
+  prd.hit_pos = world_pos;
+
+  uint i = gl_PrimitiveID;
+
+  mat3 vertices = get_vertices_by_triangle_index(i);
+
+  vec3 u = vertices[1] - vertices[0];
+  vec3 v = vertices[2] - vertices[0];
+
+  vec3 normal = normalize(cross(u, v));
+  
+  // Verifica si la normal está orientada correctamente
+  if (dot(-normal, gl_WorldRayDirectionEXT) < 0.0) {
+      normal = -normal; // Invertir la normal si está apuntando en la dirección incorrecta
+  }
+
+  // const vec3 barycentrics = vec3(1.0 - attribs.x - attribs.y, attribs.x, attribs.y);
+
+  // vec3 normal = normalize(barycentrics.x * vertices[0] + barycentrics.y * vertices[1] + barycentrics.z * vertices[2]);
+
+  vec3 L = normalize(light_position - vec3(0));
+
+  daxa_BufferPtr(GpuInput) config = daxa_BufferPtr(GpuInput)(daxa_id_to_address(p.input_buffer_id));
+
+  float dotNL = max(dot(normal, L), 0.0);
+  vec3 material_color = RIGID_BODY_COLOR;
+
+  vec3 diffuse = dotNL * material_color;
+  vec3 specular = vec3(0);
+  float attenuation = 0.3;
+
+  // Tracing shadow ray only if the light is visible from the surface
+  if (dot(normal, L) > 0)
+  {
+      vec3 origin = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT * 1.0001f;
+      vec3 ray_dir = L;
+      const uint ray_flags =
+          gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
+      const daxa_u32 cull_mask = 0xff;
+      is_shadowed = true;
+
+      traceRayEXT(
+        daxa_accelerationStructureEXT(p.tlas), // topLevelAccelerationStructure
+        ray_flags,                             // rayFlags
+        cull_mask,                             // cullMask
+        0,                                     // sbtRecordOffset
+        0,                                     // sbtRecordStride
+        1,                                     // missIndex
+        origin,                        // ray origin
+        MIN_DIST,                              // ray min range
+        ray_dir,                     // ray direction
+        MAX_DIST,                              // ray max range
+        1                                      // payload (location = 0)
+    );
+
+      if (is_shadowed)
+      {
+          attenuation = 0.5;
+      }
+      else
+      {
+          attenuation = 1;
+          // Specular
+          // specular = computeSpecular(mat, gl_WorldRayDirectionEXT, L, normal);
+      }
+  }
+
+  prd.hit_value = vec3(light_intensity * attenuation * (diffuse + specular));
+}
+
+
+#else // HIT_TRIANGLE
 void main()
 {
   vec3 world_pos = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
@@ -95,7 +175,7 @@ void main()
     particle.type = MAT_RIGID;
     particle.v = vec3(0);
   }
-#endif
+#endif // CHECK_RIGID_BODY_FLAG
 
   vec3 center = (aabb.min + aabb.max) * 0.5;
 
@@ -108,7 +188,7 @@ void main()
   normal     = (maxC == absN.x) ?
                  vec3(sign(normal.x), 0, 0) :
                  (maxC == absN.y) ? vec3(0, sign(normal.y), 0) : vec3(0, 0, sign(normal.z));
-#endif
+#endif // VOXEL_PARTICLES 
 
   // Vector toward the light
   vec3 L = normalize(light_position - vec3(0));
@@ -172,6 +252,7 @@ void main()
 
   prd.hit_value = vec3(light_intensity * attenuation * (diffuse + specular));
 }
+#endif // HIT_TRIANGLE
 
 #elif DAXA_SHADER_STAGE == DAXA_SHADER_STAGE_MISS
 

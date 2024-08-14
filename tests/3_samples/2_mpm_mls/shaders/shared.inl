@@ -10,13 +10,14 @@
 
 #include "daxa/daxa.inl"
 
+#define CHECK_RIGID_BODY_FLAG
+
 // #define DAXA_SIMULATION_WATER_MPM_MLS
 // #define DAXA_SIMULATION_MANY_MATERIALS
 #define GRID_DIM 128
 #define GRID_SIZE (GRID_DIM * GRID_DIM * GRID_DIM)
 #define QUALITY 2
 #define SIM_LOOP_COUNT 30
-#define CHECK_RIGID_BODY_FLAG 1
 // #define NUM_PARTICLES 8192 * QUALITY * QUALITY * QUALITY
 #define NUM_PARTICLES 16384 * QUALITY * QUALITY * QUALITY
 // #define NUM_PARTICLES 32768 * QUALITY * QUALITY * QUALITY
@@ -163,6 +164,8 @@ struct ComputePush
     daxa_BufferId status_buffer_id;
     daxa_RWBufferPtr(Particle) particles;
 #if defined(CHECK_RIGID_BODY_FLAG)
+    daxa_BufferPtr(daxa_u32) indices;
+    daxa_BufferPtr(daxa_f32vec3) vertices;
     daxa_RWBufferPtr(RigidParticle) rigid_particles;
 #endif
     daxa_RWBufferPtr(Cell) cells;
@@ -191,6 +194,9 @@ struct Ray
 
 #if !defined(__cplusplus)
 
+#if defined(CHECK_RIGID_BODY_FLAG)
+const daxa_f32vec3 RIGID_BODY_COLOR = vec3(0.5, 0.8, 0.3);
+#endif
 const daxa_f32vec3 RIGID_BODY_PARTICLE_COLOR = daxa_f32vec3(0.6f, 0.4f, 0.2f);
 const daxa_f32vec3 WATER_HIGH_SPEED_COLOR = daxa_f32vec3(0.3f, 0.5f, 1.0f);
 const daxa_f32vec3 WATER_LOW_SPEED_COLOR = daxa_f32vec3(0.1f, 0.2f, 0.4f);
@@ -208,7 +214,11 @@ layout(buffer_reference, scalar) buffer PARTICLE_BUFFER {Particle particles[]; }
 layout(buffer_reference, scalar) buffer CELL_BUFFER {Cell cells[]; }; // Positions of an object
 layout(buffer_reference, scalar) buffer AABB_BUFFER {Aabb aabbs[]; }; // Particle positions
 layout(buffer_reference, scalar) buffer RIGID_BODY_AABB_IDS {uint rigid_box_ids[]; }; // Positions of an object
+#if defined(CHECK_RIGID_BODY_FLAG)
+layout(buffer_reference, scalar) buffer INDEX_BUFFER {uint indices[]; }; // Positions of an object
+layout(buffer_reference, scalar) buffer VERTEX_BUFFER {vec3 vertices[]; }; // Positions of an object
 layout(buffer_reference, scalar) buffer RIGID_PARTICLE_BUFFER {RigidParticle particles[]; }; // Particle buffer
+#endif
 
 
 Particle get_particle_by_index(daxa_u32 particle_index) {
@@ -218,6 +228,21 @@ Particle get_particle_by_index(daxa_u32 particle_index) {
 }
 
 #if defined(CHECK_RIGID_BODY_FLAG)
+uvec3 get_indices_by_triangle_index(daxa_u32 triangle_index) {
+  INDEX_BUFFER index_buffer = INDEX_BUFFER(p.indices);
+  return uvec3(index_buffer.indices[triangle_index * 3], index_buffer.indices[triangle_index * 3 + 1], index_buffer.indices[triangle_index * 3 + 2]);
+}
+
+vec3 get_vertex_by_index(daxa_u32 vertex_index) {
+  VERTEX_BUFFER vertex_buffer = VERTEX_BUFFER(p.vertices);
+  return vertex_buffer.vertices[vertex_index];
+}
+
+mat3 get_vertices_by_triangle_index(daxa_u32 triangle_index) {
+  uvec3 indices = get_indices_by_triangle_index(triangle_index);
+  return mat3(get_vertex_by_index(indices.x), get_vertex_by_index(indices.y), get_vertex_by_index(indices.z));
+}
+
 RigidParticle get_rigid_particle_by_index(daxa_u32 particle_index) {
   RIGID_PARTICLE_BUFFER rigid_particle_buffer = RIGID_PARTICLE_BUFFER(p.rigid_particles);
   return rigid_particle_buffer.particles[particle_index];
