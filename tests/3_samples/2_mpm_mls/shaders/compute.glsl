@@ -2,7 +2,108 @@
 // #include <custom file!!>
 
 
-#if P2G_WATER_COMPUTE_FLAG == 1
+#if RESET_RIGID_GRID_COMPUTE_FLAG == 1
+layout(local_size_x = MPM_GRID_COMPUTE_X, local_size_y = MPM_GRID_COMPUTE_Y, local_size_z = MPM_GRID_COMPUTE_Z) in;
+void main()
+{
+  uvec3 pixel_i = gl_GlobalInvocationID.xyz;
+
+  daxa_BufferPtr(GpuInput) config = daxa_BufferPtr(GpuInput)(daxa_id_to_address(p.input_buffer_id));
+
+  if (pixel_i.x >= deref(config).grid_dim.x || pixel_i.y >= deref(config).grid_dim.y || pixel_i.z >= deref(config).grid_dim.z)
+  {
+      return;
+  }
+
+  uint cell_index = pixel_i.x + pixel_i.y * deref(config).grid_dim.x + pixel_i.z * deref(config).grid_dim.x * deref(config).grid_dim.y;
+
+  zeroed_out_rigid_cell_by_index(cell_index);
+
+}
+
+#elif RASTER_RIGID_BOUND_COMPUTE_FLAG == 1
+// Main compute shader
+layout(local_size_x = MPM_P2G_COMPUTE_X, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+  uint pixel_i_x = gl_GlobalInvocationID.x;
+
+  daxa_BufferPtr(GpuInput) config = daxa_BufferPtr(GpuInput)(daxa_id_to_address(p.input_buffer_id));
+
+  if (pixel_i_x >= deref(config).r_p_count)
+  {
+      return;
+  }
+
+  float dx = deref(config).dx;
+  float inv_dx = deref(config).inv_dx;
+
+  RigidParticle particle = get_rigid_particle_by_index(pixel_i_x);
+
+  if(particle.rigid_id > MAX_RIGID_BODY_COUNT) {
+    return;
+  }
+
+  Aabb aabb = Aabb(particle.min, particle.max);
+
+  daxa_i32vec3 base_coord = calculate_particle_grid_pos(aabb, inv_dx);
+
+  uvec3 array_grid = uvec3(base_coord);
+
+  // get 
+  vec3 p0 = get_first_vertex_by_triangle_index(particle.triangle_id);
+  vec3 p1 = get_second_vertex_by_triangle_index(particle.triangle_id);
+  vec3 p2 = get_third_vertex_by_triangle_index(particle.triangle_id);
+
+  mat3 world_to_elem = get_world_to_object_matrix(p0, p1, p2);
+
+  // Scatter to grid
+  for (uint i = 0; i < 3; ++i)
+  {
+      for (uint j = 0; j < 3; ++j)
+      {
+          for (uint k = 0; k < 3; ++k)
+          {
+              uvec3 coord = array_grid + uvec3(i, j, k);
+              if (coord.x >= deref(config).grid_dim.x || coord.y >= deref(config).grid_dim.y || coord.z >= deref(config).grid_dim.z)
+              {
+                  continue;
+              }
+
+              vec3 grid_pos = vec3(coord) * dx;
+              vec3 diff = world_to_elem * (grid_pos - p0);
+              bool negative = diff[2] < 0;
+              daxa_f32 dist = abs(diff[2]);
+              bool in_range = false;
+
+              if(0 <= diff[0] && 0 <= diff[1] && diff[0] + diff[1] <= 1) {
+                  in_range = true;
+              }
+
+              if(!in_range) {
+                  continue;
+              }
+
+              uint index = (coord.x + coord.y * deref(config).grid_dim.x + coord.z * deref(config).grid_dim.x * deref(config).grid_dim.y);
+
+              dist *= inv_dx;
+
+              if(set_atomic_rigid_cell_distance_by_index(index, dist) > dist) {
+                if(set_atomic_rigid_cell_distance_by_index(index, dist) == dist) {
+                  set_atomic_rigid_cell_rigid_id_by_index(index, particle.rigid_id);
+                  set_atomic_rigid_cell_rigid_particle_index_by_index(index, pixel_i_x);
+                }
+              }
+
+              set_atomic_rigid_cell_status_by_index(index, particle.rigid_id, negative);
+
+          }
+      }
+  }
+
+}
+
+#elif P2G_WATER_COMPUTE_FLAG == 1
 // Main compute shader
 layout(local_size_x = MPM_P2G_COMPUTE_X, local_size_y = 1, local_size_z = 1) in;
 void main()

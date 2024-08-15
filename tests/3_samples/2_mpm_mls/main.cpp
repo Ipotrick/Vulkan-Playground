@@ -131,6 +131,51 @@ struct App : BaseApp<App>
         }
     }
 
+#if defined(CHECK_RIGID_BODY_FLAG)
+
+    // clang-format off
+    std::shared_ptr<daxa::ComputePipeline> reset_rigid_grid_compute_pipeline = [this]() {
+        update_virtual_shader();
+        return pipeline_manager.add_compute_pipeline({
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
+            .shader_info = {
+                .source = daxa::ShaderFile{"compute.glsl"}, 
+                .compile_options = {
+                    .defines =  std::vector{daxa::ShaderDefine{"RESET_RIGID_GRID_COMPUTE_FLAG", "1"}},
+                }
+            },
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+            .shader_info = {.source = daxa::ShaderFile{"compute.slang"}, .compile_options = {.entry_point = "entry_MPM_reset_rigid_boundary"}},
+#endif
+            .push_constant_size = sizeof(ComputePush),
+            .name = "reset_rigid_grid_compute_pipeline",
+        }).value();
+    }();
+    // clang-format on
+    
+
+
+    // clang-format off
+    std::shared_ptr<daxa::ComputePipeline> rasterize_rigid_boundary_compute_pipeline = [this]() {
+        update_virtual_shader();
+        return pipeline_manager.add_compute_pipeline({
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
+            .shader_info = {
+                .source = daxa::ShaderFile{"compute.glsl"}, 
+                .compile_options = {
+                    .defines =  std::vector{daxa::ShaderDefine{"RASTER_RIGID_BOUND_COMPUTE_FLAG", "1"}},
+                }
+            },
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+            .shader_info = {.source = daxa::ShaderFile{"compute.slang"}, .compile_options = {.entry_point = "entry_MPM_raster_rigid_boundary"}},
+#endif
+            .push_constant_size = sizeof(ComputePush),
+            .name = "rasterize_rigid_boundary_compute_pipeline",
+        }).value();
+    }();
+    // clang-format on
+#endif // CHECK_RIGID_BODY_FLAG
+
     // clang-format off
     std::shared_ptr<daxa::ComputePipeline> p2g_compute_pipeline = [this]() {
         update_virtual_shader();
@@ -481,6 +526,19 @@ struct App : BaseApp<App>
     
     daxa::BufferClearInfo clear_info = {grid_buffer, 0, grid_size, 0};
 
+    
+#if defined(CHECK_RIGID_BODY_FLAG)
+    daxa::usize rigid_grid_size = GRID_SIZE * sizeof(RigidCell);
+    daxa::BufferId rigid_grid_buffer = device.create_buffer(daxa::BufferInfo{
+        .size = rigid_grid_size,
+        .name = "rigid_grid_buffer",
+    });
+    daxa::TaskBuffer task_rigid_grid_buffer{{.initial_buffers = {.buffers = std::array{rigid_grid_buffer}}, .name = "rigid_grid_buffer_task"}};
+    
+    // daxa::BufferClearInfo clear_rigid_info = {rigid_grid_buffer, 0, rigid_grid_size, 0};
+#endif
+
+
     daxa::usize aabb_size = TOTAL_AABB_COUNT * sizeof(Aabb);
     daxa::BufferId aabb_buffer = device.create_buffer(daxa::BufferInfo{
         .size = aabb_size,
@@ -589,6 +647,7 @@ struct App : BaseApp<App>
         device.destroy_buffer(rigid_body_vertex_buffer);
         device.destroy_buffer(rigid_body_index_buffer);
         device.destroy_buffer(rigid_particles_buffer);
+        device.destroy_buffer(rigid_grid_buffer);
 #endif // CHECK_RIGID_BODY_FLAG
         device.destroy_buffer(grid_buffer);
         device.destroy_buffer(aabb_buffer);
@@ -708,6 +767,7 @@ struct App : BaseApp<App>
         upload_task_graph.use_persistent_buffer(task_rigid_body_vertex_buffer);
         upload_task_graph.use_persistent_buffer(task_rigid_body_index_buffer);
         upload_task_graph.use_persistent_buffer(task_rigid_particles_buffer);
+        upload_task_graph.use_persistent_buffer(task_rigid_grid_buffer);
 #endif
 
         upload_task_graph.add_task({
@@ -719,6 +779,7 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::HOST_TRANSFER_WRITE, task_rigid_body_vertex_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::HOST_TRANSFER_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::HOST_TRANSFER_WRITE, task_rigid_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_WRITE, task_rigid_grid_buffer),
 #endif
             },
             .task = [this](daxa::TaskInterface ti)
@@ -1065,6 +1126,7 @@ struct App : BaseApp<App>
         input_task_graph.use_persistent_buffer(task_rigid_body_vertex_buffer);
         input_task_graph.use_persistent_buffer(task_rigid_body_index_buffer);
         input_task_graph.use_persistent_buffer(task_rigid_particles_buffer);
+        input_task_graph.use_persistent_buffer(task_rigid_grid_buffer);
 #endif
         input_task_graph.use_persistent_buffer(task_grid_buffer);
         input_task_graph.use_persistent_buffer(task_camera_buffer);
@@ -1081,6 +1143,7 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment
                 (daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
 #endif
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_WRITE, task_grid_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::HOST_TRANSFER_WRITE, task_camera_buffer),
@@ -1146,6 +1209,7 @@ struct App : BaseApp<App>
         sim_task_graph.use_persistent_buffer(task_rigid_body_vertex_buffer);
         sim_task_graph.use_persistent_buffer(task_rigid_body_index_buffer);
         sim_task_graph.use_persistent_buffer(task_rigid_particles_buffer);
+        sim_task_graph.use_persistent_buffer(task_rigid_grid_buffer);
 #endif
         sim_task_graph.use_persistent_buffer(task_grid_buffer);
         sim_task_graph.use_persistent_buffer(task_aabb_buffer);
@@ -1155,13 +1219,71 @@ struct App : BaseApp<App>
             .attachments = {
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_WRITE, task_grid_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
             },
             .task = [this](daxa::TaskInterface ti)
             {
                 ti.recorder.clear_buffer(clear_info);
+                // ti.recorder.clear_buffer(clear_rigid_info);
+                ti.recorder.set_pipeline(*reset_rigid_grid_compute_pipeline);
+                ti.recorder.push_constant(ComputePush{
+                    .image_id = render_image.default_view(),
+                    .input_buffer_id = gpu_input_buffer,
+                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                    .status_buffer_id = gpu_status_buffer,
+                    .particles = device.get_device_address(particles_buffer).value(),
+#if defined(CHECK_RIGID_BODY_FLAG)
+                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
+                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+#endif
+                    .cells = device.get_device_address(grid_buffer).value(),
+                    .aabbs = device.get_device_address(aabb_buffer).value(),
+                    .camera = device.get_device_address(camera_buffer).value(),
+                    .tlas = tlas,
+                });
+                ti.recorder.dispatch({(gpu_input.grid_dim.x + MPM_GRID_COMPUTE_X - 1) / MPM_GRID_COMPUTE_X, (gpu_input.grid_dim.y + MPM_GRID_COMPUTE_Y - 1) / MPM_GRID_COMPUTE_Y, (gpu_input.grid_dim.z + MPM_GRID_COMPUTE_Z - 1) / MPM_GRID_COMPUTE_Z});
             },
             .name = ("Reset Grid (Compute)"),
         });
+#if defined(CHECK_RIGID_BODY_FLAG)
+        sim_task_graph.add_task({
+            .attachments = {
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_grid_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_camera_buffer),
+                daxa::inl_attachment(daxa::TaskImageAccess::COMPUTE_SHADER_STORAGE_WRITE_ONLY, task_render_image),
+            },
+            .task = [this](daxa::TaskInterface ti)
+            {
+                ti.recorder.set_pipeline(*rasterize_rigid_boundary_compute_pipeline);
+                ti.recorder.push_constant(ComputePush{
+                    .image_id = render_image.default_view(),
+                    .input_buffer_id = gpu_input_buffer,
+                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                    .status_buffer_id = gpu_status_buffer,
+                    .particles = device.get_device_address(particles_buffer).value(),
+                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
+                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                    .cells = device.get_device_address(grid_buffer).value(),
+                    .aabbs = device.get_device_address(aabb_buffer).value(),
+                    .camera = device.get_device_address(camera_buffer).value(),
+                    .tlas = tlas,
+                });
+                ti.recorder.dispatch({(gpu_input.r_p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
+            },
+            .name = ("Rigid Boundary (Compute)"),
+        });
+#endif // CHECK_RIGID_BODY_FLAG
+
         sim_task_graph.add_task({
             .attachments = {
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
@@ -1170,6 +1292,7 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
 #endif
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_grid_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_camera_buffer),
@@ -1188,6 +1311,7 @@ struct App : BaseApp<App>
                     .indices = device.get_device_address(rigid_body_index_buffer).value(),
                     .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
@@ -1207,6 +1331,7 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
 #endif
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_grid_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_camera_buffer),
@@ -1225,6 +1350,7 @@ struct App : BaseApp<App>
                     .indices = device.get_device_address(rigid_body_index_buffer).value(),
                     .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
@@ -1244,6 +1370,7 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
 #endif
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_grid_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_camera_buffer),
@@ -1263,13 +1390,14 @@ struct App : BaseApp<App>
                     .indices = device.get_device_address(rigid_body_index_buffer).value(),
                     .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
                     .camera = device.get_device_address(camera_buffer).value(),
                     .tlas = tlas,
                 });
-                ti.recorder.dispatch({(gpu_input.grid_dim.x + MPM_GRID_COMPUTE_X - 1) / MPM_GRID_COMPUTE_X, (gpu_input.grid_dim.y + MPM_GRID_COMPUTE_X - 1) / MPM_GRID_COMPUTE_Y, (gpu_input.grid_dim.z + MPM_GRID_COMPUTE_Z - 1) / MPM_GRID_COMPUTE_Z});
+                ti.recorder.dispatch({(gpu_input.grid_dim.x + MPM_GRID_COMPUTE_X - 1) / MPM_GRID_COMPUTE_X, (gpu_input.grid_dim.y + MPM_GRID_COMPUTE_Y - 1) / MPM_GRID_COMPUTE_Y, (gpu_input.grid_dim.z + MPM_GRID_COMPUTE_Z - 1) / MPM_GRID_COMPUTE_Z});
             },
             .name = ("Grid (Compute)"),
         });
@@ -1282,6 +1410,7 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
 #endif
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_grid_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_camera_buffer),
@@ -1301,6 +1430,7 @@ struct App : BaseApp<App>
                     .indices = device.get_device_address(rigid_body_index_buffer).value(),
                     .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
@@ -1474,6 +1604,7 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_rigid_body_vertex_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_rigid_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
 #endif
                 daxa::inl_attachment(daxa::TaskBlasAccess::BUILD_WRITE, task_blas),
             },
@@ -1547,6 +1678,7 @@ struct App : BaseApp<App>
         new_task_graph.use_persistent_buffer(task_rigid_body_vertex_buffer);
         new_task_graph.use_persistent_buffer(task_rigid_body_index_buffer);
         new_task_graph.use_persistent_buffer(task_rigid_particles_buffer);
+        new_task_graph.use_persistent_buffer(task_rigid_grid_buffer);
 #endif
         new_task_graph.use_persistent_buffer(task_camera_buffer);
         new_task_graph.use_persistent_blas(task_blas);
@@ -1582,6 +1714,7 @@ struct App : BaseApp<App>
                     .indices = device.get_device_address(rigid_body_index_buffer).value(),
                     .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
