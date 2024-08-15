@@ -366,6 +366,10 @@ void main()
 
   Particle particle = get_particle_by_index(pixel_i_x);
 
+#if defined(CHECK_RIGID_BODY_FLAG)
+  ParticleCDF praticle_CDF = get_rigid_particle_status_by_index(pixel_i_x);
+#endif // CHECK_RIGID_BODY_FLAG
+
   Aabb aabb = get_aabb_by_index(pixel_i_x);
 
   daxa_f32vec3 w[3];
@@ -375,13 +379,6 @@ void main()
   mat3 stress = calculate_p2g(particle, dt, p_vol, mu_0, lambda_0, inv_dx);
 
   mat3 affine = stress + p_mass * particle.C;
-
-  // float w_k = 50.f;
-  // float w_gamma = 5.0f;
-
-  // float stress = calculate_p2g_water(particle, p_vol, w_k, w_gamma, inv_dx);
-
-  // mat3 affine = p_mass * particle.C;
 
   // Transactional momentum
   vec3 mv = vec3(p_mass * particle.v);
@@ -401,6 +398,31 @@ void main()
                   continue;
               }
 
+              uint index = (coord.x + coord.y * deref(config).grid_dim.x + coord.z * deref(config).grid_dim.x * deref(config).grid_dim.y);
+
+              
+#if defined(CHECK_RIGID_BODY_FLAG)
+              daxa_u32 flag = 1;
+              
+              RigidCell rigid_cell = get_rigid_cell_by_index(index);
+
+              // Check compatibility with rigid body
+              for(daxa_u32 i = 0; i < deref(config).rigid_body_count; ++i) {
+                daxa_u32 particle_CDF_flags = (praticle_CDF.status >> i * 2) & 0x3;
+                daxa_u32 rigid_flags = (rigid_cell.status >> i * 2) & 0x3;
+                // if particle or grid cell is not associated with rigid body or both have the same sign then skip
+                if(((particle_CDF_flags & 0x2) != 0) && ((rigid_flags & 0x2) != 0) && ((particle_CDF_flags & 0x1) == (rigid_flags & 0x1))) {
+                  flag = 0;
+                  break;
+                }
+              }
+
+              if(flag == 0) {
+                continue;
+              }
+
+#endif // CHECK_RIGID_BODY_FLAG
+
               vec3 dpos = (vec3(i, j, k) - fx) * dx;
 
               float weight = w[i].x * w[j].y * w[k].z;
@@ -408,17 +430,10 @@ void main()
               vec3 velocity_mass = weight * (mv + affine * dpos);
               float m = weight * p_mass;
 
-              uint index = (coord.x + coord.y * deref(config).grid_dim.x + coord.z * deref(config).grid_dim.x * deref(config).grid_dim.y);
-
-              // vec3 force_stress = stress * dpos;
-
               set_atomic_cell_vel_x_by_index(index, velocity_mass.x);
               set_atomic_cell_vel_y_by_index(index, velocity_mass.y);
               set_atomic_cell_vel_z_by_index(index, velocity_mass.z);
               set_atomic_cell_mass_by_index(index, m);
-              // set_atomic_cell_force_x_by_index(index, force_stress.x);
-              // set_atomic_cell_force_y_by_index(index, force_stress.y);
-              // set_atomic_cell_force_z_by_index(index, force_stress.z);
           }
       }
   }

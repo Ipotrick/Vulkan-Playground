@@ -465,8 +465,8 @@ struct App : BaseApp<App>
     });
     GpuInput gpu_input = {
         .p_count = NUM_PARTICLES, 
-        .p_count_rigid_bodies = NUM_RIGID_BOXES,
 #if defined(CHECK_RIGID_BODY_FLAG)
+        .rigid_body_count = NUM_RIGID_BOXES,
         .r_p_count = 0,
 #endif
         .grid_dim = {GRID_DIM, GRID_DIM, GRID_DIM},
@@ -1241,7 +1241,7 @@ struct App : BaseApp<App>
         sim_task_graph.use_persistent_buffer(task_rigid_particles_buffer);
         sim_task_graph.use_persistent_buffer(task_rigid_grid_buffer);
         sim_task_graph.use_persistent_buffer(task_particle_CDF_buffer);
-#endif
+#endif // CHECK_RIGID_BODY_FLAG
         sim_task_graph.use_persistent_buffer(task_grid_buffer);
         sim_task_graph.use_persistent_buffer(task_aabb_buffer);
         sim_task_graph.use_persistent_buffer(task_camera_buffer);
@@ -1250,7 +1250,9 @@ struct App : BaseApp<App>
             .attachments = {
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_WRITE, task_grid_buffer),
+#if defined(CHECK_RIGID_BODY_FLAG)
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
+#endif // CHECK_RIGID_BODY_FLAG
             },
             .task = [this](daxa::TaskInterface ti)
             {
@@ -1275,7 +1277,7 @@ struct App : BaseApp<App>
                     .tlas = tlas,
                 });
                 ti.recorder.dispatch({(gpu_input.grid_dim.x + MPM_GRID_COMPUTE_X - 1) / MPM_GRID_COMPUTE_X, (gpu_input.grid_dim.y + MPM_GRID_COMPUTE_Y - 1) / MPM_GRID_COMPUTE_Y, (gpu_input.grid_dim.z + MPM_GRID_COMPUTE_Z - 1) / MPM_GRID_COMPUTE_Z});
-#endif
+#endif 
             },
             .name = ("Reset Grid (Compute)"),
         });

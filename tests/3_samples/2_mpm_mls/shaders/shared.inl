@@ -75,8 +75,8 @@ struct Camera {
 struct GpuInput
 {
   daxa_u32 p_count;
-  daxa_u32 p_count_rigid_bodies;
 #if defined(CHECK_RIGID_BODY_FLAG)
+  daxa_u32 rigid_body_count;
   daxa_u32 r_p_count;
 #endif
   daxa_u32vec3 grid_dim;
