@@ -100,6 +100,81 @@ void main()
           }
       }
   }
+}
+
+#elif GATHER_CDF_COMPUTE_FLAG == 1
+// Main compute shader
+layout(local_size_x = MPM_P2G_COMPUTE_X, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+  uint pixel_i_x = gl_GlobalInvocationID.x;
+
+  daxa_BufferPtr(GpuInput) config = daxa_BufferPtr(GpuInput)(daxa_id_to_address(p.input_buffer_id));
+
+  if (pixel_i_x >= deref(config).p_count)
+  {
+      return;
+  }
+
+  float dx = deref(config).dx;
+  float inv_dx = deref(config).inv_dx;
+
+  // zeroed_out_rigid_particle_status_by_index(pixel_i_x);
+
+  ParticleCDF particle_status = ParticleCDF(MAX_DIST, 0, false, vec3(0));
+
+  Aabb aabb = get_aabb_by_index(pixel_i_x);
+
+  daxa_f32vec3 w[3];
+  daxa_f32vec3 fx;
+  daxa_i32vec3 base_coord = calculate_particle_status(aabb, inv_dx, fx, w);
+
+  daxa_f32 Tpr = 0.f;
+
+  uvec3 array_grid = uvec3(base_coord);
+
+  for (uint i = 0; i < 3; ++i)
+  {
+      for (uint j = 0; j < 3; ++j)
+      {
+          for (uint k = 0; k < 3; ++k)
+          {
+              uvec3 coord = array_grid + uvec3(i, j, k);
+              if (coord.x >= deref(config).grid_dim.x || coord.y >= deref(config).grid_dim.y || coord.z >= deref(config).grid_dim.z)
+              {
+                  continue;
+              }
+
+              daxa_u32 index = coord.x + coord.y * deref(config).grid_dim.x + coord.z * deref(config).grid_dim.x * deref(config).grid_dim.y;
+
+              daxa_f32vec3 dpos = (daxa_f32vec3(i, j, k) - fx) * dx;
+
+              RigidCell rigid_cell = get_rigid_cell_by_index(index);
+
+              if(rigid_cell.rigid_id == -1) {
+                continue;
+              }
+
+              particle_status.status |= (rigid_cell.status >> (rigid_cell.rigid_id * 2)) & 0x2;
+
+              float weight = w[i].x * w[j].y * w[k].z;
+
+              float T = ((rigid_cell.status >> (rigid_cell.rigid_id * 2)) & 0x1) == 1 ? -1 : 1;
+
+              float dist = from_emulated_float(rigid_cell.d);
+
+              Tpr += weight * T * dist;
+          }
+      }
+  }
+
+
+  if(particle_status.status != 0) {
+    particle_status.d = abs(Tpr);
+    particle_status.negative = sign(Tpr) < 0;
+  }
+
+  set_rigid_particle_status_by_index(pixel_i_x, particle_status);
 
 }
 

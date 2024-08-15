@@ -104,18 +104,24 @@ struct Particle {
   daxa_f32 J;
 };
 
+struct Cell {
+  daxa_f32vec3 v;
+  daxa_f32 m;
+  // daxa_f32vec3 f;
+};
+
+struct Aabb {
+  daxa_f32vec3 min;
+  daxa_f32vec3 max;
+};
+
+#if defined(CHECK_RIGID_BODY_FLAG)
 struct RigidBody  {
   daxa_u32 type;
   daxa_u32 p_count;
   daxa_u32 p_offset;
   daxa_u32 triangle_count;
   daxa_u32 triangle_offset;
-};
-
-struct RigidElement {
-  daxa_f32vec3 v0;
-  daxa_f32vec3 v1;
-  daxa_f32vec3 v2;
 };
 
 struct RigidParticle  {
@@ -125,16 +131,11 @@ struct RigidParticle  {
   daxa_u32 triangle_id;
 };
 
-struct RigidParticleStatus  {
+struct ParticleCDF  {
   daxa_f32 d;
   daxa_u32 status;
-};
-
-
-struct Cell {
-  daxa_f32vec3 v;
-  daxa_f32 m;
-  // daxa_f32vec3 f;
+  bool negative;
+  daxa_f32vec3 n;
 };
 
 struct RigidCell {
@@ -143,11 +144,7 @@ struct RigidCell {
   daxa_u32 rigid_id;
   daxa_u32 rigid_particle_index;
 };
-
-struct Aabb {
-  daxa_f32vec3 min;
-  daxa_f32vec3 max;
-};
+#endif // CHECK_RIGID_BODY_FLAG
 
 DAXA_DECL_BUFFER_PTR(GpuInput)
 DAXA_DECL_BUFFER_PTR(GpuStatus)
@@ -155,6 +152,7 @@ DAXA_DECL_BUFFER_PTR(Particle)
 #if defined(CHECK_RIGID_BODY_FLAG)
 DAXA_DECL_BUFFER_PTR(RigidParticle)
 DAXA_DECL_BUFFER_PTR(RigidCell)
+DAXA_DECL_BUFFER_PTR(ParticleCDF)
 #endif
 DAXA_DECL_BUFFER_PTR(Cell)
 DAXA_DECL_BUFFER_PTR(Camera)
@@ -172,6 +170,7 @@ struct ComputePush
     daxa_BufferPtr(daxa_f32vec3) vertices;
     daxa_RWBufferPtr(RigidParticle) rigid_particles;
     daxa_RWBufferPtr(RigidCell) rigid_cells;
+    daxa_RWBufferPtr(ParticleCDF) rigid_particle_status;
 #endif
     daxa_RWBufferPtr(Cell) cells;
     daxa_RWBufferPtr(Aabb) aabbs;
@@ -226,6 +225,7 @@ layout(buffer_reference, scalar) buffer INDEX_BUFFER {uint indices[]; }; // Posi
 layout(buffer_reference, scalar) buffer VERTEX_BUFFER {vec3 vertices[]; }; // Positions of an object
 layout(buffer_reference, scalar) buffer RIGID_PARTICLE_BUFFER {RigidParticle particles[]; }; // Particle buffer
 layout(buffer_reference, scalar) buffer RIGID_CELL_BUFFER {RigidCell cells[]; }; // Particle buffer
+layout(buffer_reference, scalar) buffer RIGID_PARTICLE_STATUS_BUFFER {ParticleCDF particles[]; }; // Particle buffer
 #endif
 
 daxa_i32
@@ -249,7 +249,6 @@ Particle get_particle_by_index(daxa_u32 particle_index) {
 }
 
 #if defined(CHECK_RIGID_BODY_FLAG)
-
 uint get_first_index_by_triangle_index(daxa_u32 triangle_index) {
   INDEX_BUFFER index_buffer = INDEX_BUFFER(p.indices);
   return index_buffer.indices[triangle_index * 3];
@@ -335,9 +334,24 @@ daxa_u32 set_atomic_rigid_cell_rigid_particle_index_by_index(daxa_u32 cell_index
   return atomicExchange(rigid_cell_buffer.cells[cell_index].rigid_particle_index, rigid_particle_index);
 }
 
-// void set_atomic_
+ParticleCDF get_rigid_particle_status_by_index(daxa_u32 particle_index) {
+  RIGID_PARTICLE_STATUS_BUFFER rigid_particle_status_buffer = RIGID_PARTICLE_STATUS_BUFFER(p.rigid_particle_status);
+  return rigid_particle_status_buffer.particles[particle_index];
+}
 
-#endif
+// void zeroed_out_rigid_particle_status_by_index(daxa_u32 particle_index) {
+//   RIGID_PARTICLE_STATUS_BUFFER rigid_particle_status_buffer = RIGID_PARTICLE_STATUS_BUFFER(p.rigid_particle_status);
+//   rigid_particle_status_buffer.particles[particle_index].d = MAX_DIST;
+//   rigid_particle_status_buffer.particles[particle_index].status = 0;
+//   rigid_particle_status_buffer.particles[particle_index].n = vec3(0, 0, 0);
+// }
+
+void set_rigid_particle_status_by_index(daxa_u32 particle_index, ParticleCDF status) {
+  RIGID_PARTICLE_STATUS_BUFFER rigid_particle_status_buffer = RIGID_PARTICLE_STATUS_BUFFER(p.rigid_particle_status);
+  rigid_particle_status_buffer.particles[particle_index] = status;
+}
+
+#endif // CHECK_RIGID_BODY_FLAG
 
 Cell get_cell_by_index(daxa_u32 cell_index) {
   CELL_BUFFER cell_buffer = CELL_BUFFER(p.cells);

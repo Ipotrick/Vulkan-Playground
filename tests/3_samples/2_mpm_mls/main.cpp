@@ -174,6 +174,27 @@ struct App : BaseApp<App>
         }).value();
     }();
     // clang-format on
+
+    // clang-format off
+    std::shared_ptr<daxa::ComputePipeline> gather_CDF_compute_pipeline = [this]() {
+        update_virtual_shader();
+        return pipeline_manager.add_compute_pipeline({
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
+            .shader_info = {
+                .source = daxa::ShaderFile{"compute.glsl"}, 
+                .compile_options = {
+                    .defines =  std::vector{daxa::ShaderDefine{"GATHER_CDF_COMPUTE_FLAG", "1"}},
+                }
+            },
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+            .shader_info = {.source = daxa::ShaderFile{"compute.slang"}, .compile_options = {.entry_point = "entry_MPM_gather_CDF_boundary"}},
+#endif
+            .push_constant_size = sizeof(ComputePush),
+            .name = "gather_CDF_compute_pipeline",
+        }).value();
+    }();
+    // clang-format on
+
 #endif // CHECK_RIGID_BODY_FLAG
 
     // clang-format off
@@ -515,6 +536,14 @@ struct App : BaseApp<App>
         .name = "rigid_particles_buffer",
     });
     daxa::TaskBuffer task_rigid_particles_buffer{{.initial_buffers = {.buffers = std::array{rigid_particles_buffer}}, .name = "rigid_particles_buffer_task"}};
+
+    daxa::usize particle_CDF_size = NUM_PARTICLES * sizeof(RigidParticle);
+    daxa::BufferId particle_CDF_buffer = device.create_buffer(daxa::BufferInfo{
+        .size = NUM_PARTICLES * sizeof(ParticleCDF),
+        .name = "particle_CDF_buffer",
+    });
+    daxa::TaskBuffer task_particle_CDF_buffer{{.initial_buffers = {.buffers = std::array{particle_CDF_buffer}}, .name = "particle_CDF_buffer_task"}};
+    
 #endif
 
     daxa::usize grid_size = GRID_SIZE * sizeof(Cell);
@@ -648,6 +677,7 @@ struct App : BaseApp<App>
         device.destroy_buffer(rigid_body_index_buffer);
         device.destroy_buffer(rigid_particles_buffer);
         device.destroy_buffer(rigid_grid_buffer);
+        device.destroy_buffer(particle_CDF_buffer);
 #endif // CHECK_RIGID_BODY_FLAG
         device.destroy_buffer(grid_buffer);
         device.destroy_buffer(aabb_buffer);
@@ -1210,6 +1240,7 @@ struct App : BaseApp<App>
         sim_task_graph.use_persistent_buffer(task_rigid_body_index_buffer);
         sim_task_graph.use_persistent_buffer(task_rigid_particles_buffer);
         sim_task_graph.use_persistent_buffer(task_rigid_grid_buffer);
+        sim_task_graph.use_persistent_buffer(task_particle_CDF_buffer);
 #endif
         sim_task_graph.use_persistent_buffer(task_grid_buffer);
         sim_task_graph.use_persistent_buffer(task_aabb_buffer);
@@ -1224,6 +1255,7 @@ struct App : BaseApp<App>
             .task = [this](daxa::TaskInterface ti)
             {
                 ti.recorder.clear_buffer(clear_info);
+#if defined(CHECK_RIGID_BODY_FLAG)
                 // ti.recorder.clear_buffer(clear_rigid_info);
                 ti.recorder.set_pipeline(*reset_rigid_grid_compute_pipeline);
                 ti.recorder.push_constant(ComputePush{
@@ -1232,18 +1264,18 @@ struct App : BaseApp<App>
                     .input_ptr = device.get_device_address(gpu_input_buffer).value(),
                     .status_buffer_id = gpu_status_buffer,
                     .particles = device.get_device_address(particles_buffer).value(),
-#if defined(CHECK_RIGID_BODY_FLAG)
                     .indices = device.get_device_address(rigid_body_index_buffer).value(),
                     .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-#endif
+                    .rigid_particle_status = device.get_device_address(particle_CDF_buffer).value(),
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
                     .camera = device.get_device_address(camera_buffer).value(),
                     .tlas = tlas,
                 });
                 ti.recorder.dispatch({(gpu_input.grid_dim.x + MPM_GRID_COMPUTE_X - 1) / MPM_GRID_COMPUTE_X, (gpu_input.grid_dim.y + MPM_GRID_COMPUTE_Y - 1) / MPM_GRID_COMPUTE_Y, (gpu_input.grid_dim.z + MPM_GRID_COMPUTE_Z - 1) / MPM_GRID_COMPUTE_Z});
+#endif
             },
             .name = ("Reset Grid (Compute)"),
         });
@@ -1273,6 +1305,7 @@ struct App : BaseApp<App>
                     .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                    .rigid_particle_status = device.get_device_address(particle_CDF_buffer).value(),
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
                     .camera = device.get_device_address(camera_buffer).value(),
@@ -1282,8 +1315,43 @@ struct App : BaseApp<App>
             },
             .name = ("Rigid Boundary (Compute)"),
         });
+        sim_task_graph.add_task({
+            .attachments = {
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particle_CDF_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_grid_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_camera_buffer),
+                daxa::inl_attachment(daxa::TaskImageAccess::COMPUTE_SHADER_STORAGE_WRITE_ONLY, task_render_image),
+            },
+            .task = [this](daxa::TaskInterface ti)
+            {
+                ti.recorder.set_pipeline(*gather_CDF_compute_pipeline);
+                ti.recorder.push_constant(ComputePush{
+                    .image_id = render_image.default_view(),
+                    .input_buffer_id = gpu_input_buffer,
+                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                    .status_buffer_id = gpu_status_buffer,
+                    .particles = device.get_device_address(particles_buffer).value(),
+                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
+                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                    .rigid_particle_status = device.get_device_address(particle_CDF_buffer).value(),
+                    .cells = device.get_device_address(grid_buffer).value(),
+                    .aabbs = device.get_device_address(aabb_buffer).value(),
+                    .camera = device.get_device_address(camera_buffer).value(),
+                    .tlas = tlas,
+                });
+                ti.recorder.dispatch({(gpu_input.p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
+            },
+            .name = ("Gather CDF (Compute)"),
+        });
 #endif // CHECK_RIGID_BODY_FLAG
-
         sim_task_graph.add_task({
             .attachments = {
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
@@ -1293,6 +1361,7 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particle_CDF_buffer),
 #endif
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_grid_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_camera_buffer),
@@ -1312,6 +1381,7 @@ struct App : BaseApp<App>
                     .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                    .rigid_particle_status = device.get_device_address(particle_CDF_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
@@ -1351,6 +1421,7 @@ struct App : BaseApp<App>
                     .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                    .rigid_particle_status = device.get_device_address(particle_CDF_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
@@ -1391,6 +1462,7 @@ struct App : BaseApp<App>
                     .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                    .rigid_particle_status = device.get_device_address(particle_CDF_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
@@ -1411,6 +1483,7 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particle_CDF_buffer),
 #endif
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_grid_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_camera_buffer),
@@ -1431,6 +1504,7 @@ struct App : BaseApp<App>
                     .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                    .rigid_particle_status = device.get_device_address(particle_CDF_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
@@ -1715,6 +1789,7 @@ struct App : BaseApp<App>
                     .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                    .rigid_particle_status = device.get_device_address(particle_CDF_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
