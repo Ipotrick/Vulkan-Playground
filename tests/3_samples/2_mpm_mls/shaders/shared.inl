@@ -64,6 +64,8 @@
 #define BOX_VERTEX_COUNT 8
 #define BOX_INDEX_COUNT 36
 #define BOX_TRIANGLE_COUNT 12
+
+#define STATE_MASK 0xAAAAAAAA
 #endif
 
 struct Camera {
@@ -134,7 +136,7 @@ struct RigidParticle  {
 struct ParticleCDF  {
   daxa_f32 d;
   daxa_u32 status;
-  bool negative;
+  // bool negative;
   daxa_f32vec3 n;
 };
 
@@ -480,6 +482,11 @@ daxa_f32 rnd_interval(inout daxa_u32 prev, daxa_f32 min, daxa_f32 max)
 daxa_f32mat3x3 outer_product(daxa_f32vec3 a, daxa_f32vec3 b)
 {
     return daxa_f32mat3x3(a.x * b, a.y * b, a.z * b);
+}
+
+daxa_f32mat4x4 outer_product_mat4(daxa_f32vec4 a, daxa_f32vec4 b)
+{
+    return daxa_f32mat4x4(a.x * b, a.y * b, a.z * b, a.w * b);
 }
 
 daxa_f32 trace(daxa_f32mat3x3 m)

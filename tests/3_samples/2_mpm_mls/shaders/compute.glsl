@@ -50,7 +50,7 @@ void main()
 
   uvec3 array_grid = uvec3(base_coord);
 
-  // get 
+  // get primitive position and orientation
   vec3 p0 = get_first_vertex_by_triangle_index(particle.triangle_id);
   vec3 p1 = get_second_vertex_by_triangle_index(particle.triangle_id);
   vec3 p2 = get_third_vertex_by_triangle_index(particle.triangle_id);
@@ -121,7 +121,7 @@ void main()
 
   // zeroed_out_rigid_particle_status_by_index(pixel_i_x);
 
-  ParticleCDF particle_status = ParticleCDF(MAX_DIST, 0, false, vec3(0));
+  ParticleCDF particle_status = ParticleCDF(MAX_DIST, 0, vec3(0));
 
   Aabb aabb = get_aabb_by_index(pixel_i_x);
 
@@ -129,7 +129,9 @@ void main()
   daxa_f32vec3 fx;
   daxa_i32vec3 base_coord = calculate_particle_status(aabb, inv_dx, fx, w);
 
-  daxa_f32 Tpr = 0.f;
+  // daxa_f32 Tpr = 0.f;
+  mat4 XtX = mat4(0);
+  vec4 XtY = vec4(0);
 
   uvec3 array_grid = uvec3(base_coord);
 
@@ -155,23 +157,35 @@ void main()
                 continue;
               }
 
-              particle_status.status |= (rigid_cell.status >> (rigid_cell.rigid_id * 2)) & 0x2;
+              particle_status.status |= rigid_cell.status & STATE_MASK;
 
               float weight = w[i].x * w[j].y * w[k].z;
 
-              float T = ((rigid_cell.status >> (rigid_cell.rigid_id * 2)) & 0x1) == 1 ? -1 : 1;
+              bool affinity = ((rigid_cell.status >> (rigid_cell.rigid_id * 2)) & 0x2) == 0x2;
 
-              float dist = from_emulated_float(rigid_cell.d);
+              // if(affinity) {
+                bool negative = ((rigid_cell.status >> (rigid_cell.rigid_id * 2)) & 0x1) == 0x1;
 
-              Tpr += weight * T * dist;
+                float dist = from_emulated_float(rigid_cell.d);
+                // particle_status.negative = negative;
+
+                vec4 X = vec4(-dpos, 1);
+
+                XtX += outer_product_mat4(X, X) * weight;
+                XtY += vec4(dist * dpos, -dist) * weight;
+              // }
           }
       }
   }
 
 
-  if(particle_status.status != 0) {
-    particle_status.d = abs(Tpr);
-    particle_status.negative = sign(Tpr) < 0;
+  if(abs(determinant(XtX)) > 1e-23) {
+    vec4 r = inverse(XtX) * XtY;
+    particle_status.d = r[3] * dx;
+    particle_status.n = normalize(vec3(r));
+  } else {
+    particle_status.d = 0;
+    particle_status.n = vec3(0);
   }
 
   set_rigid_particle_status_by_index(pixel_i_x, particle_status);
@@ -367,7 +381,7 @@ void main()
   Particle particle = get_particle_by_index(pixel_i_x);
 
 #if defined(CHECK_RIGID_BODY_FLAG)
-  ParticleCDF praticle_CDF = get_rigid_particle_status_by_index(pixel_i_x);
+  ParticleCDF particle_CDF = get_rigid_particle_status_by_index(pixel_i_x);
 #endif // CHECK_RIGID_BODY_FLAG
 
   Aabb aabb = get_aabb_by_index(pixel_i_x);
@@ -408,7 +422,7 @@ void main()
 
               // Check compatibility with rigid body
               for(daxa_u32 i = 0; i < deref(config).rigid_body_count; ++i) {
-                daxa_u32 particle_CDF_flags = (praticle_CDF.status >> i * 2) & 0x3;
+                daxa_u32 particle_CDF_flags = (particle_CDF.status >> i * 2) & 0x3;
                 daxa_u32 rigid_flags = (rigid_cell.status >> i * 2) & 0x3;
                 // if particle or grid cell is not associated with rigid body or both have the same sign then skip
                 if(((particle_CDF_flags & 0x2) != 0) && ((rigid_flags & 0x2) != 0) && ((particle_CDF_flags & 0x1) == (rigid_flags & 0x1))) {
@@ -527,62 +541,26 @@ void main()
           continue;
         }
 
+        uint index = coord.x + coord.y * deref(config).grid_dim.x + coord.z * deref(config).grid_dim.x * deref(config).grid_dim.y;
+
         vec3 dpos = (vec3(i, j, k) - fx);
         float weight = w[i].x * w[j].y * w[k].z;
-        uint index = coord.x + coord.y * deref(config).grid_dim.x + coord.z * deref(config).grid_dim.x * deref(config).grid_dim.y;
 
         vec3 grid_value = get_cell_by_index(index).v;
 
         vec3 w_grid = vec3(grid_value * weight);
 
         particle.v += w_grid; // Velocity
-        particle.C += 4 * weight * outer_product(grid_value, dpos);
+        particle.C += 4 * weight * outer_product(vel_value, dpos);
       }
     }
   }
 
   aabb.min += dt * particle.v;
   aabb.max += dt * particle.v;
-
-  // int bounds = 4;
-  // const float tiny_displacement = 1e-9f;
-
-  // uint seed = tea(pixel_i_x, uint(frame_number));
-
-  // // Add a tiny bit displacement to avoid particles sticking together
-  // // check if particle is near the boundary using dx
-  // vec3 particle_displacement = vec3(0);
-  // if(aabb.min.x < (bounds * dx)) {
-  //   particle_displacement.x = tiny_displacement;
-  // } else if(aabb.max.x > (deref(config).grid_dim.x - bounds) * dx) {
-  //   particle_displacement.x = -tiny_displacement;
-  // } else {
-  //   particle_displacement.x = rnd_interval(seed, -tiny_displacement, tiny_displacement);
-  // }
-
-  // if(aabb.min.y < bounds * dx) {
-  //   particle_displacement.y = tiny_displacement;
-  // } else if(aabb.max.y > (deref(config).grid_dim.y - bounds) * dx) {
-  //   particle_displacement.y = -tiny_displacement;
-  // } else {
-  //   particle_displacement.y = rnd_interval(seed, -tiny_displacement, tiny_displacement);
-  // }
-
-  // if(aabb.min.z < bounds * dx) {
-  //   particle_displacement.z = tiny_displacement;
-  // } else if(aabb.max.z > (deref(config).grid_dim.z - bounds) * dx) {
-  //   particle_displacement.z = -tiny_displacement;
-  // } else {
-  //   particle_displacement.z = rnd_interval(seed, -tiny_displacement, tiny_displacement);
-  // }
-
-  // aabb.min += particle_displacement;
-  // aabb.max += particle_displacement;
   
-
   set_aabb_by_index(pixel_i_x, aabb);
   
-
   // TODO: optimize this write
   set_particle_by_index(pixel_i_x, particle);
 }
@@ -605,9 +583,14 @@ void main()
   float dx = deref(config).dx;
   float inv_dx = deref(config).inv_dx;
   float dt = deref(config).dt;
+  float p_mass = 1.0f;
 
   Particle particle = get_particle_by_index(pixel_i_x);
   Aabb aabb = get_aabb_by_index(pixel_i_x);
+  
+#if defined(CHECK_RIGID_BODY_FLAG)
+  ParticleCDF particle_CDF = get_rigid_particle_status_by_index(pixel_i_x);
+#endif // CHECK_RIGID_BODY_FLAG
 
   daxa_f32vec3 w[3];
   daxa_f32vec3 fx;
@@ -627,24 +610,80 @@ void main()
           continue;
         }
 
-        vec3 dpos = (vec3(i, j, k) - fx) * dx;
-
-        float weight = w[i].x * w[j].y * w[k].z;
-
         uint index = coord.x + coord.y * deref(config).grid_dim.x + coord.z * deref(config).grid_dim.x * deref(config).grid_dim.y;
 
-        vec3 grid_value = get_cell_by_index(index).v;
+#if defined(CHECK_RIGID_BODY_FLAG)
+        daxa_u32 flag = 1;
+        
+        RigidCell rigid_cell = get_rigid_cell_by_index(index);
 
-        vec3 w_grid = vec3(grid_value * weight);
+        // Check compatibility with rigid body
+        for(daxa_u32 i = 0; i < deref(config).rigid_body_count; ++i) {
+          daxa_u32 particle_CDF_flags = (particle_CDF.status >> i * 2) & 0x3;
+          daxa_u32 rigid_flags = (rigid_cell.status >> i * 2) & 0x3;
+          // if particle or grid cell is not associated with rigid body or both have the same sign then skip
+          if(((particle_CDF_flags & 0x2) != 0) && ((rigid_flags & 0x2) != 0) && ((particle_CDF_flags & 0x1) == (rigid_flags & 0x1))) {
+            flag = 0;
+            break;
+          }
+        }
+#endif // CHECK_RIGID_BODY_FLAG
+
+        vec3 dpos = (vec3(i, j, k) - fx) * dx;
+        float weight = w[i].x * w[j].y * w[k].z;
+
+        vec3 vel_value;
+#if defined(CHECK_RIGID_BODY_FLAG)
+        // TODO: this is not working
+        if(flag == 0) {
+          daxa_u32 rigid_id = rigid_cell.rigid_id;
+          daxa_u32 rigid_particle_index = rigid_cell.rigid_particle_index;
+          RigidParticle rigid_particle = get_rigid_particle_by_index(rigid_particle_index);
+          daxa_u32 primitive_index = rigid_particle.triangle_id;
+
+          // get primitive position and orientation
+          vec3 p0 = get_first_vertex_by_triangle_index(rigid_particle.triangle_id);
+          vec3 p1 = get_second_vertex_by_triangle_index(rigid_particle.triangle_id);
+          vec3 p2 = get_third_vertex_by_triangle_index(rigid_particle.triangle_id);
+          
+          mat3 world_to_elem = get_world_to_object_matrix(p0, p1, p2);
+
+          vec3 p_center = (aabb.min + aabb.max) * 0.5f;
+
+          vec3 diff = world_to_elem * (p_center - p0);
+          daxa_f32 dist = abs(diff[2]);
+
+          if(diff[2] > 0) {
+            vel_value = particle.v;
+          } else {
+            vel_value = dot(particle.v, normalize(diff)) * normalize(diff);
+          }
+
+        } else {
+          vel_value = get_cell_by_index(index).v;
+        }
+#else 
+        vel_value = get_cell_by_index(index).v;
+#endif // CHECK_RIGID_BODY_FLAG
+        vec3 w_grid = vec3(vel_value * weight);
 
         particle.v += w_grid; // Velocity
-        // particle.C += 4 * inv_dx * weight * outer_product(grid_value, dpos);
-        particle.C += 4 * inv_dx * inv_dx * weight * outer_product(grid_value, dpos);
+        particle.C += 4 * inv_dx * inv_dx * weight * outer_product(vel_value, dpos);
       }
     }
   }
 
-  // particle.J *= 1.0f + dt * trace(particle.C);
+#if defined(CHECK_RIGID_BODY_FLAG)
+  // Penalty force
+  for(daxa_u32 i = 0; i < deref(config).rigid_body_count; ++i) {
+    daxa_u32 particle_CDF_flags = (particle_CDF.status >> i * 2) & 0x3;
+    if((particle_CDF_flags & 0x1) != 0 && particle_CDF.d > 0) {
+      daxa_f32vec3 penalty_force = 5 * particle_CDF.d * particle_CDF.n;
+      particle.v += dt * penalty_force / p_mass;
+    }
+  }
+#endif // CHECK_RIGID_BODY_FLAG
+
 
   aabb.min += dt * particle.v;
   aabb.max += dt * particle.v;
@@ -660,7 +699,7 @@ void main()
       vec3 dist = pos - deref(status).mouse_target;
       if (dot(dist, dist) < deref(config).mouse_radius * deref(config).mouse_radius) {
           vec3 force = normalize(dist) * 0.05f;
-          particle.v += force;
+          particle.v += force; 
       }
     }
   }
@@ -671,7 +710,6 @@ void main()
   if (length(particle.v) > max_v) {
     particle.v = normalize(particle.v) * max_v;
   }
-
 
   set_aabb_by_index(pixel_i_x, aabb);
 
