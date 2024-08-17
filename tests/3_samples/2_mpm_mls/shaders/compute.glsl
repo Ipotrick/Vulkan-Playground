@@ -183,6 +183,7 @@ void main()
     vec4 r = inverse(XtX) * XtY;
     particle_status.d = r[3] * dx;
     particle_status.n = normalize(vec3(r));
+    particle_status.status |= sign(determinant(XtX)) > 0 ? 0x1 : 0x0;
   } else {
     particle_status.d = 0;
     particle_status.n = vec3(0);
@@ -619,8 +620,8 @@ void main()
 
         // Check compatibility with rigid body
         for(daxa_u32 i = 0; i < deref(config).rigid_body_count; ++i) {
-          daxa_u32 particle_CDF_flags = (particle_CDF.status >> i * 2) & 0x3;
-          daxa_u32 rigid_flags = (rigid_cell.status >> i * 2) & 0x3;
+          daxa_u32 particle_CDF_flags = (particle_CDF.status >> (i * 2)) & 0x3;
+          daxa_u32 rigid_flags = (rigid_cell.status >> (i * 2)) & 0x3;
           // if particle or grid cell is not associated with rigid body or both have the same sign then skip
           if(((particle_CDF_flags & 0x2) != 0) && ((rigid_flags & 0x2) != 0) && ((particle_CDF_flags & 0x1) == (rigid_flags & 0x1))) {
             flag = 0;
@@ -652,11 +653,13 @@ void main()
 
           vec3 diff = world_to_elem * (p_center - p0);
           daxa_f32 dist = abs(diff[2]);
+          daxa_f32 pushing_force = 0.1f;
 
           if(diff[2] > 0) {
             vel_value = particle.v;
           } else {
-            vel_value = dot(particle.v, normalize(diff)) * normalize(diff);
+            vel_value = dot(particle.v, particle_CDF.n) * particle_CDF.n;
+            //+ particle_CDF.n * (dt * dx * pushing_force);
           }
 
         } else {
@@ -677,7 +680,8 @@ void main()
   // Penalty force
   for(daxa_u32 i = 0; i < deref(config).rigid_body_count; ++i) {
     daxa_u32 particle_CDF_flags = (particle_CDF.status >> i * 2) & 0x3;
-    if((particle_CDF_flags & 0x1) != 0 && particle_CDF.d > 0) {
+    float T = ((particle_CDF_flags & 0x1) == 0x1) ? -1 : 1;
+    if(T * particle_CDF.d < 0) {
       daxa_f32vec3 penalty_force = 5 * particle_CDF.d * particle_CDF.n;
       particle.v += dt * penalty_force / p_mass;
     }
