@@ -341,6 +341,11 @@ ParticleCDF get_rigid_particle_status_by_index(daxa_u32 particle_index) {
   return rigid_particle_status_buffer.particles[particle_index];
 }
 
+daxa_u32 get_rigid_particle_status_state_by_index(daxa_u32 particle_index) {
+  RIGID_PARTICLE_STATUS_BUFFER rigid_particle_status_buffer = RIGID_PARTICLE_STATUS_BUFFER(p.rigid_particle_status);
+  return rigid_particle_status_buffer.particles[particle_index].status;
+}
+
 // void zeroed_out_rigid_particle_status_by_index(daxa_u32 particle_index) {
 //   RIGID_PARTICLE_STATUS_BUFFER rigid_particle_status_buffer = RIGID_PARTICLE_STATUS_BUFFER(p.rigid_particle_status);
 //   rigid_particle_status_buffer.particles[particle_index].d = MAX_DIST;
