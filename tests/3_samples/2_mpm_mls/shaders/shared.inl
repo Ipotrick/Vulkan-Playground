@@ -136,8 +136,8 @@ struct RigidParticle  {
 struct ParticleCDF  {
   daxa_f32 d;
   daxa_u32 status;
-  // bool negative;
   daxa_f32vec3 n;
+  bool near_boundary;
 };
 
 struct RigidCell {
@@ -302,6 +302,12 @@ RigidParticle get_rigid_particle_by_index(daxa_u32 particle_index) {
 RigidCell get_rigid_cell_by_index(daxa_u32 cell_index) {
   RIGID_CELL_BUFFER rigid_cell_buffer = RIGID_CELL_BUFFER(p.rigid_cells);
   return rigid_cell_buffer.cells[cell_index];
+}
+
+
+daxa_u32 get_rigid_cell_state_by_index(daxa_u32 cell_index) {
+  RIGID_CELL_BUFFER rigid_cell_buffer = RIGID_CELL_BUFFER(p.rigid_cells);
+  return rigid_cell_buffer.cells[cell_index].status;
 }
 
 void zeroed_out_rigid_cell_by_index(daxa_u32 cell_index) {

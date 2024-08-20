@@ -951,11 +951,11 @@ struct App : BaseApp<App>
 
                 const u32 indices[BOX_INDEX_COUNT] = {
                     0, 1, 2, 1, 3, 2, // front
-                    4, 5, 6, 5, 7, 6, // back
-                    0, 1, 5, 0, 5, 4, // left
-                    2, 3, 7, 2, 7, 6, // right
-                    0, 2, 6, 0, 6, 4, // top
-                    1, 3, 7, 1, 7, 5, // bottom
+                    5, 4, 6, 5, 6, 7, // back
+                    4, 0, 6, 0, 2, 6, // left
+                    1, 5, 3, 5, 7, 3, // right
+                    2, 3, 6, 3, 7, 6, // top
+                    4, 5, 0, 5, 1, 0, // bottom
                 };
 
                 daxa_u32 p_count = 0;
