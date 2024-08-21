@@ -45,6 +45,8 @@ void main()
 
     Aabb aabb = Aabb(particle.min, particle.max);
 
+    daxa_f32vec3 p_pos = (aabb.min + aabb.max) * 0.5f;
+
     daxa_i32vec3 base_coord = calculate_particle_grid_pos(aabb, inv_dx);
 
     uvec3 array_grid = uvec3(base_coord);
@@ -54,7 +56,9 @@ void main()
     vec3 p1 = get_second_vertex_by_triangle_index(particle.triangle_id);
     vec3 p2 = get_third_vertex_by_triangle_index(particle.triangle_id);
 
-    mat3 world_to_elem = get_world_to_object_matrix(p0, p1, p2);
+    // mat3 world_to_elem = get_world_to_object_matrix(p0, p1, p2);
+    
+    daxa_f32vec3 normal = get_normal_by_vertices(p0, p1, p2);
 
     // Scatter to grid
     for (uint i = 0; i < 3; ++i)
@@ -70,35 +74,29 @@ void main()
                 }
 
                 vec3 grid_pos = vec3(coord) * dx;
-                vec3 diff = world_to_elem * (grid_pos - p0);
-                bool negative = diff[2] < 0;
-                daxa_f32 dist = abs(diff[2]);
-                bool in_range = false;
 
-                if (0 <= diff[0] && 0 <= diff[1] && diff[0] + diff[1] <= 1)
-                {
-                    in_range = true;
-                }
+                daxa_f32 signed_distance = dot(grid_pos - p_pos, normal);
+                daxa_f32vec3 projected_point = grid_pos - signed_distance * normal;
 
-                if (!in_range)
-                {
+                if(!inside_triangle(projected_point, p0, p1, p2)) {
                     continue;
                 }
 
+                daxa_f32 unsigned_distance = abs(signed_distance);
+                bool negative = signed_distance < 0;
+
                 uint index = (coord.x + coord.y * deref(config).grid_dim.x + coord.z * deref(config).grid_dim.x * deref(config).grid_dim.y);
 
-                dist *= inv_dx;
-
-                if (set_atomic_rigid_cell_distance_by_index(index, dist) > dist)
+                if (set_atomic_rigid_cell_distance_by_index(index, unsigned_distance) > unsigned_distance)
                 {
-                    if (set_atomic_rigid_cell_distance_by_index(index, dist) == dist)
+                    if (set_atomic_rigid_cell_distance_by_index(index, unsigned_distance) == unsigned_distance)
                     {
                         set_atomic_rigid_cell_rigid_id_by_index(index, particle.rigid_id);
                         set_atomic_rigid_cell_rigid_particle_index_by_index(index, pixel_i_x);
                     }
                 }
 
-                set_atomic_rigid_cell_status_by_index(index, particle.rigid_id, negative);
+                set_atomic_rigid_cell_color_by_index(index, particle.rigid_id, negative);
             }
         }
     }
@@ -121,11 +119,9 @@ void main()
     float dx = deref(config).dx;
     float inv_dx = deref(config).inv_dx;
 
-    // zeroed_out_rigid_particle_status_by_index(pixel_i_x);
+    daxa_u32 particle_states = get_rigid_particle_CDF_color_by_index(pixel_i_x);
 
-    daxa_u32 particle_states = get_rigid_particle_status_state_by_index(pixel_i_x);
-
-    ParticleCDF particle_status = ParticleCDF(MAX_DIST, 0, vec3(0), false);
+    ParticleCDF particle_CDF = ParticleCDF(MAX_DIST, particle_states, vec3(0), false);
 
     Aabb aabb = get_aabb_by_index(pixel_i_x);
 
@@ -152,23 +148,22 @@ void main()
 
                 daxa_u32 index = coord.x + coord.y * deref(config).grid_dim.x + coord.z * deref(config).grid_dim.x * deref(config).grid_dim.y;
 
-                daxa_u32 rigid_status = get_rigid_cell_state_by_index(index);
+                daxa_u32 rigid_color = get_rigid_cell_state_by_index(index);
 
-                all_boundaries |= rigid_status & STATE_MASK;
+                all_boundaries |= rigid_color & STATE_MASK;
             }
         }
     }
 
     // Unset states that the particle does not touch
-    particle_states &= (all_boundaries + (all_boundaries >> 1));
+    particle_CDF.color &= (all_boundaries + (all_boundaries >> 1));
 
-    daxa_u32 all_states_to_add = all_boundaries & (~particle_states);
+    daxa_u32 all_states_to_add = all_boundaries & (~particle_CDF.color);
 
     while (all_states_to_add != 0)
     {
         daxa_u32 state_to_add = all_states_to_add & -all_states_to_add;
         all_states_to_add ^= state_to_add;
-
         daxa_f32vec2 weighted_distances = daxa_f32vec2(0, 0);
 
         for (uint i = 0; i < 3; ++i)
@@ -185,36 +180,37 @@ void main()
 
                     daxa_u32 index = coord.x + coord.y * deref(config).grid_dim.x + coord.z * deref(config).grid_dim.x * deref(config).grid_dim.y;
 
-                    daxa_f32vec3 dpos = (daxa_f32vec3(i, j, k) - fx) * dx;
-
-                    RigidCell rigid_cell = get_rigid_cell_by_index(index);
+                    NodeCDF rigid_cell = get_rigid_cell_by_index(index);
 
                     if (rigid_cell.rigid_id == -1)
                     {
                         continue;
                     }
 
-                    daxa_u32 grid_state = (rigid_cell.status >> (rigid_cell.rigid_id * 2)) & 0x3;
-                    daxa_f32 weight = w[i].x * w[j].y * w[k].z;
+                    float weight = w[i].x * w[j].y * w[k].z;
+
+                    daxa_u32 grid_state = rigid_cell.color;
 
                     if ((grid_state & state_to_add) != 0)
                     {
-                        daxa_f32 dist = from_emulated_float(rigid_cell.d);
+                        daxa_f32 d = from_emulated_positive_float(rigid_cell.d);
                         daxa_i32 sign = daxa_i32((grid_state & (state_to_add >> 1)) != 0);
 
-                        weighted_distances[sign] += dist * weight;
-                    }
+                        weighted_distances[sign] += d * weight;
+                    } 
                 }
             }
         }
 
-        if (weighted_distances[0] + weighted_distances[1] > 1e-7)
+        if (weighted_distances[0] + weighted_distances[1] > BOUNDARY_EPSILON)
         {
-            (particle_status.status |= ((state_to_add >> 1) * int(weighted_distances[0] < weighted_distances[1])));
+            particle_CDF.color |=
+            (state_to_add | ((state_to_add >> 1) * int(weighted_distances[0] <
+                                                       weighted_distances[1])));
         }
     }
 
-    if (particle_states != 0)
+    if (particle_CDF.color != 0)
     {
         mat4 XtX = mat4(0);
         vec4 XtY = vec4(0);
@@ -233,50 +229,62 @@ void main()
 
                     daxa_u32 index = coord.x + coord.y * deref(config).grid_dim.x + coord.z * deref(config).grid_dim.x * deref(config).grid_dim.y;
 
-                    daxa_f32vec3 dpos = (daxa_f32vec3(i, j, k) - fx) * dx;
-
-                    RigidCell rigid_cell = get_rigid_cell_by_index(index);
+                    NodeCDF rigid_cell = get_rigid_cell_by_index(index);
 
                     if (rigid_cell.rigid_id == -1)
                     {
                         continue;
                     }
 
-                    particle_status.status |= rigid_cell.status & STATE_MASK;
+                    daxa_f32vec3 dpos = (daxa_f32vec3(i, j, k) - fx) * dx;
 
                     float weight = w[i].x * w[j].y * w[k].z;
 
-                    bool affinity = ((rigid_cell.status >> (rigid_cell.rigid_id * 2)) & 0x2) == 0x2;
+                    daxa_u32 grid_state = rigid_cell.color;
+                    daxa_u32 mask = (grid_state & particle_CDF.color & STATE_MASK) >> 1;
 
-                    // if(affinity) {
-                    bool negative = ((rigid_cell.status >> (rigid_cell.rigid_id * 2)) & 0x1) == 0x1;
-
-                    float dist = from_emulated_float(rigid_cell.d);
+                    float d = from_emulated_positive_float(rigid_cell.d);
 
                     vec4 X = vec4(-dpos, 1);
 
-                    XtX += outer_product_mat4(X, X) * weight;
-                    XtY += vec4(dist * dpos, -dist) * weight;
-                    // }
+                    if(grid_state != 0) {
+                        if ((grid_state & mask) == (particle_CDF.color & mask) &&
+                            (grid_state != 0)) {
+                            // same color
+                            XtX += outerProduct(X, X) * weight;
+                            XtY += vec4(-d * dpos, d) * weight;
+                        } else {
+                            // Only one color different, use negative
+                            daxa_u32 diff = (grid_state & mask) ^ (particle_CDF.color & mask);
+                            if(diff > 0 && 0 == (diff & (diff - 1))) {
+                                XtX += outer_product_mat4(X, X) * weight;
+                                XtY += vec4(d * dpos, -d) * weight;
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        if (abs(determinant(XtX)) > 1e-23)
+        if (abs(determinant(XtX)) > RECONSTRUCTION_GUARD)
         {
-            particle_status.near_boundary = true;
             vec4 r = inverse(XtX) * XtY;
-            particle_status.d = r[3] * dx;
-            particle_status.n = normalize(vec3(r));
+            particle_CDF.near_boundary = true;
+            particle_CDF.d = r[3] * dx;
+            if(length(vec3(r)) > RECONSTRUCTION_GUARD) {
+                particle_CDF.n = normalize(vec3(r));
+            } else {
+                particle_CDF.n = vec3(0);
+            }
         }
         else
         {
-            particle_status.d = 0;
-            particle_status.n = vec3(0);
+            particle_CDF.d = 0;
+            particle_CDF.n = vec3(0);
         }
     }
 
-    set_rigid_particle_status_by_index(pixel_i_x, particle_status);
+    set_rigid_particle_CDF_by_index(pixel_i_x, particle_CDF);
 }
 
 #elif P2G_WATER_COMPUTE_FLAG == 1
@@ -304,7 +312,7 @@ void main()
 
     daxa_f32vec3 w[3];
     daxa_f32vec3 fx;
-    daxa_i32vec3 base_coord = calculate_particle_status(aabb, inv_dx, fx, w);
+    daxa_i32vec3 base_coord = calculate_particle_color(aabb, inv_dx, fx, w);
 
     mat3 affine = particle.C;
 
@@ -370,7 +378,7 @@ void main()
 
     daxa_f32vec3 w[3];
     daxa_f32vec3 fx;
-    daxa_i32vec3 base_coord = calculate_particle_status(aabb, inv_dx, fx, w);
+    daxa_i32vec3 base_coord = calculate_particle_color(aabb, inv_dx, fx, w);
 
     uvec3 array_grid = uvec3(base_coord);
 
@@ -467,7 +475,7 @@ void main()
     Particle particle = get_particle_by_index(pixel_i_x);
 
 #if defined(CHECK_RIGID_BODY_FLAG)
-    ParticleCDF particle_CDF = get_rigid_particle_status_by_index(pixel_i_x);
+    ParticleCDF particle_CDF = get_rigid_particle_CDF_by_index(pixel_i_x);
 #endif // CHECK_RIGID_BODY_FLAG
 
     Aabb aabb = get_aabb_by_index(pixel_i_x);
@@ -503,7 +511,7 @@ void main()
 #if defined(CHECK_RIGID_BODY_FLAG)
                 daxa_u32 grid_state = get_rigid_cell_state_by_index(index);
 
-                daxa_u32 particle_state = get_rigid_particle_status_state_by_index(pixel_i_x);
+                daxa_u32 particle_state = get_rigid_particle_CDF_color_by_index(pixel_i_x);
 
                 daxa_u32 mask = (grid_state & particle_state & STATE_MASK) >> 1;
 
@@ -674,7 +682,8 @@ void main()
     Aabb aabb = get_aabb_by_index(pixel_i_x);
 
 #if defined(CHECK_RIGID_BODY_FLAG)
-    ParticleCDF particle_CDF = get_rigid_particle_status_by_index(pixel_i_x);
+    ParticleCDF particle_CDF = get_rigid_particle_CDF_by_index(pixel_i_x);
+    daxa_u32 rigid_id = -1;
 #endif // CHECK_RIGID_BODY_FLAG
 
     daxa_f32vec3 w[3];
@@ -710,48 +719,38 @@ void main()
                 
                 vel_value = get_cell_by_index(index).v;
 
-                RigidCell rigid_cell = get_rigid_cell_by_index(index);
-                daxa_u32 grid_state = rigid_cell.status;
-                daxa_u32 particle_state = get_rigid_particle_status_state_by_index(pixel_i_x);
+                NodeCDF rigid_cell = get_rigid_cell_by_index(index);
+                daxa_u32 grid_state = rigid_cell.color;
+                daxa_u32 particle_state = get_rigid_particle_CDF_color_by_index(pixel_i_x);
                 daxa_u32 mask = (grid_state & particle_state & STATE_MASK) >> 1;
                 // TODO: this is not working
                 if ((grid_state & mask) != (particle_state & mask)) {
-                    daxa_u32 rigid_id = rigid_cell.rigid_id;
+                    rigid_id = rigid_cell.rigid_id;
                     daxa_u32 rigid_particle_index = rigid_cell.rigid_particle_index;
 
                     if(rigid_id == -1) {
                         continue;
                     }
 
-                    // RigidParticle rigid_particle = get_rigid_particle_by_index(rigid_particle_index);
-                    // daxa_u32 primitive_index = rigid_particle.triangle_id;
-
-                    // // get primitive position and orientation
-                    // vec3 p0 = get_first_vertex_by_triangle_index(rigid_particle.triangle_id);
-                    // vec3 p1 = get_second_vertex_by_triangle_index(rigid_particle.triangle_id);
-                    // vec3 p2 = get_third_vertex_by_triangle_index(rigid_particle.triangle_id);
-
-                    // mat3 world_to_elem = get_world_to_object_matrix(p0, p1, p2);
-
-                    // vec3 p_center = (aabb.min + aabb.max) * 0.5f;
-
-                    // vec3 diff = world_to_elem * (p_center - p0);
-                    // daxa_f32 dist = abs(diff[2]);
-                    // daxa_f32 pushing_force = 0.1f;
-
-                    // if (diff[2] > 0)
-                    // {
-                    //     vel_value = particle.v;
-                    // }
-                    // else
-                    // {
-                    //     vel_value = dot(particle.v, particle_CDF.n) * particle_CDF.n;
-                    //     //+ particle_CDF.n * (dt * dx * pushing_force);
-                    // }
+                    daxa_f32vec3 fake_v = particle.v;
 
                     if(particle_CDF.near_boundary) {
-                        vel_value = (dot(particle.v, particle_CDF.n) * particle_CDF.n) + particle_CDF.n * (dt * dx * 2000.0f);
+                        // vel_value = (dot(particle.v, particle_CDF.n) * particle_CDF.n); //+ particle_CDF.n * (dt * dx * 2000.0f);
+
+                        daxa_f32 normal_norm = dot(particle_CDF.n, fake_v);
+
+                        daxa_f32vec3 tangential_relative_velocity = fake_v - normal_norm * particle_CDF.n;
+
+                        daxa_f32 tangential_norm = length(tangential_relative_velocity);
+
+                        daxa_f32 tangential_scale = max(tangential_norm + min(normal_norm, 0.0f) * FRICTION, 0.0f) / max(1e-23f, tangential_norm);
+
+                        fake_v = tangential_scale * tangential_relative_velocity + max(0.0f, normal_norm) * particle_CDF.n;
+
+                        fake_v += dt * dx * PUSHING_FORCE * particle_CDF.n;
                     }
+                    
+                    vel_value = fake_v;
                 }
 #else
                 vel_value = get_cell_by_index(index).v;
@@ -764,19 +763,22 @@ void main()
         }
     }
 
-// #if defined(CHECK_RIGID_BODY_FLAG)
-//     // Penalty force
-//     for (daxa_u32 i = 0; i < deref(config).rigid_body_count; ++i)
-//     {
-//         daxa_u32 particle_CDF_flags = (particle_CDF.status >> i * 2) & 0x3;
-//         float T = ((particle_CDF_flags & 0x1) == 0x1) ? -1 : 1;
-//         if (T * particle_CDF.d < 0)
-//         {
-//             daxa_f32vec3 penalty_force = 5 * particle_CDF.d * particle_CDF.n;
-//             particle.v += dt * penalty_force / p_mass;
-//         }
-//     }
-// #endif // CHECK_RIGID_BODY_FLAG
+#if defined(CHECK_RIGID_BODY_FLAG)
+    if(particle_CDF.near_boundary) {
+    //   daxa_f32vec3 penalty_force = PENALTY_FORCE * particle_CDF.d * particle_CDF.n;
+    //   particle.v += dt * penalty_force / p_mass;
+
+        if(particle_CDF.d < -0.05 * dx && 
+            particle_CDF.d > -dx * 0.3) {
+            daxa_f32vec3 dv = particle_CDF.d * particle_CDF.n * PENALTY_FORCE;
+            // particle.v += dt * dv / p_mass;
+            particle.v -= dv;
+            if(rigid_id != -1) {
+                // TODO: rigid impulse?
+            }
+        }
+    }
+#endif // CHECK_RIGID_BODY_FLAG
 
     aabb.min += dt * particle.v;
     aabb.max += dt * particle.v;
@@ -812,68 +814,6 @@ void main()
 
     // TODO: optimize this write
     set_particle_by_index(pixel_i_x, particle);
-}
-#elif SPHERE_TRACING_FLAG == 1
-
-// Main compute shader
-layout(local_size_x = MPM_SHADING_COMPUTE_X, local_size_y = MPM_SHADING_COMPUTE_Y, local_size_z = 1) in;
-void main()
-{
-    uvec2 pixel_i = gl_GlobalInvocationID.xy;
-
-    uvec2 frame_dim = uvec2(deref(p.camera).frame_dim);
-
-    if (pixel_i.x >= deref(p.camera).frame_dim.x || pixel_i.y >= deref(p.camera).frame_dim.y)
-        return;
-    // Camera setup
-    daxa_f32mat4x4 inv_view = deref(p.camera).inv_view;
-    daxa_f32mat4x4 inv_proj = deref(p.camera).inv_proj;
-
-    Ray ray =
-        get_ray_from_current_pixel(daxa_f32vec2(pixel_i.xy), daxa_f32vec2(frame_dim), inv_view, inv_proj);
-
-    vec3 col = vec3(0, 0, 0); // Background color
-    daxa_f32 t = 0.0f;
-    daxa_f32 dist = 0.0f;
-
-    bool hit = false;
-    daxa_BufferPtr(GpuInput) config = daxa_BufferPtr(GpuInput)(daxa_id_to_address(p.input_buffer_id));
-
-    while (t < MAX_DIST)
-    {
-        vec3 pos = ray.origin + t * ray.direction;
-        daxa_f32 min_dist = MAX_DIST;
-        for (uint i = 0; i < deref(config).p_count; ++i)
-        {
-            Particle particle = get_particle_by_index(i);
-            Aabb aabb = get_aabb_by_index(i);
-            daxa_f32vec3 p_center = (aabb.min + aabb.max) * 0.5f;
-            daxa_f32 hit_dist = compute_sphere_distance(pos, p_center, PARTICLE_RADIUS);
-            if (hit_dist < min_dist)
-            {
-                min_dist = hit_dist;
-            }
-        }
-
-        if (min_dist < MIN_DIST)
-        {
-            hit = true;
-            break;
-        }
-
-        t += min_dist;
-        if (t >= MAX_DIST)
-        {
-            break;
-        }
-    }
-
-    if (hit)
-    {
-        col = vec3(0.3, 0.8, 1); // Sphere color
-    }
-
-    imageStore(daxa_image2D(p.image_id), ivec2(pixel_i.xy), vec4(col, 1.0));
 }
 
 #else

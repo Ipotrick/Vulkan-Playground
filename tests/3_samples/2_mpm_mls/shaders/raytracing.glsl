@@ -83,6 +83,7 @@ void main()
 
   prd.hit_pos = world_pos;
 
+  uint o = gl_InstanceCustomIndexEXT > 0 ? gl_InstanceCustomIndexEXT - 1 : gl_InstanceCustomIndexEXT;
   uint i = gl_PrimitiveID;
 
   mat3 vertices = get_vertices_by_triangle_index(i);
@@ -90,12 +91,11 @@ void main()
   vec3 u = vertices[1] - vertices[0];
   vec3 v = vertices[2] - vertices[0];
 
+#if TRIANGLE_ORIENTATION == CLOCKWISE
   vec3 normal = normalize(cross(u, v));
-  
-  // Verifica si la normal está orientada correctamente
-  if (dot(-normal, gl_WorldRayDirectionEXT) < 0.0) {
-      normal = -normal; // Invertir la normal si está apuntando en la dirección incorrecta
-  }
+#else
+  vec3 normal = normalize(cross(v, u));
+#endif
 
   // const vec3 barycentrics = vec3(1.0 - attribs.x - attribs.y, attribs.x, attribs.y);
 
@@ -106,7 +106,7 @@ void main()
   daxa_BufferPtr(GpuInput) config = daxa_BufferPtr(GpuInput)(daxa_id_to_address(p.input_buffer_id));
 
   float dotNL = max(dot(normal, L), 0.0);
-  vec3 material_color = RIGID_BODY_COLOR;
+  vec3 material_color = get_rigid_body_color_by_index(o);
 
   vec3 diffuse = dotNL * material_color;
   vec3 specular = vec3(0);

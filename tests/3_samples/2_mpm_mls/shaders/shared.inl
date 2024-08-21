@@ -27,9 +27,7 @@
 // #define NUM_PARTICLES 524288 * QUALITY * QUALITY * QUALITY
 // #define NUM_PARTICLES 512
 // #define NUM_PARTICLES 64
-#define NUM_RIGID_BOXES 1
-#define NUM_RIGID_PARTICLES 32768
-// #define TOTAL_AABB_COUNT (NUM_PARTICLES + NUM_RIGID_BOXES)
+// #define TOTAL_AABB_COUNT (NUM_PARTICLES + NUM_RIGID_BOX_COUNT)
 #define TOTAL_AABB_COUNT NUM_PARTICLES
 
 #define MPM_P2G_COMPUTE_X 64
@@ -59,13 +57,35 @@
 #if defined(CHECK_RIGID_BODY_FLAG)
 #define MAX_RIGID_BODY_COUNT 16
 #define RIGID_BODY_BOX 0
-#define RIGID_BODY_COUNT (RIGID_BODY_BOX + 1)
+#define RIGID_BODY_MAX_ENUM (RIGID_BODY_BOX + 1)
+
+// WARN:
+// #define DAXA_SIMULATION_MANY_RIGID_BODIES
+
+#if defined(DAXA_SIMULATION_MANY_RIGID_BODIES)
+#define NUM_RIGID_BOX_COUNT 3
+#else 
+#define NUM_RIGID_BOX_COUNT 1
+#endif
+#define NUM_RIGID_PARTICLES 32768
 
 #define BOX_VERTEX_COUNT 8
 #define BOX_INDEX_COUNT 36
 #define BOX_TRIANGLE_COUNT 12
 
-#define STATE_MASK 0xAAAAAAAA
+#define STATE_MASK 0xAAAAAAAAU
+#define BOUNDARY_EPSILON 1e-7f
+#define RECONSTRUCTION_GUARD 1e-4f
+
+#define COUNTER_CLOCKWISE 0
+#define CLOCKWISE 1
+#define TRIANGLE_ORIENTATION COUNTER_CLOCKWISE
+
+#define PENALTY_FORCE 1e3f
+#define FRICTION -1.0f
+// #define PUSHING_FORCE 2000.0f
+#define PUSHING_FORCE 0.0f
+
 #endif
 
 struct Camera {
@@ -124,6 +144,7 @@ struct RigidBody  {
   daxa_u32 p_offset;
   daxa_u32 triangle_count;
   daxa_u32 triangle_offset;
+  daxa_f32vec3 color;
 };
 
 struct RigidParticle  {
@@ -135,14 +156,15 @@ struct RigidParticle  {
 
 struct ParticleCDF  {
   daxa_f32 d;
-  daxa_u32 status;
+  daxa_u32 color;
   daxa_f32vec3 n;
   bool near_boundary;
 };
 
-struct RigidCell {
+struct NodeCDF {
   daxa_i32 d;
-  daxa_u32 status;
+  // daxa_f32 d;
+  daxa_u32 color;
   daxa_u32 rigid_id;
   daxa_u32 rigid_particle_index;
 };
@@ -152,8 +174,9 @@ DAXA_DECL_BUFFER_PTR(GpuInput)
 DAXA_DECL_BUFFER_PTR(GpuStatus)
 DAXA_DECL_BUFFER_PTR(Particle)
 #if defined(CHECK_RIGID_BODY_FLAG)
+DAXA_DECL_BUFFER_PTR(RigidBody)
 DAXA_DECL_BUFFER_PTR(RigidParticle)
-DAXA_DECL_BUFFER_PTR(RigidCell)
+DAXA_DECL_BUFFER_PTR(NodeCDF)
 DAXA_DECL_BUFFER_PTR(ParticleCDF)
 #endif
 DAXA_DECL_BUFFER_PTR(Cell)
@@ -168,11 +191,12 @@ struct ComputePush
     daxa_BufferId status_buffer_id;
     daxa_RWBufferPtr(Particle) particles;
 #if defined(CHECK_RIGID_BODY_FLAG)
+    daxa_BufferPtr(RigidBody) rigid_bodies;
     daxa_BufferPtr(daxa_u32) indices;
     daxa_BufferPtr(daxa_f32vec3) vertices;
     daxa_RWBufferPtr(RigidParticle) rigid_particles;
-    daxa_RWBufferPtr(RigidCell) rigid_cells;
-    daxa_RWBufferPtr(ParticleCDF) rigid_particle_status;
+    daxa_RWBufferPtr(NodeCDF) rigid_cells;
+    daxa_RWBufferPtr(ParticleCDF) rigid_particle_color;
 #endif
     daxa_RWBufferPtr(Cell) cells;
     daxa_RWBufferPtr(Aabb) aabbs;
@@ -197,12 +221,13 @@ struct Ray
 #define Tiny_Number 1.e-20f
 #define Small_Number 1.e-12f
 
+const daxa_f32vec3 RIGID_BODY_GREEN_COLOR = daxa_f32vec3(0.5f, 0.8f, 0.3f); // green
+const daxa_f32vec3 RIGID_BODY_RED_COLOR = daxa_f32vec3(0.8f, 0.3f, 0.3f); // red
+const daxa_f32vec3 RIGID_BODY_YELLOW_COLOR = daxa_f32vec3(0.8f, 0.8f, 0.3f); // yellow
+const daxa_f32vec3 RIGID_BODY_PURPLE_COLOR = daxa_f32vec3(0.8f, 0.3f, 0.8f); // purple
+
 
 #if !defined(__cplusplus)
-
-#if defined(CHECK_RIGID_BODY_FLAG)
-const daxa_f32vec3 RIGID_BODY_COLOR = vec3(0.5, 0.8, 0.3);
-#endif
 const daxa_f32vec3 RIGID_BODY_PARTICLE_COLOR = daxa_f32vec3(0.6f, 0.4f, 0.2f);
 const daxa_f32vec3 WATER_HIGH_SPEED_COLOR = daxa_f32vec3(0.3f, 0.5f, 1.0f);
 const daxa_f32vec3 WATER_LOW_SPEED_COLOR = daxa_f32vec3(0.1f, 0.2f, 0.4f);
@@ -221,13 +246,13 @@ DAXA_DECL_PUSH_CONSTANT(ComputePush, p)
 layout(buffer_reference, scalar) buffer PARTICLE_BUFFER {Particle particles[]; }; // Particle buffer
 layout(buffer_reference, scalar) buffer CELL_BUFFER {Cell cells[]; }; // Positions of an object
 layout(buffer_reference, scalar) buffer AABB_BUFFER {Aabb aabbs[]; }; // Particle positions
-layout(buffer_reference, scalar) buffer RIGID_BODY_AABB_IDS {uint rigid_box_ids[]; }; // Positions of an object
 #if defined(CHECK_RIGID_BODY_FLAG)
-layout(buffer_reference, scalar) buffer INDEX_BUFFER {uint indices[]; }; // Positions of an object
-layout(buffer_reference, scalar) buffer VERTEX_BUFFER {vec3 vertices[]; }; // Positions of an object
-layout(buffer_reference, scalar) buffer RIGID_PARTICLE_BUFFER {RigidParticle particles[]; }; // Particle buffer
-layout(buffer_reference, scalar) buffer RIGID_CELL_BUFFER {RigidCell cells[]; }; // Particle buffer
-layout(buffer_reference, scalar) buffer RIGID_PARTICLE_STATUS_BUFFER {ParticleCDF particles[]; }; // Particle buffer
+layout(buffer_reference, scalar) buffer RIGID_BODY_BUFFER {RigidBody rigid_bodies[]; }; // Rigid body information
+layout(buffer_reference, scalar) buffer INDEX_BUFFER {uint indices[]; }; // Rigid body indices info
+layout(buffer_reference, scalar) buffer VERTEX_BUFFER {vec3 vertices[]; }; // Rigid body vertices info
+layout(buffer_reference, scalar) buffer RIGID_PARTICLE_BUFFER {RigidParticle particles[]; }; // Rigid particle buffer
+layout(buffer_reference, scalar) buffer RIGID_CELL_BUFFER {NodeCDF cells[]; }; // Rigid cell buffer
+layout(buffer_reference, scalar) buffer RIGID_PARTICLE_STATUS_BUFFER {ParticleCDF particles[]; }; // Rigid  Particle color buffer
 #endif
 
 daxa_i32
@@ -243,6 +268,18 @@ from_emulated_float(daxa_i32 bits)
    return intBitsToFloat(bits < 0 ? -2147483648 - bits : bits);
 }
 
+daxa_i32
+to_emulated_positive_float(daxa_f32 f)
+{
+   return floatBitsToInt(f);
+}
+
+daxa_f32
+from_emulated_positive_float(daxa_i32 bits)
+{
+   return intBitsToFloat(bits);
+}
+
 
 Particle get_particle_by_index(daxa_u32 particle_index) {
   PARTICLE_BUFFER particle_buffer =
@@ -251,6 +288,19 @@ Particle get_particle_by_index(daxa_u32 particle_index) {
 }
 
 #if defined(CHECK_RIGID_BODY_FLAG)
+RigidBody get_rigid_body_by_index(daxa_u32 rigid_body_index) {
+  RIGID_BODY_BUFFER rigid_body_buffer =
+      RIGID_BODY_BUFFER(p.rigid_bodies);
+  return rigid_body_buffer.rigid_bodies[rigid_body_index];
+}
+
+daxa_f32vec3 get_rigid_body_color_by_index(daxa_u32 rigid_body_index) {
+  RIGID_BODY_BUFFER rigid_body_buffer =
+      RIGID_BODY_BUFFER(p.rigid_bodies);
+  return rigid_body_buffer.rigid_bodies[rigid_body_index].color;
+}
+
+
 uint get_first_index_by_triangle_index(daxa_u32 triangle_index) {
   INDEX_BUFFER index_buffer = INDEX_BUFFER(p.indices);
   return index_buffer.indices[triangle_index * 3];
@@ -299,7 +349,7 @@ RigidParticle get_rigid_particle_by_index(daxa_u32 particle_index) {
   return rigid_particle_buffer.particles[particle_index];
 }
 
-RigidCell get_rigid_cell_by_index(daxa_u32 cell_index) {
+NodeCDF get_rigid_cell_by_index(daxa_u32 cell_index) {
   RIGID_CELL_BUFFER rigid_cell_buffer = RIGID_CELL_BUFFER(p.rigid_cells);
   return rigid_cell_buffer.cells[cell_index];
 }
@@ -307,29 +357,29 @@ RigidCell get_rigid_cell_by_index(daxa_u32 cell_index) {
 
 daxa_u32 get_rigid_cell_state_by_index(daxa_u32 cell_index) {
   RIGID_CELL_BUFFER rigid_cell_buffer = RIGID_CELL_BUFFER(p.rigid_cells);
-  return rigid_cell_buffer.cells[cell_index].status;
+  return rigid_cell_buffer.cells[cell_index].color;
 }
 
 void zeroed_out_rigid_cell_by_index(daxa_u32 cell_index) {
   RIGID_CELL_BUFFER rigid_cell_buffer = RIGID_CELL_BUFFER(p.rigid_cells);
-  rigid_cell_buffer.cells[cell_index].d = to_emulated_float(MAX_DIST);
-  rigid_cell_buffer.cells[cell_index].status = 0;
+  rigid_cell_buffer.cells[cell_index].d = to_emulated_positive_float(MAX_DIST);
+  rigid_cell_buffer.cells[cell_index].color = 0;
   rigid_cell_buffer.cells[cell_index].rigid_id = -1;
   rigid_cell_buffer.cells[cell_index].rigid_particle_index = -1;
 }
 
 daxa_f32 set_atomic_rigid_cell_distance_by_index(daxa_u32 cell_index, daxa_f32 d) {
   RIGID_CELL_BUFFER rigid_cell_buffer = RIGID_CELL_BUFFER(p.rigid_cells);
-  daxa_i32 bits = to_emulated_float(d);
+  daxa_i32 bits = to_emulated_positive_float(d);
   daxa_i32 result = atomicMin(rigid_cell_buffer.cells[cell_index].d, bits);
-  return from_emulated_float(result);
+  return from_emulated_positive_float(result);
 }
 
-daxa_u32 set_atomic_rigid_cell_status_by_index(daxa_u32 cell_index, daxa_u32 rigid_id, bool negative) {
+daxa_u32 set_atomic_rigid_cell_color_by_index(daxa_u32 cell_index, daxa_u32 rigid_id, bool negative) {
   RIGID_CELL_BUFFER rigid_cell_buffer = RIGID_CELL_BUFFER(p.rigid_cells);
   daxa_u32 negative_flag = negative ? 1u : 0u;
   daxa_u32 flags = daxa_u32((2u + negative_flag)) << (rigid_id * 2);
-  return atomicOr(rigid_cell_buffer.cells[cell_index].status, flags);
+  return atomicOr(rigid_cell_buffer.cells[cell_index].color, flags);
 }
 
 daxa_u32 set_atomic_rigid_cell_rigid_id_by_index(daxa_u32 cell_index, daxa_u32 rigid_id) {
@@ -342,26 +392,19 @@ daxa_u32 set_atomic_rigid_cell_rigid_particle_index_by_index(daxa_u32 cell_index
   return atomicExchange(rigid_cell_buffer.cells[cell_index].rigid_particle_index, rigid_particle_index);
 }
 
-ParticleCDF get_rigid_particle_status_by_index(daxa_u32 particle_index) {
-  RIGID_PARTICLE_STATUS_BUFFER rigid_particle_status_buffer = RIGID_PARTICLE_STATUS_BUFFER(p.rigid_particle_status);
-  return rigid_particle_status_buffer.particles[particle_index];
+ParticleCDF get_rigid_particle_CDF_by_index(daxa_u32 particle_index) {
+  RIGID_PARTICLE_STATUS_BUFFER rigid_particle_color_buffer = RIGID_PARTICLE_STATUS_BUFFER(p.rigid_particle_color);
+  return rigid_particle_color_buffer.particles[particle_index];
 }
 
-daxa_u32 get_rigid_particle_status_state_by_index(daxa_u32 particle_index) {
-  RIGID_PARTICLE_STATUS_BUFFER rigid_particle_status_buffer = RIGID_PARTICLE_STATUS_BUFFER(p.rigid_particle_status);
-  return rigid_particle_status_buffer.particles[particle_index].status;
+daxa_u32 get_rigid_particle_CDF_color_by_index(daxa_u32 particle_index) {
+  RIGID_PARTICLE_STATUS_BUFFER rigid_particle_color_buffer = RIGID_PARTICLE_STATUS_BUFFER(p.rigid_particle_color);
+  return rigid_particle_color_buffer.particles[particle_index].color;
 }
 
-// void zeroed_out_rigid_particle_status_by_index(daxa_u32 particle_index) {
-//   RIGID_PARTICLE_STATUS_BUFFER rigid_particle_status_buffer = RIGID_PARTICLE_STATUS_BUFFER(p.rigid_particle_status);
-//   rigid_particle_status_buffer.particles[particle_index].d = MAX_DIST;
-//   rigid_particle_status_buffer.particles[particle_index].status = 0;
-//   rigid_particle_status_buffer.particles[particle_index].n = vec3(0, 0, 0);
-// }
-
-void set_rigid_particle_status_by_index(daxa_u32 particle_index, ParticleCDF status) {
-  RIGID_PARTICLE_STATUS_BUFFER rigid_particle_status_buffer = RIGID_PARTICLE_STATUS_BUFFER(p.rigid_particle_status);
-  rigid_particle_status_buffer.particles[particle_index] = status;
+void set_rigid_particle_CDF_by_index(daxa_u32 particle_index, ParticleCDF color) {
+  RIGID_PARTICLE_STATUS_BUFFER rigid_particle_color_buffer = RIGID_PARTICLE_STATUS_BUFFER(p.rigid_particle_color);
+  rigid_particle_color_buffer.particles[particle_index] = color;
 }
 
 #endif // CHECK_RIGID_BODY_FLAG
@@ -497,7 +540,12 @@ daxa_f32mat3x3 outer_product(daxa_f32vec3 a, daxa_f32vec3 b)
 
 daxa_f32mat4x4 outer_product_mat4(daxa_f32vec4 a, daxa_f32vec4 b)
 {
-    return daxa_f32mat4x4(a.x * b, a.y * b, a.z * b, a.w * b);
+    return daxa_f32mat4x4(
+        a.x * b.x, a.x * b.y, a.x * b.z, a.x * b.w,
+        a.y * b.x, a.y * b.y, a.y * b.z, a.y * b.w,
+        a.z * b.x, a.z * b.y, a.z * b.z, a.z * b.w,
+        a.w * b.x, a.w * b.y, a.w * b.z, a.w * b.w
+    );
 }
 
 daxa_f32 trace(daxa_f32mat3x3 m)
@@ -950,13 +998,33 @@ daxa_f32 hitAabb(const Aabb aabb, const Ray r)
   return t1 > max(t0, 0.0) ? t0 : -1.0;
 }
 
-// Credits: https://github.com/taichi-dev/taichi/blob/c5af2f92bc481e99cac2bc548dfa98e188bbcc44/include/taichi/geometry/mesh.h
-// Note: assuming world origin aligns with elem.v[0]
-daxa_f32mat3x3 get_world_to_object_matrix(daxa_f32vec3 v0, daxa_f32vec3 v1, daxa_f32vec3 v2) {
-  daxa_f32vec3 u = v1 - v0;
-  daxa_f32vec3 v = v2 - v0;
-  daxa_f32vec3 w = normalize(cross(u, v));
-  return inverse(daxa_f32mat3x3(u, v, w));
+
+
+bool inside_triangle(daxa_f32vec3 p, daxa_f32vec3 v0, daxa_f32vec3 v1, daxa_f32vec3 v2) {
+  // determine the barycentric coordinates to determine if the point is inside the triangle
+  // from: https://gamedev.stackexchange.com/questions/23743/whats-the-most-efficient-way-to-find-barycentric-coordinates
+  daxa_f32vec3 ab = v1 - v0;
+  daxa_f32vec3 ac = v2 - v0;
+  daxa_f32vec3 ap = p - v0;
+
+  daxa_f32 d00 = dot(ab, ab);
+  daxa_f32 d01 = dot(ab, ac);
+  daxa_f32 d11 = dot(ac, ac);
+  daxa_f32 d20 = dot(ap, ab);
+  daxa_f32 d21 = dot(ap, ac);
+  daxa_f32 denom = d00 * d11 - d01 * d01;
+
+  daxa_f32 alpha = (d11 * d20 - d01 * d21) / denom;
+  daxa_f32 beta = (d00 * d21 - d01 * d20) / denom;
+  daxa_f32 gamma = 1.0 - alpha - beta;
+
+  // slight tolerance to avoid discarding valid points on the edge
+  // this might not bee needed at all
+  // Todo: reconsider this
+  daxa_f32 min = -0.0000001;
+  daxa_f32 max = 1.0000001;
+
+  return min <= alpha && alpha <= max && min <= beta && beta <= max && min <= gamma && gamma <= max;
 }
 
 
@@ -983,4 +1051,146 @@ inline daxa_f32vec3 normalize(const daxa_f32vec3 &v) {
     return {v.x / len, v.y / len, v.z / len};
 }
 
+#define float_to_int(f) (*reinterpret_cast<const int*>(&static_cast<const float&>(f)))
+
+#define int_to_float(i) (*reinterpret_cast<const float*>(&static_cast<const int&>(i)))
+
+daxa_i32
+to_emulated_float(daxa_f32 f)
+{
+   daxa_i32 bits = float_to_int(f);
+   return f < 0 ? -2147483648 - bits : bits;
+}
+
+daxa_f32
+from_emulated_float(daxa_i32 bits)
+{
+   return int_to_float(bits < 0 ? -2147483648 - bits : bits);
+}
+
+daxa_i32
+to_emulated_positive_float(daxa_f32 f)
+{
+   return float_to_int(f);
+}
+
+daxa_f32
+from_emulated_positive_float(daxa_i32 bits)
+{
+   return int_to_float(bits);
+}
+
+
+// support for addition, subtraction, multiplication, division
+inline daxa_f32vec3 operator+(daxa_f32vec3 a, daxa_f32vec3 b)
+{
+    return {a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+inline daxa_f32vec3 operator-(daxa_f32vec3 a, daxa_f32vec3 b)
+{
+    return {a.x - b.x, a.y - b.y, a.z - b.z};
+}
+
+inline daxa_f32vec3 operator*(daxa_f32vec3 a, daxa_f32vec3 b)
+{
+    return {a.x * b.x, a.y * b.y, a.z * b.z};
+}
+
+inline daxa_f32vec3 operator/(daxa_f32vec3 a, daxa_f32vec3 b)
+{
+    return {a.x / b.x, a.y / b.y, a.z / b.z};
+}
+
+inline daxa_f32vec3 operator+(daxa_f32vec3 a, daxa_f32 b)
+{
+    return {a.x + b, a.y + b, a.z + b};
+}
+
+inline daxa_f32vec3 operator-(daxa_f32vec3 a, daxa_f32 b)
+{
+    return {a.x - b, a.y - b, a.z - b};
+}
+
+inline daxa_f32vec3 operator*(daxa_f32vec3 a, daxa_f32 b)
+{
+    return {a.x * b, a.y * b, a.z * b};
+}
+
+inline daxa_f32vec3 operator/(daxa_f32vec3 a, daxa_f32 b)
+{
+    return {a.x / b, a.y / b, a.z / b};
+}
+
+inline daxa_f32vec3 cross(const daxa_f32vec3 &a, const daxa_f32vec3 &b)
+{
+    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+}
+
+inline daxa_f32mat3x3 inverse(const daxa_f32mat3x3 &m)
+{
+    daxa_f32 a00 = m.y.y * m.z.z - m.y.z * m.z.y;
+    daxa_f32 a01 = m.y.x * m.z.z - m.y.z * m.z.x;
+    daxa_f32 a02 = m.y.x * m.z.y - m.y.y * m.z.x;
+    daxa_f32 a10 = m.x.y * m.z.z - m.x.z * m.z.y;
+    daxa_f32 a11 = m.x.x * m.z.z - m.x.z * m.z.x;
+    daxa_f32 a12 = m.x.x * m.z.y - m.x.y * m.z.x;
+    daxa_f32 a20 = m.x.y * m.y.z - m.x.z * m.y.y;
+    daxa_f32 a21 = m.x.x * m.y.z - m.x.z * m.y.x;
+    daxa_f32 a22 = m.x.x * m.y.y - m.x.y * m.y.x;
+
+    daxa_f32 det = m.x.x * a00 - m.x.y * a01 + m.x.z * a02;
+    daxa_f32 inv_det = 1.0f / det;
+
+    return daxa_f32mat3x3(daxa_f32vec3(a00 * inv_det, -a10 * inv_det, a20 * inv_det),
+                          daxa_f32vec3(-a01 * inv_det, a11 * inv_det, -a21 * inv_det),
+                          daxa_f32vec3(a02 * inv_det, -a12 * inv_det, a22 * inv_det));
+}
+
 #endif // GLSL & HLSL
+
+
+
+#if defined(CHECK_RIGID_BODY_FLAG)
+// Credits: https://github.com/taichi-dev/taichi/blob/c5af2f92bc481e99cac2bc548dfa98e188bbcc44/include/taichi/geometry/mesh.h
+// Note: assuming world origin aligns with elem.v[0]
+daxa_f32mat3x3 get_world_to_object_matrix(daxa_f32vec3 v0, daxa_f32vec3 v1, daxa_f32vec3 v2) {
+  daxa_f32vec3 u = v1 - v0;
+  daxa_f32vec3 v = v2 - v0;
+#if TRIANGLE_ORIENTATION == CLOCKWISE
+  daxa_f32vec3 w = normalize(cross(v, u));
+#else
+  daxa_f32vec3 w = normalize(cross(u, v));
+#endif
+  return inverse(daxa_f32mat3x3(u, v, w));
+}
+
+
+
+daxa_f32vec3 get_normal_by_vertices(daxa_f32vec3 v0, daxa_f32vec3 v1, daxa_f32vec3 v2) {
+  daxa_f32vec3 u = v1 - v0;
+  daxa_f32vec3 v = v2 - v0;
+#if TRIANGLE_ORIENTATION == CLOCKWISE
+  return normalize(cross(v, u));
+#else
+  return normalize(cross(u, v));
+#endif  
+}
+
+
+#if defined(GL_core_profile) // GLSL
+struct InterpolatedParticleData {
+  daxa_u32 color;
+  daxa_f32 weighted_tags[MAX_RIGID_BODY_COUNT];
+  daxa_f32mat4x4 weighted_matrix;
+  daxa_f32vec4 weighted_vector;
+};
+
+void interpolate_color(inout InterpolatedParticleData data, NodeCDF node_cdf, daxa_f32 weight) {
+  data.color |= node_cdf.color;
+
+
+}
+#endif // GLSL
+
+#endif // CHECK_RIGID_BODY_FLAG
