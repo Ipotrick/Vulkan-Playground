@@ -55,7 +55,7 @@
 
 
 #if defined(CHECK_RIGID_BODY_FLAG)
-#define MAX_RIGID_BODY_COUNT 16
+#define MAX_RIGID_BODY_COUNT 16U
 #define RIGID_BODY_BOX 0
 #define RIGID_BODY_MAX_ENUM (RIGID_BODY_BOX + 1)
 
@@ -73,16 +73,17 @@
 #define BOX_INDEX_COUNT 36
 #define BOX_TRIANGLE_COUNT 12
 
-#define STATE_MASK 0xAAAAAAAAU
-#define BOUNDARY_EPSILON 1e-7f
-#define RECONSTRUCTION_GUARD 1e-4f
+// #define STATE_MASK 0xAAAAAAAAU
+// #define SIGN_MASK 0x55555555U
+#define TAG_DISPLACEMENT MAX_RIGID_BODY_COUNT
+#define RECONSTRUCTION_GUARD 1e-10f
 
 #define COUNTER_CLOCKWISE 0
 #define CLOCKWISE 1
 #define TRIANGLE_ORIENTATION COUNTER_CLOCKWISE
 
 #define PENALTY_FORCE 1e3f
-#define FRICTION -1.0f
+#define FRICTION -2.0f
 // #define PUSHING_FORCE 2000.0f
 #define PUSHING_FORCE 0.0f
 
@@ -155,14 +156,14 @@ struct RigidParticle  {
 };
 
 struct ParticleCDF  {
-  daxa_f32 d;
+  daxa_f32 distance;
   daxa_u32 color;
-  daxa_f32vec3 n;
-  bool near_boundary;
+  daxa_u32 difference;
+  daxa_f32vec3 normal;
 };
 
 struct NodeCDF {
-  daxa_i32 d;
+  daxa_i32 unsigned_distance;
   // daxa_f32 d;
   daxa_u32 color;
   daxa_u32 rigid_id;
@@ -349,36 +350,36 @@ RigidParticle get_rigid_particle_by_index(daxa_u32 particle_index) {
   return rigid_particle_buffer.particles[particle_index];
 }
 
-NodeCDF get_rigid_cell_by_index(daxa_u32 cell_index) {
+NodeCDF get_node_cdf_by_index(daxa_u32 cell_index) {
   RIGID_CELL_BUFFER rigid_cell_buffer = RIGID_CELL_BUFFER(p.rigid_cells);
   return rigid_cell_buffer.cells[cell_index];
 }
 
 
-daxa_u32 get_rigid_cell_state_by_index(daxa_u32 cell_index) {
+daxa_u32 get_node_cdf_color_by_index(daxa_u32 cell_index) {
   RIGID_CELL_BUFFER rigid_cell_buffer = RIGID_CELL_BUFFER(p.rigid_cells);
   return rigid_cell_buffer.cells[cell_index].color;
 }
 
-void zeroed_out_rigid_cell_by_index(daxa_u32 cell_index) {
+void zeroed_out_node_cdf_by_index(daxa_u32 cell_index) {
   RIGID_CELL_BUFFER rigid_cell_buffer = RIGID_CELL_BUFFER(p.rigid_cells);
-  rigid_cell_buffer.cells[cell_index].d = to_emulated_positive_float(MAX_DIST);
+  rigid_cell_buffer.cells[cell_index].unsigned_distance = to_emulated_positive_float(MAX_DIST);
   rigid_cell_buffer.cells[cell_index].color = 0;
   rigid_cell_buffer.cells[cell_index].rigid_id = -1;
   rigid_cell_buffer.cells[cell_index].rigid_particle_index = -1;
 }
 
-daxa_f32 set_atomic_rigid_cell_distance_by_index(daxa_u32 cell_index, daxa_f32 d) {
+daxa_f32 set_atomic_rigid_cell_distance_by_index(daxa_u32 cell_index, daxa_f32 unsigned_distance) {
   RIGID_CELL_BUFFER rigid_cell_buffer = RIGID_CELL_BUFFER(p.rigid_cells);
-  daxa_i32 bits = to_emulated_positive_float(d);
-  daxa_i32 result = atomicMin(rigid_cell_buffer.cells[cell_index].d, bits);
+  daxa_i32 bits = to_emulated_positive_float(unsigned_distance);
+  daxa_i32 result = atomicMin(rigid_cell_buffer.cells[cell_index].unsigned_distance, bits);
   return from_emulated_positive_float(result);
 }
 
 daxa_u32 set_atomic_rigid_cell_color_by_index(daxa_u32 cell_index, daxa_u32 rigid_id, bool negative) {
   RIGID_CELL_BUFFER rigid_cell_buffer = RIGID_CELL_BUFFER(p.rigid_cells);
   daxa_u32 negative_flag = negative ? 1u : 0u;
-  daxa_u32 flags = daxa_u32((2u + negative_flag)) << (rigid_id * 2);
+  daxa_u32 flags = (negative_flag << (TAG_DISPLACEMENT + rigid_id)) | (1u << rigid_id);
   return atomicOr(rigid_cell_buffer.cells[cell_index].color, flags);
 }
 
@@ -390,6 +391,13 @@ daxa_u32 set_atomic_rigid_cell_rigid_id_by_index(daxa_u32 cell_index, daxa_u32 r
 daxa_u32 set_atomic_rigid_cell_rigid_particle_index_by_index(daxa_u32 cell_index, daxa_u32 rigid_particle_index) {
   RIGID_CELL_BUFFER rigid_cell_buffer = RIGID_CELL_BUFFER(p.rigid_cells);
   return atomicExchange(rigid_cell_buffer.cells[cell_index].rigid_particle_index, rigid_particle_index);
+}
+
+void particle_CDF_init(inout ParticleCDF particle_CDF) {
+  particle_CDF.distance = MAX_DIST;
+  particle_CDF.color = 0;
+  particle_CDF.difference = 0;
+  particle_CDF.normal = vec3(0, 0, 0);
 }
 
 ParticleCDF get_rigid_particle_CDF_by_index(daxa_u32 particle_index) {
@@ -1186,11 +1194,129 @@ struct InterpolatedParticleData {
   daxa_f32vec4 weighted_vector;
 };
 
-void interpolate_color(inout InterpolatedParticleData data, NodeCDF node_cdf, daxa_f32 weight) {
-  data.color |= node_cdf.color;
-
-
+void interpolated_particle_data_init(inout InterpolatedParticleData data) {
+  data.color = 0;
+  for(int i = 0; i < MAX_RIGID_BODY_COUNT; i++) {
+    data.weighted_tags[i] = 0.0f;
+  }
+  data.weighted_matrix = daxa_f32mat4x4(0.0f);
+  data.weighted_vector = daxa_f32vec4(0.0f);
 }
+
+void cdf_update_tag(inout daxa_u32 color, daxa_u32 rigid_body_index, daxa_f32 signed_distance) {
+  daxa_u32 tag = signed_distance < 0.0f ? 0x1 : 0x0;
+  daxa_u32 offset = rigid_body_index + TAG_DISPLACEMENT;
+  color = color & ~(1u << offset) | (tag << offset);
+}
+
+bool cdf_get_tag(daxa_u32 color, daxa_u32 rigid_body_index) {
+  return ((color >> (TAG_DISPLACEMENT + rigid_body_index)) & 0x1) != 0;
+}
+
+bool cdf_get_affinity(daxa_u32 color, daxa_u32 rigid_body_index) {
+  return ((color >> (rigid_body_index)) & 0x1) != 0;
+}
+
+daxa_u32 cdf_get_affinities(daxa_u32 color) {
+  return ((color << TAG_DISPLACEMENT) >> TAG_DISPLACEMENT);
+}
+
+daxa_u32 cdf_get_tags(daxa_u32 color) {
+  return (color >> TAG_DISPLACEMENT);
+}
+
+bool cdf_is_compatible(daxa_u32 color1, daxa_u32 color2) {
+  daxa_u32 shared_affinities = cdf_get_affinities(color1) & cdf_get_affinities(color2);
+  return (shared_affinities & cdf_get_tags(color1)) == (shared_affinities & cdf_get_tags(color2));
+}
+
+
+daxa_f32 node_cdf_signed_distance(NodeCDF node_cdf, daxa_u32 rigid_body_index) {
+  daxa_f32 sign = cdf_get_tag(node_cdf.color, rigid_body_index) ? 1.0f : -1.0f;
+  return sign * to_emulated_positive_float(node_cdf.unsigned_distance);
+}
+
+void interpolate_color(inout InterpolatedParticleData data, NodeCDF node_cdf, daxa_f32 weight, daxa_u32 rigid_body_count) {
+  data.color |= cdf_get_affinities(node_cdf.color);
+
+  rigid_body_count = min(rigid_body_count, MAX_RIGID_BODY_COUNT);
+
+  for(daxa_u32 r = 0; r < rigid_body_count; r++) {
+    daxa_f32 signed_distance = node_cdf_signed_distance(node_cdf, r);
+    data.weighted_tags[r] += signed_distance * weight;
+  }
+}
+
+
+// turn the weighted tags into the proper tags of the particle
+void interpolated_particle_data_compute_tags(inout InterpolatedParticleData data, daxa_u32 rigid_body_count) {
+  for(daxa_u32 r = 0; r < rigid_body_count; r++) {
+    daxa_f32 weighted_tag = data.weighted_tags[r];
+    cdf_update_tag(data.color, r, weighted_tag);
+  }
+}
+
+
+void interpolate_distance_and_normal(inout InterpolatedParticleData data, NodeCDF node_cdf, daxa_f32 weight, daxa_f32vec3 dpos) {
+  if(cdf_get_affinities(node_cdf.color) == 0) {
+    return;
+  }
+
+  if(node_cdf.rigid_id == -1) {
+    return;
+  }
+
+  bool particle_tag = cdf_get_tag(data.color, node_cdf.rigid_id);
+  bool node_tag = cdf_get_tag(node_cdf.color, node_cdf.rigid_id);
+  
+  daxa_f32 sign = (particle_tag == node_tag) ? 1.0f : -1.0f;
+
+  daxa_f32 signed_distance = sign * to_emulated_positive_float(node_cdf.unsigned_distance);
+  daxa_f32 weight_signed_distance = weight * signed_distance;
+  daxa_f32mat3x3 outer_product = outer_product(dpos, dpos);
+
+  data.weighted_vector += daxa_f32vec4(1.0f, dpos);
+  data.weighted_matrix += daxa_f32mat4x4(1.0f, dpos.x , dpos.y, dpos.z,
+                                         dpos.x, outer_product[0],
+                                         dpos.y, outer_product[1],
+                                         dpos.z, outer_product[2]);
+  
+}
+
+
+ParticleCDF interpolated_particle_data_compute_particle_cdf(InterpolatedParticleData data, daxa_f32 dx) {
+  ParticleCDF particle_cdf;
+  particle_CDF_init(particle_cdf);
+  if (abs(determinant(data.weighted_matrix)) > RECONSTRUCTION_GUARD)
+  {
+    daxa_f32vec4 result = inverse(data.weighted_matrix) * data.weighted_vector;
+
+    particle_cdf.color = data.color;
+    particle_cdf.distance = result.x * dx;
+    particle_cdf.normal = normalize(result.yzw);
+  }
+  return particle_cdf;
+}
+
+ParticleCDF particle_CDF_check_and_correct_penetration(ParticleCDF particle_cdf, daxa_u32 previous_color) {
+  daxa_u32 shared_affinities = cdf_get_affinities(particle_cdf.color) & cdf_get_affinities(previous_color);
+  daxa_u32 difference = (shared_affinities & cdf_get_tags(particle_cdf.color)) ^ (shared_affinities & cdf_get_tags(previous_color));
+
+  bool penetration = difference != 0;
+
+  ParticleCDF new_particle_cdf = particle_cdf;
+
+  if (penetration)
+  {
+    new_particle_cdf.color = ((cdf_get_tags(particle_cdf.color)  ^ difference) << TAG_DISPLACEMENT) | cdf_get_affinities(particle_cdf.color);
+    new_particle_cdf.difference = difference;
+    new_particle_cdf.distance = -new_particle_cdf.distance;
+    new_particle_cdf.normal = -new_particle_cdf.normal;
+  }
+
+  return new_particle_cdf;
+}
+
 #endif // GLSL
 
 #endif // CHECK_RIGID_BODY_FLAG

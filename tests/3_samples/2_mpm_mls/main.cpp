@@ -71,9 +71,16 @@ struct App : BaseApp<App>
 {
     bool my_toggle = true;
     bool simulate = false;
+#if defined(CHECK_RIGID_BODY_FLAG)
     bool show_rigid_particles = false;
+    bool show_rigid_bodies = true;
+#endif // CHECK_RIGID_BODY_FLAG
+    u32 sim_loop_count = SIM_LOOP_COUNT;
 #if defined(_DEBUG)
     bool print_rigid_cells = false;
+    bool stop_when_detected = false;
+    bool slow_down = false;
+    bool print_CDF_cell = false;
 #endif // _DEBUG
     camera cam = {};
     daxa::TlasId tlas = {};
@@ -153,26 +160,6 @@ struct App : BaseApp<App>
 #endif
             .push_constant_size = sizeof(ComputePush),
             .name = "rasterize_rigid_boundary_compute_pipeline",
-        }).value();
-    }();
-    // clang-format on
-
-    // clang-format off
-    std::shared_ptr<daxa::ComputePipeline> gather_CDF_compute_pipeline = [this]() {
-        update_virtual_shader();
-        return pipeline_manager.add_compute_pipeline({
-#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
-            .shader_info = {
-                .source = daxa::ShaderFile{"compute.glsl"}, 
-                .compile_options = {
-                    .defines =  std::vector{daxa::ShaderDefine{"GATHER_CDF_COMPUTE_FLAG", "1"}},
-                }
-            },
-#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
-            .shader_info = {.source = daxa::ShaderFile{"compute.slang"}, .compile_options = {.entry_point = "entry_MPM_gather_CDF_boundary"}},
-#endif
-            .push_constant_size = sizeof(ComputePush),
-            .name = "gather_CDF_compute_pipeline",
         }).value();
     }();
     // clang-format on
@@ -537,6 +524,7 @@ struct App : BaseApp<App>
     
     daxa::BufferClearInfo clear_info = {grid_buffer, 0, grid_size, 0};
 
+    daxa::usize aabb_size = TOTAL_AABB_COUNT * sizeof(Aabb);
     
 #if defined(CHECK_RIGID_BODY_FLAG)
     daxa::usize rigid_grid_size = GRID_SIZE * sizeof(NodeCDF);
@@ -560,13 +548,26 @@ struct App : BaseApp<App>
         .name = ("staging_rigid_particles_buffer"),
     });
     daxa::TaskBuffer task_staging_particle_CDF_buffer{{.initial_buffers = {.buffers = std::array{_staging_particle_CDF_buffer}}, .name = "staging_particle_CDF_buffer_task"}};
+
+    daxa::BufferId _staging_particles_buffer = device.create_buffer(daxa::BufferInfo{
+        .size = particles_size,
+        .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_SEQUENTIAL_WRITE,
+        .name = "stating_particles_buffer",
+    });
+    daxa::TaskBuffer task_staging_particles_buffer{{.initial_buffers = {.buffers = std::array{_staging_particles_buffer}}, .name = "stating_particles_buffer_task"}};
+
+    daxa::BufferId _staging_aabb_buffer = device.create_buffer(daxa::BufferInfo{
+        .size = aabb_size,
+        .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_RANDOM,
+        .name = "staging_aabb_buffer",
+    });
+    daxa::TaskBuffer task_staging_aabb_buffer{{.initial_buffers = {.buffers = std::array{_staging_aabb_buffer}}, .name = "staging_aabb_buffer_task"}};
 #endif // _DEBUG
     
     // daxa::BufferClearInfo clear_rigid_info = {rigid_grid_buffer, 0, rigid_grid_size, 0};
 #endif // CHECK_RIGID_BODY_FLAG
 
 
-    daxa::usize aabb_size = TOTAL_AABB_COUNT * sizeof(Aabb);
     daxa::BufferId aabb_buffer = device.create_buffer(daxa::BufferInfo{
         .size = aabb_size,
         .name = "aabb_buffer",
@@ -714,6 +715,8 @@ struct App : BaseApp<App>
 #if defined(_DEBUG)
         device.destroy_buffer(staging_rigid_grid_buffer);
         device.destroy_buffer(_staging_particle_CDF_buffer);
+        device.destroy_buffer(_staging_particles_buffer);
+        device.destroy_buffer(_staging_aabb_buffer);
 #endif // _DEBUG
         device.destroy_buffer(particle_CDF_buffer);
 #endif // CHECK_RIGID_BODY_FLAG
@@ -802,11 +805,22 @@ struct App : BaseApp<App>
     void on_key(i32 key, i32 action) {
         if(key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
             simulate = !simulate;
+#if defined(CHECK_RIGID_BODY_FLAG)            
         } else if(key == GLFW_KEY_R && action == GLFW_PRESS) {
             show_rigid_particles = !show_rigid_particles;
+        } else if(key == GLFW_KEY_T && action == GLFW_PRESS) {
+            show_rigid_bodies = !show_rigid_bodies;
+#endif
 #if defined(_DEBUG)
         } else if(key == GLFW_KEY_P && action == GLFW_PRESS) {
-            print_rigid_cells = true;
+            print_rigid_cells = !print_rigid_cells;
+        } else if(key == GLFW_KEY_O && action == GLFW_PRESS) {
+            stop_when_detected = !stop_when_detected;
+        } else if(key == GLFW_KEY_I && action == GLFW_PRESS) {
+            slow_down = !slow_down;
+            sim_loop_count = slow_down ? 1 : SIM_LOOP_COUNT;
+        } else if(key == GLFW_KEY_U && action == GLFW_PRESS) {
+            print_CDF_cell = true;
 #endif // _DEBUG
         }
     }
@@ -1122,9 +1136,7 @@ struct App : BaseApp<App>
                         daxa_f32vec3 v1 = rigid_body_vertex_ptr[indices[index_offset + 1]];
                         daxa_f32vec3 v2 = rigid_body_vertex_ptr[indices[index_offset + 2]];
 
-                        daxa_f32vec3 u = v1 - v0;
-                        daxa_f32vec3 v = v2 - v0;
-                        daxa_f32vec3 normal = normalize(cross(u, v));
+                        daxa_f32vec3 normal = get_normal_by_vertices(v0, v1, v2);
 
                         std::cout << "  Triangle " << j << ": indices " << indices[index_offset] << " " << indices[index_offset + 1] << " " << indices[index_offset + 2] << " normal:" << normal.x << " " << normal.y << " " << normal.z << std::endl;
 
@@ -1389,43 +1401,6 @@ struct App : BaseApp<App>
             },
             .name = ("Rigid Boundary (Compute)"),
         });
-        sim_task_graph.add_task({
-            .attachments = {
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particle_CDF_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_grid_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_camera_buffer),
-                daxa::inl_attachment(daxa::TaskImageAccess::COMPUTE_SHADER_STORAGE_WRITE_ONLY, task_render_image),
-            },
-            .task = [this](daxa::TaskInterface ti)
-            {
-                ti.recorder.set_pipeline(*gather_CDF_compute_pipeline);
-                ti.recorder.push_constant(ComputePush{
-                    .image_id = render_image.default_view(),
-                    .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
-                    .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
-                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
-                    .tlas = tlas,
-                });
-                ti.recorder.dispatch({(gpu_input.p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
-            },
-            .name = ("Gather CDF (Compute)"),
-        });
 #endif // CHECK_RIGID_BODY_FLAG
         sim_task_graph.add_task({
             .attachments = {
@@ -1606,7 +1581,7 @@ struct App : BaseApp<App>
     }
 
     void update_sim() {
-        for(int i = 0; i < SIM_LOOP_COUNT; i++) {
+        for(u32 i = 0; i < sim_loop_count; i++) {
             _sim_task_graph.execute({});
         }
         device.wait_idle();
@@ -1626,9 +1601,9 @@ struct App : BaseApp<App>
         }
 
         if(show_rigid_particles) {
-            geometry[1].count = gpu_input.r_p_count;
+            geometry.at(1).count = gpu_input.r_p_count;
         } else {
-            geometry[1].count = 0;
+            geometry.at(1).count = 0;
         }
 #endif
         blas_build_info = daxa::BlasBuildInfo{
@@ -1646,6 +1621,11 @@ struct App : BaseApp<App>
 
         blas_build_info.dst_blas = blas;
 #if defined(CHECK_RIGID_BODY_FLAG)
+        if(show_rigid_bodies) {
+            rigid_body_geometries.at(0).at(0).count = BOX_TRIANGLE_COUNT;
+        } else {
+            rigid_body_geometries.at(0).at(0).count = 0;
+        }
         blas_build_info_rigid = daxa::BlasBuildInfo{
             .flags = daxa::AccelerationStructureBuildFlagBits::PREFER_FAST_BUILD, // Is also default
             .dst_blas = {},                                                       // Ignored in get_acceleration_structure_build_sizes.       // Is also default
@@ -1947,15 +1927,19 @@ struct App : BaseApp<App>
         download_info_graph.use_persistent_buffer(task_staging_rigid_grid_buffer);
         download_info_graph.use_persistent_buffer(task_rigid_particles_buffer);
         download_info_graph.use_persistent_buffer(task_staging_particle_CDF_buffer);
+        download_info_graph.use_persistent_buffer(task_staging_particles_buffer);
+        download_info_graph.use_persistent_buffer(task_staging_aabb_buffer);
 #endif
 
         download_info_graph.add_task({
             .attachments = {
 #if defined(CHECK_RIGID_BODY_FLAG)
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_rigid_grid_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_WRITE, task_staging_rigid_grid_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_staging_rigid_grid_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_rigid_particles_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_staging_particle_CDF_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_staging_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_staging_aabb_buffer),
 #endif
             },
             .task = [this](daxa::TaskInterface ti)
@@ -1970,6 +1954,16 @@ struct App : BaseApp<App>
                     .src_buffer = particle_CDF_buffer,
                     .dst_buffer = _staging_particle_CDF_buffer,
                     .size = rigid_particles_size,
+                });
+                ti.recorder.copy_buffer_to_buffer({
+                    .src_buffer = particles_buffer,
+                    .dst_buffer = _staging_particles_buffer,
+                    .size = particles_size,
+                });
+                ti.recorder.copy_buffer_to_buffer({
+                    .src_buffer = aabb_buffer,
+                    .dst_buffer = _staging_aabb_buffer,
+                    .size = aabb_size,
                 });
 #endif
             },
@@ -1986,71 +1980,87 @@ struct App : BaseApp<App>
         device.wait_idle();
 
 #if defined(CHECK_RIGID_BODY_FLAG)
-        // TODO: print grid cells here
-        auto rigid_cells = device.get_host_address_as<NodeCDF>(staging_rigid_grid_buffer).value();
-        
-        std::cout << "Printing rigid cells" << std::endl;
+        std::cout << "Printing ... frame " << gpu_input.frame_number << std::endl;
 
-        daxa_u32 rigid_cells_count = 0;
+        if(print_CDF_cell) {
+            print_CDF_cell = false;
+            auto rigid_cells = device.get_host_address_as<NodeCDF>(staging_rigid_grid_buffer).value();
+            
+            std::cout << "Printing rigid cells" << std::endl;
 
-        for(int i = 0; i < GRID_SIZE; i++) {
-            auto cell = rigid_cells[i];
-            // get x, y, z from i where i = x + y * GRID_DIM + z * GRID_DIM * GRID_DIM
-            auto x = i % GRID_DIM;
-            auto y = (i / GRID_DIM) % GRID_DIM;
-            auto z = i / (GRID_DIM * GRID_DIM);
-            daxa_f32 d = from_emulated_positive_float(cell.d);
-            // daxa_f32 d = cell.d;
-            if(d < MAX_DIST && cell.color != 0) {
-                std::cout << "      Cell " << x << ", " << y << ", " << z << " has distance " << d << ", Rigid id: " << cell.rigid_id << ", rigid_particle_id: " << cell.rigid_particle_index << std::endl;
-                ++rigid_cells_count;
+            daxa_u32 rigid_cells_count = 0;
 
-                for(int j = 0; j < MAX_RIGID_BODY_COUNT; j++) {
-                    auto rigid_body_flags = (cell.color & (0x3u << (j * 2))) >> (j * 2);
-                    auto affinity = rigid_body_flags & 0x2;
-                    auto negative = rigid_body_flags & 0x1;
-                    if(affinity) {
-                        auto negative_string = negative ? "negative" : "positive";
-                        std::cout << "        Rigid body " << j << ", " << negative_string  << std::endl;
+            for(int i = 0; i < GRID_SIZE; i++) {
+                auto cell = rigid_cells[i];
+                // get x, y, z from i where i = x + y * GRID_DIM + z * GRID_DIM * GRID_DIM
+                auto x = i % GRID_DIM;
+                auto y = (i / GRID_DIM) % GRID_DIM;
+                auto z = i / (GRID_DIM * GRID_DIM);
+                daxa_f32 d = from_emulated_positive_float(cell.unsigned_distance);
+                // daxa_f32 d = cell.d;
+                if(d < MAX_DIST && cell.color != 0) {
+                    std::cout << "      Cell " << x << ", " << y << ", " << z << " unsigned distance " << d << ", Rigid id: " << cell.rigid_id << ", rigid_particle_id: " << cell.rigid_particle_index << std::endl;
+                    std::cout << "      Affinities" << std::endl;
+                    for(daxa_u32 j = 0; j < MAX_RIGID_BODY_COUNT; j++) {
+                        auto affinity = (cell.color >> j) & 0x1;
+                        auto tag = (cell.color >> (j + TAG_DISPLACEMENT)) & 0x1;
+                        if(affinity) {
+                            auto sign = tag ? -1.0f : 1.0f;
+                            std::cout << "        Rigid body " << j << ", distance: " << sign * d  << std::endl;
+                        }
                     }
+                    ++rigid_cells_count;
                 }
             }
-        }
 
-        std::cout << "  Rigid cells count: " << rigid_cells_count << std::endl;
+            std::cout << "  Rigid cells count: " << rigid_cells_count << std::endl;
+        }
 
 
         auto particle_CDFs = device.get_host_address_as<ParticleCDF>(_staging_particle_CDF_buffer).value();
+
+        auto particles = device.get_host_address_as<Particle>(_staging_particles_buffer).value();
+
+        auto aabbs = device.get_host_address_as<Aabb>(_staging_aabb_buffer).value();
 
         std::cout << "Printing particle CDF" << std::endl;
 
         daxa_u32 particles_CDF_count = 0;
 
         for(daxa_u32 i = 0; i < gpu_input.p_count; i++) {
-            auto particle = particle_CDFs[i];
-            if(particle.near_boundary || particle.color != 0) {
-                std::cout << "      Particle " << i << " has distance " << particle.d << ", normal (" << particle.n.x << ", " << particle.n.y << ", " << particle.n.z << ")" << std::endl;
-                for(int j = 0; j < MAX_RIGID_BODY_COUNT; j++) {
-                    auto rigid_body_flags = (particle.color & (0x3u << (j * 2))) >> (j * 2);
-                    auto affinity = rigid_body_flags & 0x2;
-                    auto negative = rigid_body_flags & 0x1;
+            auto particle_CDF = particle_CDFs[i];
+            if(particle_CDF.color != 0) {
+                auto particle = particles[i];
+                auto center = (aabbs[i].min + aabbs[i].max) * 0.5f;
+                std::cout << "      Particle " << i << " signed distance " << particle_CDF.distance << ", normal (" << particle_CDF.normal.x << ", " << particle_CDF.normal.y << ", " << particle_CDF.normal.z << ")" << ", velocity (" << particle.v.x << ", " << particle.v.y << ", " << particle.v.z << ")" << ", position (" << center.x << ", " << center.y << ", " << center.z << "), grid position (" << center.x * gpu_input.inv_dx << ", " << center.y * gpu_input.inv_dx << ", " << center.z * gpu_input.inv_dx << ")" 
+                << std::endl;
+                std::cout << "      Affinities" << std::endl;
+                for(daxa_u32 j = 0; j < MAX_RIGID_BODY_COUNT; j++) {
+                    auto affinity = (particle_CDF.color >> j) & 0x1;
+                    auto tag = (particle_CDF.color >> (j + TAG_DISPLACEMENT)) & 0x1;
                     if(affinity) {
-                        auto negative_string = negative ? "negative" : "positive";
-                        auto near_boundary_string = particle.near_boundary ? "near boundary" : "far";
-                        std::cout << "        Rigid body " << j << ", " << negative_string  << ", " << near_boundary_string << std::endl;
+                        auto sign = tag ? "-" : "+";
+                        std::cout << "        Rigid body " << j << " " << sign  << std::endl;
+                    }
+                }
+                std::cout << "      Differences" << std::endl;
+                for(daxa_u32 j = 0; j < MAX_RIGID_BODY_COUNT; j++) {
+                    auto affinity = (particle_CDF.difference >> j) & 0x1;
+                    auto tag = (particle_CDF.difference >> (j + TAG_DISPLACEMENT)) & 0x1;
+                    if(affinity) {
+                        auto sign = tag ? "-" : "+";
+                        std::cout << "        Rigid body " << j << " " << sign  << std::endl;
                     }
                 }
                 ++particles_CDF_count;
             }
         }
 
-        if(particles_CDF_count > 0) {
+        if(particles_CDF_count > 0 && stop_when_detected) {
             print_rigid_cells = false;
         }
 
-        std::cout << "  Particle CDF count: " << particles_CDF_count << std::endl;
-
-
+        std::cout << "  Particle CDF count: " << particles_CDF_count << std::endl << std::endl << std::endl;
 #endif
     }
 };
