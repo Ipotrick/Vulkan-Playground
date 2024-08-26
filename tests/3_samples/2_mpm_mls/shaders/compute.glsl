@@ -152,7 +152,8 @@ void main()
 
                 vec3 grid_pos = vec3(coord) * dx;
 
-                daxa_f32 signed_distance = dot(grid_pos - p_pos, normal);
+                // TODO: check if this vector is correct (p_pos - grid_pos)
+                daxa_f32 signed_distance = dot(p_pos - grid_pos, normal);
                 daxa_f32vec3 projected_point = grid_pos - signed_distance * normal;
 
                 if(!inside_triangle(projected_point, p0, p1, p2)) {
@@ -581,8 +582,8 @@ void main()
     daxa_f32vec3 fx;
     daxa_i32vec3 base_coord = calculate_particle_status(aabb, inv_dx, fx, w);
 
-    particle.C = mat3(0);
-    particle.v = vec3(0.f);
+    daxa_f32mat3x3 particle_C = mat3(0);
+    daxa_f32vec3 particle_velocity = daxa_f32vec3(0);
 
     uvec3 array_grid = uvec3(base_coord);
 
@@ -647,11 +648,14 @@ void main()
 #endif // CHECK_RIGID_BODY_FLAG
                 vec3 w_grid = vec3(vel_value * weight);
 
-                particle.v += w_grid; // Velocity
-                particle.C += 4 * inv_dx * inv_dx * weight * outer_product(vel_value, dpos);
+                particle_velocity += w_grid; // Velocity
+                particle_C += 4 * inv_dx * inv_dx * weight * outer_product(vel_value, dpos);
             }
         }
     }
+
+    particle.v = particle_velocity;
+    particle.C = particle_C;
 
 #if defined(CHECK_RIGID_BODY_FLAG)
     if(particle_CDF.difference != 0) {
