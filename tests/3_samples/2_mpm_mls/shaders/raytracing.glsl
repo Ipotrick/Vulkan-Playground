@@ -95,16 +95,16 @@ void main()
   vec3 v1 = vertices[1];
   vec3 v2 = vertices[2];
 
-  mat4 model = mat4(
-      gl_ObjectToWorldEXT[0].x, gl_ObjectToWorldEXT[1].x, gl_ObjectToWorldEXT[2].x, gl_ObjectToWorldEXT[3].x,
-      gl_ObjectToWorldEXT[0].y, gl_ObjectToWorldEXT[1].y, gl_ObjectToWorldEXT[2].y, gl_ObjectToWorldEXT[3].y,
-      gl_ObjectToWorldEXT[0].z, gl_ObjectToWorldEXT[1].z, gl_ObjectToWorldEXT[2].z, gl_ObjectToWorldEXT[3].z,
-      0, 0, 0, 1);
+  daxa_f32mat4x3 obj2world4x3 = gl_ObjectToWorldEXT;
+
+  // Get model matrix
+  daxa_f32mat4x4 obj2world =
+      mat4(obj2world4x3[0], 0, obj2world4x3[1], 0, obj2world4x3[2], 0, obj2world4x3[3], 1.0);
 
   vec3 vertices_world[3];
-  vertices_world[0] = (model * vec4(v0, 1)).xyz;
-  vertices_world[1] = (model * vec4(v1, 1)).xyz;
-  vertices_world[2] = (model * vec4(v2, 1)).xyz;
+  vertices_world[0] = (obj2world4x3 * vec4(v0, 1)).xyz;
+  vertices_world[1] = (obj2world4x3 * vec4(v1, 1)).xyz;
+  vertices_world[2] = (obj2world4x3 * vec4(v2, 1)).xyz;
 
   vec3 u = vertices_world[1] - vertices_world[0];
   vec3 v = vertices_world[2] - vertices_world[0];
@@ -177,6 +177,12 @@ void main()
 
   uint i = gl_PrimitiveID;
 
+  daxa_f32mat4x3 obj2world4x3 = gl_ObjectToWorldEXT;
+
+  // Get model matrix
+  daxa_f32mat4x4 obj2world =
+      mat4(obj2world4x3[0], 0, obj2world4x3[1], 0, obj2world4x3[2], 0, obj2world4x3[3], 1.0);
+
   Aabb aabb;
   Particle particle;
   if(gl_InstanceCustomIndexEXT == 0) {
@@ -186,8 +192,9 @@ void main()
 #if defined(CHECK_RIGID_BODY_FLAG)
   else {
     RigidParticle rigid_particle = get_rigid_particle_by_index(i);
-    aabb.min = rigid_particle.min;
-    aabb.max = rigid_particle.max;
+      
+    aabb.min = (obj2world * vec4(rigid_particle.min, 1)).xyz;
+    aabb.max = (obj2world * vec4(rigid_particle.max, 1)).xyz;
     particle.type = MAT_RIGID;
     particle.v = vec3(0);
   }
@@ -300,14 +307,14 @@ void main()
   ray.origin = gl_ObjectRayOriginEXT;
   ray.direction = gl_ObjectRayDirectionEXT;
 
-  mat4 inv_model = mat4(
-      gl_ObjectToWorld3x4EXT[0][0], gl_ObjectToWorld3x4EXT[0][1], gl_ObjectToWorld3x4EXT[0][2], gl_ObjectToWorld3x4EXT[0][3],
-      gl_ObjectToWorld3x4EXT[0][1], gl_ObjectToWorld3x4EXT[1][1], gl_ObjectToWorld3x4EXT[1][2], gl_ObjectToWorld3x4EXT[1][3],
-      gl_ObjectToWorld3x4EXT[2][0], gl_ObjectToWorld3x4EXT[2][1], gl_ObjectToWorld3x4EXT[2][2], gl_ObjectToWorld3x4EXT[2][3],
-      0, 0, 0, 1.0);
+  daxa_f32mat4x3 obj2world4x3 = gl_ObjectToWorldEXT;
 
-  ray.origin = (inv_model * vec4(ray.origin, 1)).xyz;
-  ray.direction = (inv_model * vec4(ray.direction, 0)).xyz;
+  // Get model matrix
+  daxa_f32mat4x4 obj2world =
+      mat4(obj2world4x3[0], 0, obj2world4x3[1], 0, obj2world4x3[2], 0, obj2world4x3[3], 1.0);
+
+  ray.origin = (obj2world * vec4(ray.origin, 1)).xyz;
+  ray.direction = (obj2world * vec4(ray.direction, 0)).xyz;
 
   float tHit = -1;
 
@@ -322,8 +329,9 @@ void main()
 #if defined(CHECK_RIGID_BODY_FLAG)
   else {
     RigidParticle rigid_particle = get_rigid_particle_by_index(i);
-    aabb.min = rigid_particle.min;
-    aabb.max = rigid_particle.max;
+
+    aabb.min = (obj2world * vec4(rigid_particle.min, 1)).xyz;
+    aabb.max = (obj2world * vec4(rigid_particle.max, 1)).xyz;
     particle.type = MAT_RIGID;
     particle.v = vec3(0);
   }
