@@ -191,6 +191,19 @@ void rigid_body_enforce_angular_velocity_parallel_to(inout RigidBody r, daxa_f32
     r.omega = dot(r.omega, direction) * direction;
 }
 
+
+daxa_f32vec4 quaternion_multiply(daxa_f32vec4 q1, daxa_f32vec4 q2) {
+    daxa_f32vec3 v1 = q1.xyz;
+    daxa_f32vec3 v2 = q2.xyz;
+    daxa_f32 w1 = q1.w;
+    daxa_f32 w2 = q2.w;
+
+    daxa_f32vec3 v = w1 * v2 + w2 * v1 + cross(v1, v2);
+    daxa_f32 w = w1 * w2 - dot(v1, v2);
+
+    return daxa_f32vec4(v, w);
+}
+
 daxa_f32vec4 rigid_body_aply_angular_velocity(daxa_f32vec4 rotation, daxa_f32vec3 omega, daxa_f32 dt) {
     daxa_f32vec3 axis = omega;
     daxa_f32 angle = length(omega);
@@ -203,8 +216,8 @@ daxa_f32vec4 rigid_body_aply_angular_velocity(daxa_f32vec4 rotation, daxa_f32vec
     daxa_f32 s = sin(ot * 0.5f);
     daxa_f32 c = cos(ot * 0.5f);
 
-    daxa_f32vec4 q = daxa_f32vec4(c, s * axis.x, s * axis.y, s * axis.z);
-    return q * rotation;
+    daxa_f32vec4 q = daxa_f32vec4(s * axis, c);
+    return quaternion_multiply(rotation, q);
 }
 
 void rigid_body_advance(inout RigidBody r, daxa_f32 dt) {
