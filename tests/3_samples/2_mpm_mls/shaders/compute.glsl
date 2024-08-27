@@ -172,14 +172,13 @@ void rigid_body_apply_impulse(daxa_f32vec3 impulse, inout RigidBody r, daxa_f32v
 void rigid_body_apply_temporal_velocity(inout RigidBody r) {
     r.velocity += r.velocity_delta;
     r.omega += r.omega_delta;
-
-    r.velocity_delta = daxa_f32vec3(0);
-    r.omega_delta = daxa_f32vec3(0);
 }
 
-void rigid_body_save_velocity(RigidBody r, daxa_u32 rigid_index) {
+void rigid_body_save_parameters(RigidBody r, daxa_u32 rigid_index) {
     rigid_body_set_velocity_by_index(rigid_index, r.velocity);
     rigid_body_set_omega_by_index(rigid_index, r.omega);
+    rigid_body_set_position_by_index(rigid_index, r.position);
+    rigid_body_set_rotation_by_index(rigid_index, r.rotation);
 
     // TODO: reset here?
     rigid_body_reset_velocity_delta_by_index(rigid_index);
@@ -846,7 +845,6 @@ void main()
     particle_set_velocity_by_index(pixel_i_x, particle.v);
     particle_set_C_by_index(pixel_i_x, particle.C);
 }
-#if defined(CHECK_RIGID_BODY_FLAG)
 #elif ADVECT_RIGID_BODIES_FLAG == 1
 layout(local_size_x = MPM_CPIC_COMPUTE_X, local_size_y = 1, local_size_z = 1) in;
 void main()
@@ -859,23 +857,32 @@ void main()
     {
         return;
     }
-    RigidBody r = get_rigid_body_by_index(pixel_i_x);
     daxa_f32 dt = deref(config).dt;
 
+    RigidBody r = get_rigid_body_by_index(pixel_i_x);
+
+    // Apply delta velocity
     rigid_body_apply_temporal_velocity(r);
 
-    rigid_body_enforce_angular_velocity_parallel_to(r, r.rotation_axis);
+    // // Apply angular velocity
+    if(vec3_abs_max(r.rotation_axis) > 0.1f) {
+        rigid_body_enforce_angular_velocity_parallel_to(r, r.rotation_axis);
+    }
 
+    // Advance rigid body simulation
     rigid_body_advance(r, dt);
 
-    rigid_body_apply_impulse(deref(config).gravity * r.mass * dt, r, r.position);
+    // // Apply gravity force
+    // rigid_body_apply_impulse(daxa_f32vec3(0, deref(config).gravity, 0) * r.mass * dt, r, r.position);
 
-    rigid_body_enforce_angular_velocity_parallel_to(r, r.rotation_axis);
+    // // Apply angular velocity
+    if(vec3_abs_max(r.rotation_axis) > 0.1f) {
+        rigid_body_enforce_angular_velocity_parallel_to(r, r.rotation_axis);
+    }
 
-
-    rigid_body_save_velocity(r, pixel_i_x);
+    // Save parameters
+    rigid_body_save_parameters(r, pixel_i_x);
 }
-#endif // CHECK_RIGID_BODY_FLAG
 #else
 // Main compute shader
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;

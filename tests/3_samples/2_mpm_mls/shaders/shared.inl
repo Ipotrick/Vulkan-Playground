@@ -65,10 +65,14 @@
 
 #if defined(DAXA_SIMULATION_MANY_RIGID_BODIES)
 #define NUM_RIGID_BOX_COUNT 3
+const daxa_f32 rigid_body_densities[NUM_RIGID_BOX_COUNT] = {600.0f, 400.0f, 200.0f};
 #else 
 #define NUM_RIGID_BOX_COUNT 1
+const daxa_f32 rigid_body_densities[NUM_RIGID_BOX_COUNT] = {100000.0f};
 #endif
 #define NUM_RIGID_PARTICLES 32768
+
+#define BOX_VOLUME 0.00047684f // dim.x * dim.y * dim.z
 
 #define BOX_VERTEX_COUNT 8
 #define BOX_INDEX_COUNT 36
@@ -158,11 +162,11 @@ struct RigidBody  {
   daxa_f32vec3 velocity_delta;
   daxa_f32vec3 omega_delta;
   daxa_f32 mass;
-  daxa_f32vec3 inv_mass;
+  daxa_f32 inv_mass;
   daxa_f32mat3x3 inertia;
   daxa_f32mat3x3 inv_inertia;
-  daxa_f32vec3 rotation_axis;
   daxa_f32vec4 rotation;
+  daxa_f32vec3 rotation_axis;
   daxa_f32 linear_damping;
   daxa_f32 angular_damping;
 };
@@ -342,6 +346,11 @@ daxa_f32vec3 get_rigid_body_position_by_index(daxa_u32 rigid_body_index) {
 void rigid_body_set_position_by_index(daxa_u32 rigid_body_index, daxa_f32vec3 position) {
   RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
   rigid_body_buffer.rigid_bodies[rigid_body_index].position = position;
+}
+
+void rigid_body_set_rotation_by_index(daxa_u32 rigid_body_index, daxa_f32vec4 rotation) {
+  RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
+  rigid_body_buffer.rigid_bodies[rigid_body_index].rotation = rotation;
 }
 
 daxa_f32vec3 get_rigid_body_velocity_by_index(daxa_u32 rigid_body_index) {
@@ -1135,6 +1144,11 @@ bool inside_triangle(daxa_f32vec3 p, daxa_f32vec3 v0, daxa_f32vec3 v1, daxa_f32v
   return min <= alpha && alpha <= max && min <= beta && beta <= max && min <= gamma && gamma <= max;
 }
 
+daxa_f32 vec3_abs_max(daxa_f32vec3 v)
+{
+  return max(max(abs(v.x), abs(v.y)), abs(v.z));
+}
+
 
 #elif defined(__cplusplus) // C++
 #include <cmath> // std::sqrt
@@ -1285,6 +1299,35 @@ inline daxa_f32mat3x3 inverse(const daxa_f32mat3x3 &m)
     return daxa_f32mat3x3(daxa_f32vec3(a00 * inv_det, -a10 * inv_det, a20 * inv_det),
                           daxa_f32vec3(-a01 * inv_det, a11 * inv_det, -a21 * inv_det),
                           daxa_f32vec3(a02 * inv_det, -a12 * inv_det, a22 * inv_det));
+}
+
+
+
+daxa_f32mat3x4 rigid_body_get_transform_matrix(const RigidBody &rigid_body) {
+    daxa_f32vec3 translation = rigid_body.position;
+    daxa_f32vec4 rotation = rigid_body.rotation;
+
+    // transform quaternion to matrix
+    daxa_f32 x2 = rotation.x + rotation.x;
+    daxa_f32 y2 = rotation.y + rotation.y;
+    daxa_f32 z2 = rotation.z + rotation.z;
+    daxa_f32 xx = rotation.x * x2;
+    daxa_f32 xy = rotation.x * y2;
+    daxa_f32 xz = rotation.x * z2;
+    daxa_f32 yy = rotation.y * y2;
+    daxa_f32 yz = rotation.y * z2;
+    daxa_f32 zz = rotation.z * z2;
+    daxa_f32 wx = rotation.w * x2;
+    daxa_f32 wy = rotation.w * y2;
+    daxa_f32 wz = rotation.w * z2;
+
+    daxa_f32mat3x3 rotation_matrix = daxa_f32mat3x3(daxa_f32vec3(1.0f - (yy + zz), xy - wz, xz + wy),
+                                                    daxa_f32vec3(xy + wz, 1.0f - (xx + zz), yz - wx),
+                                                    daxa_f32vec3(xz - wy, yz + wx, 1.0f - (xx + yy)));
+
+    return daxa_f32mat3x4(daxa_f32vec4(rotation_matrix.x.x, rotation_matrix.y.x, rotation_matrix.z.x, translation.x),
+                        daxa_f32vec4(rotation_matrix.x.y, rotation_matrix.y.y, rotation_matrix.z.y, translation.y),
+                        daxa_f32vec4(rotation_matrix.x.z, rotation_matrix.y.z, rotation_matrix.z.z, translation.z));
 }
 
 #endif // GLSL & HLSL

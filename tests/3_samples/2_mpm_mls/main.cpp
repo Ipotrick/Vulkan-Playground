@@ -549,7 +549,7 @@ struct App : BaseApp<App>
     const daxa::usize rigid_body_size = NUM_RIGID_BOX_COUNT * sizeof(RigidBody);
     daxa::BufferId rigid_body_buffer = device.create_buffer(daxa::BufferInfo{
         .size = rigid_body_size,
-        .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_RANDOM,
+        .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_SEQUENTIAL_WRITE,
         .name = "rigid_body_buffer",
     });
     daxa::TaskBuffer task_rigid_body_buffer{{.initial_buffers = {.buffers = std::array{rigid_body_buffer}}, .name = "rigid_body_buffer_task"}};
@@ -627,7 +627,7 @@ struct App : BaseApp<App>
 
     daxa::BufferId _staging_aabb_buffer = device.create_buffer(daxa::BufferInfo{
         .size = aabb_size,
-        .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_RANDOM,
+        .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_SEQUENTIAL_WRITE,
         .name = "staging_aabb_buffer",
     });
     daxa::TaskBuffer task_staging_aabb_buffer{{.initial_buffers = {.buffers = std::array{_staging_aabb_buffer}}, .name = "staging_aabb_buffer_task"}};
@@ -1196,6 +1196,7 @@ struct App : BaseApp<App>
                         }
                     }
                     
+                    // TODO: check parameters of the rigid body
                     rigid_body_ptr[i] = {
                         .type = RIGID_BODY_BOX,
                         .p_count = r_p_count,
@@ -1210,8 +1211,8 @@ struct App : BaseApp<App>
                         .omega = {0.0f, 0.0f, 0.0f},
                         .velocity_delta = {0.0f, 0.0f, 0.0f},
                         .omega_delta = {0.0f, 0.0f, 0.0f},
-                        .mass = 1.0f,
-                        .inv_mass = {1.0f, 1.0f, 1.0f},
+                        .mass = rigid_body_densities[i] * BOX_VOLUME,
+                        .inv_mass = 1.0f / (rigid_body_densities[i] * BOX_VOLUME),
                         .inertia = daxa_f32mat3x3{daxa_f32vec3{1.0f, 0.0f, 0.0f},
                             daxa_f32vec3{0.0f, 1.0f, 0.0f}, 
                             daxa_f32vec3{0.0f, 0.0f, 1.0f},
@@ -1220,10 +1221,10 @@ struct App : BaseApp<App>
                         daxa_f32vec3{0.0f, 1.0f, 0.0f}, 
                         daxa_f32vec3{0.0f, 0.0f, 1.0f},
                         },
-                        .rotation_axis = {0.0f, 0.0f, 0.0f},
                         .rotation = {0.0f, 0.0f, 0.0f, 1.0f},
-                        .linear_damping = 0.0f,
-                        .angular_damping = 0.0f,
+                        .rotation_axis = {0.0f, 0.0f, 0.0f},
+                        .linear_damping = 1.0f,
+                        .angular_damping = 1.0f,
                     };
 
                     p_count += r_p_count;
@@ -1410,6 +1411,7 @@ struct App : BaseApp<App>
             .attachments = {
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
@@ -1448,6 +1450,7 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
 #if defined(CHECK_RIGID_BODY_FLAG)
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
@@ -1490,6 +1493,7 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
 #if defined(CHECK_RIGID_BODY_FLAG)
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
@@ -1531,6 +1535,7 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
 #if defined(CHECK_RIGID_BODY_FLAG)
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
@@ -1573,6 +1578,7 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_status_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
 #if defined(CHECK_RIGID_BODY_FLAG)
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
@@ -1616,6 +1622,7 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_status_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
@@ -1776,9 +1783,7 @@ struct App : BaseApp<App>
             },
             daxa_BlasInstanceData{
                 .transform = {
-                    {1, 0, 0, rigid_body_ptr[0].position.x},
-                    {0, 1, 0, rigid_body_ptr[0].position.y},
-                    {0, 0, 1, rigid_body_ptr[0].position.z},
+                    rigid_body_get_transform_matrix(rigid_body_ptr[0]),
                 },
                 .instance_custom_index = 1,
                 .mask = 0xFF,
@@ -1788,9 +1793,7 @@ struct App : BaseApp<App>
             },
             daxa_BlasInstanceData{
                 .transform = {
-                    {1, 0, 0, rigid_body_ptr[0].position.x},
-                    {0, 1, 0, rigid_body_ptr[0].position.y},
-                    {0, 0, 1, rigid_body_ptr[0].position.z},
+                    rigid_body_get_transform_matrix(rigid_body_ptr[0]),
                 },
                 .instance_custom_index = 2,
                 .mask = 0xFF,
