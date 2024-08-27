@@ -34,6 +34,7 @@
 #define MPM_GRID_COMPUTE_X 4 
 #define MPM_GRID_COMPUTE_Y 4
 #define MPM_GRID_COMPUTE_Z 4
+#define MPM_CPIC_COMPUTE_X 64
 
 #define MPM_SHADING_COMPUTE_X 8
 #define MPM_SHADING_COMPUTE_Y 8
@@ -86,8 +87,11 @@
 #define FRICTION -0.2f
 // #define PUSHING_FORCE 2000.0f
 #define PUSHING_FORCE 0.0f
+#else // CHECK_RIGID_BODY_FLAG
 
-#endif
+#define NUM_RIGID_BOX_COUNT 0
+
+#endif // CHECK_RIGID_BODY_FLAG
 
 struct Camera {
   daxa_f32mat4x4 inv_view;
@@ -146,6 +150,21 @@ struct RigidBody  {
   daxa_u32 triangle_count;
   daxa_u32 triangle_offset;
   daxa_f32vec3 color;
+  daxa_f32 friction;
+  daxa_f32 pushing_force;
+  daxa_f32vec3 position;
+  daxa_f32vec3 velocity;
+  daxa_f32vec3 omega;
+  daxa_f32vec3 velocity_delta;
+  daxa_f32vec3 omega_delta;
+  daxa_f32 mass;
+  daxa_f32vec3 inv_mass;
+  daxa_f32mat3x3 inertia;
+  daxa_f32mat3x3 inv_inertia;
+  daxa_f32vec3 rotation_axis;
+  daxa_f32vec4 rotation;
+  daxa_f32 linear_damping;
+  daxa_f32 angular_damping;
 };
 
 struct RigidParticle  {
@@ -301,6 +320,69 @@ daxa_f32vec3 get_rigid_body_color_by_index(daxa_u32 rigid_body_index) {
   return rigid_body_buffer.rigid_bodies[rigid_body_index].color;
 }
 
+void rigid_body_add_atomic_velocity_delta_by_index(daxa_u32 rigid_body_index, daxa_f32vec3 velocity_delta) {
+  RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
+  atomicAdd(rigid_body_buffer.rigid_bodies[rigid_body_index].velocity_delta.x, velocity_delta.x);
+  atomicAdd(rigid_body_buffer.rigid_bodies[rigid_body_index].velocity_delta.y, velocity_delta.y);
+  atomicAdd(rigid_body_buffer.rigid_bodies[rigid_body_index].velocity_delta.z, velocity_delta.z);
+}
+
+void rigid_body_add_atomic_omega_delta_by_index(daxa_u32 rigid_body_index, daxa_f32vec3 omega_delta) {
+  RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
+  atomicAdd(rigid_body_buffer.rigid_bodies[rigid_body_index].omega_delta.x, omega_delta.x);
+  atomicAdd(rigid_body_buffer.rigid_bodies[rigid_body_index].omega_delta.y, omega_delta.y);
+  atomicAdd(rigid_body_buffer.rigid_bodies[rigid_body_index].omega_delta.z, omega_delta.z);
+}
+
+daxa_f32vec3 get_rigid_body_position_by_index(daxa_u32 rigid_body_index) {
+  RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
+  return rigid_body_buffer.rigid_bodies[rigid_body_index].position;
+}
+
+void rigid_body_set_position_by_index(daxa_u32 rigid_body_index, daxa_f32vec3 position) {
+  RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
+  rigid_body_buffer.rigid_bodies[rigid_body_index].position = position;
+}
+
+daxa_f32vec3 get_rigid_body_velocity_by_index(daxa_u32 rigid_body_index) {
+  RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
+  return rigid_body_buffer.rigid_bodies[rigid_body_index].velocity;
+}
+
+void rigid_body_set_velocity_by_index(daxa_u32 rigid_body_index, daxa_f32vec3 velocity) {
+  RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
+  rigid_body_buffer.rigid_bodies[rigid_body_index].velocity = velocity;
+}
+
+daxa_f32vec3 get_rigid_body_omega_by_index(daxa_u32 rigid_body_index) {
+  RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
+  return rigid_body_buffer.rigid_bodies[rigid_body_index].omega;
+}
+
+void rigid_body_set_omega_by_index(daxa_u32 rigid_body_index, daxa_f32vec3 omega) {
+  RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
+  rigid_body_buffer.rigid_bodies[rigid_body_index].omega = omega;
+}
+
+daxa_f32vec3 get_rigid_body_velocity_delta_by_index(daxa_u32 rigid_body_index) {
+  RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
+  return rigid_body_buffer.rigid_bodies[rigid_body_index].velocity_delta;
+}
+
+void rigid_body_reset_velocity_delta_by_index(daxa_u32 rigid_body_index) {
+  RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
+  rigid_body_buffer.rigid_bodies[rigid_body_index].velocity_delta = vec3(0, 0, 0);
+}
+
+daxa_f32vec3 get_rigid_body_omega_delta_by_index(daxa_u32 rigid_body_index) {
+  RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
+  return rigid_body_buffer.rigid_bodies[rigid_body_index].omega_delta;
+}
+
+void rigid_body_reset_omega_delta_by_index(daxa_u32 rigid_body_index) {
+  RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
+  rigid_body_buffer.rigid_bodies[rigid_body_index].omega_delta = vec3(0, 0, 0);
+}
 
 uint get_first_index_by_triangle_index(daxa_u32 triangle_index) {
   INDEX_BUFFER index_buffer = INDEX_BUFFER(p.indices);
@@ -441,6 +523,24 @@ void set_particle_by_index(daxa_u32 particle_index, Particle particle) {
   PARTICLE_BUFFER particle_buffer =
       PARTICLE_BUFFER(p.particles);
   particle_buffer.particles[particle_index] = particle;
+}
+
+void particle_set_velocity_by_index(daxa_u32 particle_index, daxa_f32vec3 v) {
+  PARTICLE_BUFFER particle_buffer =
+      PARTICLE_BUFFER(p.particles);
+  particle_buffer.particles[particle_index].v = v;
+}
+
+void particle_set_F_by_index(daxa_u32 particle_index, daxa_f32mat3x3 F) {
+  PARTICLE_BUFFER particle_buffer =
+      PARTICLE_BUFFER(p.particles);
+  particle_buffer.particles[particle_index].F = F;
+}
+
+void particle_set_C_by_index(daxa_u32 particle_index, daxa_f32mat3x3 C) {
+  PARTICLE_BUFFER particle_buffer =
+      PARTICLE_BUFFER(p.particles);
+  particle_buffer.particles[particle_index].C = C;
 }
 
 void zeroed_out_cell_by_index(daxa_u32 cell_index) {
@@ -1128,6 +1228,38 @@ inline daxa_f32vec3 operator*(daxa_f32vec3 a, daxa_f32 b)
 inline daxa_f32vec3 operator/(daxa_f32vec3 a, daxa_f32 b)
 {
     return {a.x / b, a.y / b, a.z / b};
+}
+
+inline daxa_f32vec3 operator+=(daxa_f32vec3 &a, const daxa_f32vec3 &b)
+{
+    a.x += b.x;
+    a.y += b.y;
+    a.z += b.z;
+    return a;
+}
+
+inline daxa_f32vec3 operator-= (daxa_f32vec3 &a, const daxa_f32vec3 &b)
+{
+    a.x -= b.x;
+    a.y -= b.y;
+    a.z -= b.z;
+    return a;
+}
+
+inline daxa_f32vec3 operator*= (daxa_f32vec3 &a, const daxa_f32vec3 &b)
+{
+    a.x *= b.x;
+    a.y *= b.y;
+    a.z *= b.z;
+    return a;
+}
+
+inline daxa_f32vec3 operator/= (daxa_f32vec3 &a, const daxa_f32vec3 &b)
+{
+    a.x /= b.x;
+    a.y /= b.y;
+    a.z /= b.z;
+    return a;
 }
 
 inline daxa_f32vec3 cross(const daxa_f32vec3 &a, const daxa_f32vec3 &b)

@@ -79,17 +79,35 @@ hitAttributeEXT vec2 attribs;
 
 void main()
 {
+
+  daxa_BufferPtr(GpuInput) config = daxa_BufferPtr(GpuInput)(daxa_id_to_address(p.input_buffer_id));
+
   vec3 world_pos = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
 
   prd.hit_pos = world_pos;
 
-  uint o = gl_InstanceCustomIndexEXT > 0 ? gl_InstanceCustomIndexEXT - 1 : gl_InstanceCustomIndexEXT;
+  uint o = gl_InstanceCustomIndexEXT - (1 + deref(config).rigid_body_count);
   uint i = gl_PrimitiveID;
 
   mat3 vertices = get_vertices_by_triangle_index(i);
 
-  vec3 u = vertices[1] - vertices[0];
-  vec3 v = vertices[2] - vertices[0];
+  vec3 v0 = vertices[0];
+  vec3 v1 = vertices[1];
+  vec3 v2 = vertices[2];
+
+  mat4 model = mat4(
+      gl_ObjectToWorldEXT[0].x, gl_ObjectToWorldEXT[1].x, gl_ObjectToWorldEXT[2].x, gl_ObjectToWorldEXT[3].x,
+      gl_ObjectToWorldEXT[0].y, gl_ObjectToWorldEXT[1].y, gl_ObjectToWorldEXT[2].y, gl_ObjectToWorldEXT[3].y,
+      gl_ObjectToWorldEXT[0].z, gl_ObjectToWorldEXT[1].z, gl_ObjectToWorldEXT[2].z, gl_ObjectToWorldEXT[3].z,
+      0, 0, 0, 1);
+
+  vec3 vertices_world[3];
+  vertices_world[0] = (model * vec4(v0, 1)).xyz;
+  vertices_world[1] = (model * vec4(v1, 1)).xyz;
+  vertices_world[2] = (model * vec4(v2, 1)).xyz;
+
+  vec3 u = vertices_world[1] - vertices_world[0];
+  vec3 v = vertices_world[2] - vertices_world[0];
 
 #if TRIANGLE_ORIENTATION == CLOCKWISE
   vec3 normal = normalize(cross(u, v));
@@ -102,8 +120,6 @@ void main()
   // vec3 normal = normalize(barycentrics.x * vertices[0] + barycentrics.y * vertices[1] + barycentrics.z * vertices[2]);
 
   vec3 L = normalize(light_position - vec3(0));
-
-  daxa_BufferPtr(GpuInput) config = daxa_BufferPtr(GpuInput)(daxa_id_to_address(p.input_buffer_id));
 
   float dotNL = max(dot(normal, L), 0.0);
   vec3 material_color = get_rigid_body_color_by_index(o);
@@ -163,7 +179,7 @@ void main()
 
   Aabb aabb;
   Particle particle;
-  if(gl_GeometryIndexEXT == 0) {
+  if(gl_InstanceCustomIndexEXT == 0) {
     aabb = get_aabb_by_index(i);
     particle = get_particle_by_index(i);
   } 
@@ -299,7 +315,7 @@ void main()
 
   Aabb aabb;
   Particle particle;
-  if(gl_GeometryIndexEXT == 0) {
+  if(gl_InstanceCustomIndexEXT == 0) {
     aabb = get_aabb_by_index(i);
     particle = get_particle_by_index(i);
   } 

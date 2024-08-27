@@ -88,6 +88,73 @@ struct App : BaseApp<App>
     daxa::TaskBlas task_blas{{.initial_blas = {.blas = std::array{blas}}, .name = "blas_task"}};
     daxa::TaskTlas task_tlas{{.initial_tlas = {.tlas = std::array{tlas}}, .name = "tlas_task"}};
     const daxa_u32 ACCELERATION_STRUCTURE_BUILD_OFFSET_ALIGMENT = 256; // NOTE: Requested by the spec
+
+    
+
+#if defined(CHECK_RIGID_BODY_FLAG)
+#if TRIANGLE_ORIENTATION == COUNTER_CLOCKWISE
+    const u32 indices[BOX_INDEX_COUNT] = {
+        0, 1, 3, 0, 3, 2, // bottom
+        4, 7, 5, 4, 6, 7, // top
+        0, 5, 1, 0, 4, 5, // front
+        2, 3, 7, 2, 7, 6, // back
+        0, 2, 6, 0, 6, 4, // left
+        1, 5, 7, 1, 7, 3, // right
+    };
+#else
+    const u32 indices[BOX_INDEX_COUNT] = {
+        0, 3, 1, 0, 2, 3, // bottom
+        4, 5, 7, 4, 7, 6, // top
+        0, 1, 5, 0, 5, 4, // front
+        2, 7, 3, 2, 6, 7, // back
+        0, 6, 2, 0, 4, 6, // left
+        1, 3, 7, 1, 7, 5, // right
+    };
+#endif
+    daxa_u32 p_count = 0;
+    daxa_u32 triangle_count = 0;
+
+    const u32 cuboid_mins [MAX_RIGID_BODY_COUNT*3] = {
+        10, 20, 20,
+        20, 30, 30,
+        30, 40, 40,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+    };
+
+    const u32 cuboid_maxs [MAX_RIGID_BODY_COUNT*3] = {
+        10, 10, 10,
+        10, 10, 10,
+        10, 10, 10,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+    };
+#endif // CHECK_RIGID_BODY_FLAG
+
+
+
     void update_virtual_shader()
     {
         if (my_toggle)
@@ -121,7 +188,6 @@ struct App : BaseApp<App>
     }
 
 #if defined(CHECK_RIGID_BODY_FLAG)
-
     // clang-format off
     std::shared_ptr<daxa::ComputePipeline> reset_rigid_grid_compute_pipeline = [this]() {
         update_virtual_shader();
@@ -256,27 +322,29 @@ struct App : BaseApp<App>
     }();
     // clang-format on
 
+#if defined(CHECK_RIGID_BODY_FLAG)
     // clang-format off
-    std::shared_ptr<daxa::ComputePipeline> sphere_tracing_compute_pipeline = [this]() {
+    std::shared_ptr<daxa::ComputePipeline> advecting_rigid_bodies_compute_pipeline = [this]() {
         update_virtual_shader();
         return pipeline_manager.add_compute_pipeline({
 #if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
             .shader_info = {
                 .source = daxa::ShaderFile{"compute.glsl"}, 
                 .compile_options = {
-                    .defines =  std::vector{daxa::ShaderDefine{"SPHERE_TRACING_FLAG", "1"}},
+                    .defines =  std::vector{daxa::ShaderDefine{"ADVECT_RIGID_BODIES_FLAG", "1"}},
                 }
             },
 #elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
             .shader_info = {.source = daxa::ShaderFile{"compute.slang"}, .compile_options = {
-                .entry_point = "entry_sphere_tracing",
+                .entry_point = "entry_MPM_advect_rigid_bodies",
             },},
 #endif
             .push_constant_size = sizeof(ComputePush),
-            .name = "sphere_tracing_compute_pipeline",
+            .name = "advecting_rigid_bodies_compute_pipeline",
         }).value();
     }();
     // clang-format on
+#endif // CHECK_RIGID_BODY_FLAG
 
     // clang-format off
     std::shared_ptr<daxa::RayTracingPipeline> rt_pipeline = [this]() {
@@ -481,6 +549,7 @@ struct App : BaseApp<App>
     const daxa::usize rigid_body_size = NUM_RIGID_BOX_COUNT * sizeof(RigidBody);
     daxa::BufferId rigid_body_buffer = device.create_buffer(daxa::BufferInfo{
         .size = rigid_body_size,
+        .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_RANDOM,
         .name = "rigid_body_buffer",
     });
     daxa::TaskBuffer task_rigid_body_buffer{{.initial_buffers = {.buffers = std::array{rigid_body_buffer}}, .name = "rigid_body_buffer_task"}};
@@ -587,26 +656,53 @@ struct App : BaseApp<App>
         .name = "blas instances array buffer",
     });
     daxa::BlasBuildInfo blas_build_info = {};
-    daxa::AccelerationStructureBuildSizesInfo tlas_build_sizes = {};
     daxa::AccelerationStructureBuildSizesInfo blas_build_sizes = {};
+
+    daxa::AccelerationStructureBuildSizesInfo tlas_build_sizes = {};
     daxa::TlasBuildInfo tlas_build_info = {};
 #if defined(CHECK_RIGID_BODY_FLAG)
+    daxa::BlasBuildInfo blas_CDF_cell_build_info = {};
+    daxa::AccelerationStructureBuildSizesInfo blas_CDF_cell_build_sizes = {};
+    daxa::BlasId blas_CDF_cell = {};
     daxa::BlasBuildInfo blas_build_info_rigid = {};
     daxa::AccelerationStructureBuildSizesInfo rigid_blas_build_sizes = {};
     daxa::BlasId rigid_blas = {};
-    std::array<daxa::BlasAabbGeometryInfo, 2> geometry = {
-        daxa::BlasAabbGeometryInfo{
-            .data = device.get_device_address(aabb_buffer).value(),
-            .stride = sizeof(daxa_f32mat3x2),
-            .count = TOTAL_AABB_COUNT,
-            .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
-        },
-        daxa::BlasAabbGeometryInfo{
-            .data = device.get_device_address(rigid_particles_buffer).value(),
-            .stride = sizeof(RigidParticle),
-            .count = NUM_RIGID_PARTICLES,
-            .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
-        }};
+    std::array<std::array<daxa::BlasAabbGeometryInfo, 1>, 1 + NUM_RIGID_BOX_COUNT> aabb_geometries = {{
+        {{
+            daxa::BlasAabbGeometryInfo{
+                .data = device.get_device_address(aabb_buffer).value(),
+                .stride = sizeof(daxa_f32mat3x2),
+                .count = TOTAL_AABB_COUNT,
+                .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
+            }
+        }},
+        {{
+            daxa::BlasAabbGeometryInfo{
+                .data = device.get_device_address(rigid_particles_buffer).value(),
+                .stride = sizeof(RigidParticle),
+                .count = NUM_RIGID_PARTICLES,
+                .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
+            }
+        }},
+#if defined(DAXA_SIMULATION_MANY_RIGID_BODIES)
+        {{
+            daxa::BlasAabbGeometryInfo{
+                .data = device.get_device_address(rigid_particles_buffer).value() + sizeof(RigidParticle) * NUM_RIGID_PARTICLES,
+                .stride = sizeof(RigidParticle),
+                .count = NUM_RIGID_PARTICLES,
+                .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
+            }
+        }},
+        {{
+            daxa::BlasAabbGeometryInfo{
+                .data = device.get_device_address(rigid_particles_buffer).value() + sizeof(RigidParticle) * NUM_RIGID_PARTICLES * NUM_RIGID_PARTICLES,
+                .stride = sizeof(RigidParticle),
+                .count = NUM_RIGID_PARTICLES,
+                .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
+            }
+        }}
+#endif
+    }};
     // create blas instances info
     std::array<std::array<daxa::BlasTriangleGeometryInfo, 1>, NUM_RIGID_BOX_COUNT> rigid_body_geometries = {{
         {{
@@ -636,32 +732,24 @@ struct App : BaseApp<App>
         }}
 #endif
     }};
-
-// #else 
-    // // create blas instances info
-    // std::array<daxa::BlasTriangleGeometryInfo, 1> rigid_body_geometry = {
-    //     daxa::BlasTriangleGeometryInfo{
-    //         .vertex_data = device.get_device_address(rigid_body_vertex_buffer).value(),
-    //         .index_data = device.get_device_address(rigid_body_index_buffer).value(),
-    //         .count = BOX_TRIANGLE_COUNT,
-    //         .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
-    //     }};
-// #endif
 #else 
-    std::array<daxa::BlasAabbGeometryInfo, 1> geometry = {
-        daxa::BlasAabbGeometryInfo{
-            .data = device.get_device_address(aabb_buffer).value(),
-            .stride = sizeof(daxa_f32mat3x2),
-            .count = TOTAL_AABB_COUNT,
-            .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
-        }};
+    std::array<std::array<daxa::BlasAabbGeometryInfo, 1>, 1> aabb_geometries = {{
+        {{
+            daxa::BlasAabbGeometryInfo{
+                .data = device.get_device_address(aabb_buffer).value(),
+                .stride = sizeof(daxa_f32mat3x2),
+                .count = TOTAL_AABB_COUNT,
+                .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
+            }
+        }}
+    }};
     // create blas instances info
 #endif 
     std::array<daxa::TlasInstanceInfo, 1> blas_instances = std::array{
             daxa::TlasInstanceInfo{
                 .data = device.get_device_address(blas_instances_buffer).value(),
 #if defined(CHECK_RIGID_BODY_FLAG)
-                .count = 1 + NUM_RIGID_BOX_COUNT,
+                .count = 1 + NUM_RIGID_BOX_COUNT * 2,
 #else
                 .count = 1,
 #endif
@@ -707,6 +795,7 @@ struct App : BaseApp<App>
         device.destroy_buffer(particles_buffer);
 #if defined(CHECK_RIGID_BODY_FLAG)
         device.destroy_blas(rigid_blas);
+        device.destroy_blas(blas_CDF_cell);
         device.destroy_buffer(rigid_body_buffer);
         device.destroy_buffer(rigid_body_vertex_buffer);
         device.destroy_buffer(rigid_body_index_buffer);
@@ -887,13 +976,7 @@ struct App : BaseApp<App>
                 auto * aabb_ptr = device.get_host_address_as<Aabb>(staging_aabb_buffer).value();
 
 #if defined(CHECK_RIGID_BODY_FLAG)
-                auto staging_rigid_body_buffer = device.create_buffer({
-                    .size = rigid_body_size,
-                    .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_RANDOM,
-                    .name = ("staging_rigid_body_buffer"),
-                });
-                ti.recorder.destroy_buffer_deferred(staging_rigid_body_buffer);
-                auto * rigid_body_ptr = device.get_host_address_as<RigidBody>(staging_rigid_body_buffer).value();
+                auto * rigid_body_ptr = device.get_host_address_as<RigidBody>(rigid_body_buffer).value();
 
                 auto staging_rigid_body_vertex_buffer = device.create_buffer({
                     .size = rigid_body_vertex_size,
@@ -1005,66 +1088,6 @@ struct App : BaseApp<App>
                 }
 #if defined(CHECK_RIGID_BODY_FLAG)
 
-#if TRIANGLE_ORIENTATION == COUNTER_CLOCKWISE
-                const u32 indices[BOX_INDEX_COUNT] = {
-                    0, 1, 3, 0, 3, 2, // bottom
-                    4, 7, 5, 4, 6, 7, // top
-                    0, 5, 1, 0, 4, 5, // front
-                    2, 3, 7, 2, 7, 6, // back
-                    0, 2, 6, 0, 6, 4, // left
-                    1, 5, 7, 1, 7, 3, // right
-                };
-#else
-                const u32 indices[BOX_INDEX_COUNT] = {
-                    0, 3, 1, 0, 2, 3, // bottom
-                    4, 5, 7, 4, 7, 6, // top
-                    0, 1, 5, 0, 5, 4, // front
-                    2, 7, 3, 2, 6, 7, // back
-                    0, 6, 2, 0, 4, 6, // left
-                    1, 3, 7, 1, 7, 5, // right
-                };
-#endif
-                daxa_u32 p_count = 0;
-                daxa_u32 triangle_count = 0;
-
-                const u32 cuboid_mins [MAX_RIGID_BODY_COUNT*3] = {
-                    10, 20, 20,
-                    20, 30, 30,
-                    30, 40, 40,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                };
-
-                const u32 cuboid_maxs [MAX_RIGID_BODY_COUNT*3] = {
-                    10, 10, 10,
-                    10, 10, 10,
-                    10, 10, 10,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                };
-
 
                 // TODO: Add more shapes
                 for(u32 i = 0; i < NUM_RIGID_BOX_COUNT; i++) {
@@ -1100,6 +1123,8 @@ struct App : BaseApp<App>
                         std::cout << "  " << indices[j] << " " << indices[j + 1] << " " << indices[j + 2] << std::endl;
                     }
 
+                    daxa_f32vec3 center = (min + max) * 0.5f;
+
                     std::cout << std::endl;
 
                     std::cout << " Vertices: " << std::endl;
@@ -1110,6 +1135,8 @@ struct App : BaseApp<App>
                             (j & 2) ? max.y : min.y,
                             (j & 4) ? max.z : min.z,
                         };
+
+                        vertex -= center;
 
                         rigid_body_vertex_ptr[i * BOX_VERTEX_COUNT + j] = vertex;
 
@@ -1168,7 +1195,6 @@ struct App : BaseApp<App>
                             }
                         }
                     }
-
                     
                     rigid_body_ptr[i] = {
                         .type = RIGID_BODY_BOX,
@@ -1177,6 +1203,27 @@ struct App : BaseApp<App>
                         .triangle_count = BOX_TRIANGLE_COUNT,
                         .triangle_offset = triangle_offset,
                         .color = get_rigid_body_color(i),
+                        .friction = FRICTION,
+                        .pushing_force = PUSHING_FORCE,
+                        .position = center,
+                        .velocity = {0.0f, 0.0f, 0.0f},
+                        .omega = {0.0f, 0.0f, 0.0f},
+                        .velocity_delta = {0.0f, 0.0f, 0.0f},
+                        .omega_delta = {0.0f, 0.0f, 0.0f},
+                        .mass = 1.0f,
+                        .inv_mass = {1.0f, 1.0f, 1.0f},
+                        .inertia = daxa_f32mat3x3{daxa_f32vec3{1.0f, 0.0f, 0.0f},
+                            daxa_f32vec3{0.0f, 1.0f, 0.0f}, 
+                            daxa_f32vec3{0.0f, 0.0f, 1.0f},
+                            },
+                        .inv_inertia = daxa_f32mat3x3{daxa_f32vec3{1.0f, 0.0f, 0.0f},
+                        daxa_f32vec3{0.0f, 1.0f, 0.0f}, 
+                        daxa_f32vec3{0.0f, 0.0f, 1.0f},
+                        },
+                        .rotation_axis = {0.0f, 0.0f, 0.0f},
+                        .rotation = {0.0f, 0.0f, 0.0f, 1.0f},
+                        .linear_damping = 0.0f,
+                        .angular_damping = 0.0f,
                     };
 
                     p_count += r_p_count;
@@ -1202,12 +1249,6 @@ struct App : BaseApp<App>
                 });
 
 #if defined(CHECK_RIGID_BODY_FLAG)
-                ti.recorder.copy_buffer_to_buffer({
-                    .src_buffer = staging_rigid_body_buffer,
-                    .dst_buffer = rigid_body_buffer,
-                    .size = rigid_body_size,
-                });
-
                 ti.recorder.copy_buffer_to_buffer({
                     .src_buffer = staging_rigid_body_vertex_buffer,
                     .dst_buffer = rigid_body_vertex_buffer,
@@ -1569,6 +1610,47 @@ struct App : BaseApp<App>
             },
             .name = ("G2P (Compute)"),
         });
+#if defined(CHECK_RIGID_BODY_FLAG)
+        sim_task_graph.add_task({
+            .attachments = {
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_status_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particle_CDF_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_grid_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_camera_buffer),
+                daxa::inl_attachment(daxa::TaskImageAccess::COMPUTE_SHADER_STORAGE_WRITE_ONLY, task_render_image),
+            },
+            .task = [this](daxa::TaskInterface ti)
+            {
+                ti.recorder.set_pipeline(*advecting_rigid_bodies_compute_pipeline);
+
+                ti.recorder.push_constant(ComputePush{
+                    .image_id = render_image.default_view(),
+                    .input_buffer_id = gpu_input_buffer,
+                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                    .status_buffer_id = gpu_status_buffer,
+                    .particles = device.get_device_address(particles_buffer).value(),
+                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
+                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
+                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                    .cells = device.get_device_address(grid_buffer).value(),
+                    .aabbs = device.get_device_address(aabb_buffer).value(),
+                    .camera = device.get_device_address(camera_buffer).value(),
+                    .tlas = tlas,
+                });
+                ti.recorder.dispatch({(gpu_input.rigid_body_count + MPM_CPIC_COMPUTE_X - 1) / MPM_CPIC_COMPUTE_X});
+            },
+            .name = ("Advecting Rigid Bodies (Compute)"),
+        });
+#endif // CHECK_RIGID_BODY_FLAG
         sim_task_graph.submit({});
         sim_task_graph.complete({});
 
@@ -1596,20 +1678,24 @@ struct App : BaseApp<App>
         }
         
 #if defined(CHECK_RIGID_BODY_FLAG)
+        if(!blas_CDF_cell.is_empty()) {
+            device.destroy_blas(blas_CDF_cell);
+        }
+
         if(!rigid_blas.is_empty()) {
             device.destroy_blas(rigid_blas);
         }
 
         if(show_rigid_particles) {
-            geometry.at(1).count = gpu_input.r_p_count;
+            aabb_geometries.at(1).at(0).count = gpu_input.r_p_count;
         } else {
-            geometry.at(1).count = 0;
+            aabb_geometries.at(1).at(0).count = 0;
         }
 #endif
         blas_build_info = daxa::BlasBuildInfo{
             .flags = daxa::AccelerationStructureBuildFlagBits::PREFER_FAST_BUILD, // Is also default
             .dst_blas = {},                                                       // Ignored in get_acceleration_structure_build_sizes.       // Is also default
-            .geometries = geometry,
+            .geometries = aabb_geometries[0],
             .scratch_data = {}, // Ignored in get_acceleration_structure_build_sizes.   // Is also default
         };
         blas_build_sizes = device.get_blas_build_sizes(blas_build_info);
@@ -1618,9 +1704,23 @@ struct App : BaseApp<App>
             .size = blas_build_sizes.acceleration_structure_size,
             .name = "blas",
         });
-
         blas_build_info.dst_blas = blas;
+
 #if defined(CHECK_RIGID_BODY_FLAG)
+        blas_CDF_cell_build_info = daxa::BlasBuildInfo{
+            .flags = daxa::AccelerationStructureBuildFlagBits::PREFER_FAST_BUILD, // Is also default
+            .dst_blas = {},                                                       // Ignored in get_acceleration_structure_build_sizes.       // Is also default
+            .geometries = aabb_geometries[1],
+            .scratch_data = {}, // Ignored in get_acceleration_structure_build_sizes.   // Is also default
+        };
+        blas_CDF_cell_build_sizes = device.get_blas_build_sizes(blas_CDF_cell_build_info);
+
+        blas_CDF_cell = device.create_blas({
+            .size = blas_CDF_cell_build_sizes.acceleration_structure_size,
+            .name = "blas_CDF_cell",
+        });
+        blas_CDF_cell_build_info.dst_blas = blas_CDF_cell;
+
         if(show_rigid_bodies) {
             rigid_body_geometries.at(0).at(0).count = BOX_TRIANGLE_COUNT;
         } else {
@@ -1643,7 +1743,7 @@ struct App : BaseApp<App>
 #endif 
 
 #if defined(CHECK_RIGID_BODY_FLAG)
-        task_blas.set_blas({.blas = std::array{blas, rigid_blas}});
+        task_blas.set_blas({.blas = std::array{blas, blas_CDF_cell, rigid_blas}});
 #else
         task_blas.set_blas({.blas = std::array{blas}});
 #endif
@@ -1658,6 +1758,7 @@ struct App : BaseApp<App>
 
 
 #if defined(CHECK_RIGID_BODY_FLAG)
+        auto * rigid_body_ptr = device.get_host_address_as<RigidBody>(rigid_body_buffer).value();
         // define blas instances
         // define blas instances
         auto blas_instance_array = std::array{
@@ -1670,19 +1771,31 @@ struct App : BaseApp<App>
                 .instance_custom_index = 0,
                 .mask = 0xFF,
                 .instance_shader_binding_table_record_offset = 0,
-                .flags = {}, // Is also default
+                .flags = {},
                 .blas_device_address = device.get_device_address(blas).value(),
             },
             daxa_BlasInstanceData{
                 .transform = {
-                    {1, 0, 0, 0},
-                    {0, 1, 0, 0},
-                    {0, 0, 1, 0},
+                    {1, 0, 0, rigid_body_ptr[0].position.x},
+                    {0, 1, 0, rigid_body_ptr[0].position.y},
+                    {0, 0, 1, rigid_body_ptr[0].position.z},
                 },
                 .instance_custom_index = 1,
                 .mask = 0xFF,
+                .instance_shader_binding_table_record_offset = 0,
+                .flags = {},
+                .blas_device_address = device.get_device_address(blas_CDF_cell).value(),
+            },
+            daxa_BlasInstanceData{
+                .transform = {
+                    {1, 0, 0, rigid_body_ptr[0].position.x},
+                    {0, 1, 0, rigid_body_ptr[0].position.y},
+                    {0, 0, 1, rigid_body_ptr[0].position.z},
+                },
+                .instance_custom_index = 2,
+                .mask = 0xFF,
                 .instance_shader_binding_table_record_offset = 1,
-                .flags = {}, // Is also default
+                .flags = {},
                 .blas_device_address = device.get_device_address(rigid_blas).value(),
             }
 #if defined(DAXA_SIMULATION_MANY_RIGID_BODIES)  
@@ -1696,7 +1809,7 @@ struct App : BaseApp<App>
                 .instance_custom_index = 2,
                 .mask = 0xFF,
                 .instance_shader_binding_table_record_offset = 1,
-                .flags = {}, // Is also default
+                .flags = {},
                 .blas_device_address = device.get_device_address(rigid_blas).value(),
             },
             daxa_BlasInstanceData{
@@ -1708,7 +1821,7 @@ struct App : BaseApp<App>
                 .instance_custom_index = 3,
                 .mask = 0xFF,
                 .instance_shader_binding_table_record_offset = 1,
-                .flags = {}, // Is also default
+                .flags = {},
                 .blas_device_address = device.get_device_address(rigid_blas).value(),
             }
 #endif // DAXA_SIMULATION_MANY_RIGID_BODIES
@@ -1723,10 +1836,10 @@ struct App : BaseApp<App>
                     {0, 1, 0, 0},
                     {0, 0, 1, 0},
                 },
-                .instance_custom_index = 0, // Is also default
+                .instance_custom_index = 0,
                 .mask = 0xFF,
                 .instance_shader_binding_table_record_offset = 0,
-                .flags = {}, // Is also default
+                .flags = {},
                 .blas_device_address = device.get_device_address(blas).value(),
             }};
 #endif
@@ -1779,8 +1892,15 @@ struct App : BaseApp<App>
                 ti.recorder.destroy_buffer_deferred(blas_scratch_buffer);
                 // attach scratch buffer to task
                 blas_build_info.scratch_data = device.get_device_address(blas_scratch_buffer).value();
-                
+
 #if defined(CHECK_RIGID_BODY_FLAG)
+                auto blas_scratch_buffer_CDF_cell = device.create_buffer({
+                    .size = blas_CDF_cell_build_sizes.build_scratch_size,
+                    .name = "blas CDF cell build scratch buffer",
+                });
+                ti.recorder.destroy_buffer_deferred(blas_scratch_buffer_CDF_cell);
+                blas_CDF_cell_build_info.scratch_data = device.get_device_address(blas_scratch_buffer_CDF_cell).value();
+                
                 auto rigid_blas_scratch_buffer = device.create_buffer({
                     .size = rigid_blas_build_sizes.build_scratch_size,
                     .name = "rigid blas build scratch buffer",
@@ -1792,7 +1912,9 @@ struct App : BaseApp<App>
 
                 // build rigid blas
                 ti.recorder.build_acceleration_structures({
-                    .blas_build_infos = std::array{blas_build_info, blas_build_info_rigid},
+                    .blas_build_infos = std::array{blas_build_info, 
+                    blas_CDF_cell_build_info,
+                    blas_build_info_rigid},
                 });
 #else
                 // build blas
@@ -1931,20 +2053,18 @@ struct App : BaseApp<App>
         download_info_graph.use_persistent_buffer(task_staging_aabb_buffer);
 #endif
 
+#if defined(CHECK_RIGID_BODY_FLAG)
         download_info_graph.add_task({
             .attachments = {
-#if defined(CHECK_RIGID_BODY_FLAG)
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_rigid_grid_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_staging_rigid_grid_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_rigid_particles_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_staging_particle_CDF_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_staging_particles_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_staging_aabb_buffer),
-#endif
             },
             .task = [this](daxa::TaskInterface ti)
             {
-#if defined(CHECK_RIGID_BODY_FLAG)
                 ti.recorder.copy_buffer_to_buffer({
                     .src_buffer = rigid_grid_buffer,
                     .dst_buffer = staging_rigid_grid_buffer,
@@ -1965,10 +2085,10 @@ struct App : BaseApp<App>
                     .dst_buffer = _staging_aabb_buffer,
                     .size = aabb_size,
                 });
-#endif
             },
             .name = "Download Info Task",
         });
+#endif // CHECK_RIGID_BODY_FLAG
         download_info_graph.submit({});
         download_info_graph.complete({});
         return download_info_graph;

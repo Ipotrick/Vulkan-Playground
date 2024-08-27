@@ -3,7 +3,7 @@
 
 
 
-// #if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(CHECK_RIGID_BODY_FLAG)
 void gather_CDF_compute(daxa_u32 particle_index) {
     daxa_BufferPtr(GpuInput) config = daxa_BufferPtr(GpuInput)(daxa_id_to_address(p.input_buffer_id));
 
@@ -78,7 +78,147 @@ void gather_CDF_compute(daxa_u32 particle_index) {
 
     set_rigid_particle_CDF_by_index(particle_index, particleCDF);
 }
-// #endif // CHECK_RIGID_BODY_FLAG
+
+
+daxa_f32vec3 get_rigid_body_velocity_at(RigidBody r, daxa_f32vec3 position) {
+
+    return r.velocity + cross(r.omega, position - r.position);
+}
+
+
+daxa_f32vec3 particle_collision(daxa_f32vec3 velocity, daxa_f32vec3 normal,RigidBody r, daxa_f32vec3 particle_position, daxa_f32 dt, daxa_f32 dx) {
+
+    daxa_f32 friction = r.friction;
+    daxa_f32 pushing_force = r.pushing_force;
+    daxa_f32vec3 rigid_velocity = get_rigid_body_velocity_at(r, particle_position);
+
+    daxa_f32vec3 relative_velocity = velocity - rigid_velocity;
+
+    daxa_f32 normal_vel_norm = dot(normal, relative_velocity);
+
+    daxa_f32vec3 tangential_relative_velocity = relative_velocity - normal_vel_norm * normal;
+
+    daxa_f32 tangential_norm = length(tangential_relative_velocity);
+
+    daxa_f32 tangential_scale = max(tangential_norm + min(normal_vel_norm, 0.0f) * friction, 0.0f) / max(1e-23f, tangential_norm);
+
+    daxa_f32vec3 projected_velocity = tangential_scale * tangential_relative_velocity + max(0.0f, normal_vel_norm) * normal;
+
+    projected_velocity += rigid_velocity;
+
+    projected_velocity += dt * dx * pushing_force * normal;
+
+    return projected_velocity;
+}
+
+// TODO: check this
+daxa_f32mat3x3 rigid_body_get_rotation_matrix(RigidBody r) {
+    daxa_f32vec4 quaternion = r.rotation;
+    daxa_f32 x = quaternion.x;
+    daxa_f32 y = quaternion.y;
+    daxa_f32 z = quaternion.z;
+    daxa_f32 w = quaternion.w;
+
+    daxa_f32 x2 = x + x;
+    daxa_f32 y2 = y + y;
+    daxa_f32 z2 = z + z;
+
+    daxa_f32 xx = x * x2;
+    daxa_f32 xy = x * y2;
+    daxa_f32 xz = x * z2;
+
+    daxa_f32 yy = y * y2;
+    daxa_f32 yz = y * z2;
+    daxa_f32 zz = z * z2;
+
+    daxa_f32 wx = w * x2;
+    daxa_f32 wy = w * y2;
+    daxa_f32 wz = w * z2;
+
+    daxa_f32vec3 col0 = daxa_f32vec3(1.0f - (yy + zz), xy + wz, xz - wy);
+    daxa_f32vec3 col1 = daxa_f32vec3(xy - wz, 1.0f - (xx + zz), yz + wx);
+    daxa_f32vec3 col2 = daxa_f32vec3(xz + wy, yz - wx, 1.0f - (xx + yy));
+
+    return daxa_f32mat3x3(col0, col1, col2);
+}
+
+daxa_f32mat3x3 rigid_body_get_transformed_inversed_inertia(RigidBody r) {
+    daxa_f32mat3x3 rotation = rigid_body_get_rotation_matrix(r);
+    return rotation * r.inv_inertia * transpose(rotation);
+}
+
+void rigid_body_apply_delta_impulse(RigidBody r, daxa_u32 rigid_index, daxa_f32vec3 impulse, daxa_f32vec3 position) {
+    daxa_f32vec3 torque = cross(position - r.position, impulse);
+    
+    daxa_f32vec3 lineal_velocity = impulse * r.inv_mass;
+    daxa_f32vec3 angular_velocity = rigid_body_get_transformed_inversed_inertia(r) * torque;
+
+    // TODO: this is too slow
+    rigid_body_add_atomic_velocity_delta_by_index(rigid_index, lineal_velocity);
+    rigid_body_add_atomic_omega_delta_by_index(rigid_index, angular_velocity);
+}
+
+void rigid_body_apply_impulse(daxa_f32vec3 impulse, inout RigidBody r, daxa_f32vec3 position) {
+    daxa_f32vec3 torque = cross(position - r.position, impulse);
+    
+    daxa_f32vec3 lineal_velocity = impulse * r.inv_mass;
+    daxa_f32vec3 angular_velocity = rigid_body_get_transformed_inversed_inertia(r) * torque;
+
+    r.velocity += lineal_velocity;
+    r.omega += angular_velocity;
+}
+    
+
+void rigid_body_apply_temporal_velocity(inout RigidBody r) {
+    r.velocity += r.velocity_delta;
+    r.omega += r.omega_delta;
+
+    r.velocity_delta = daxa_f32vec3(0);
+    r.omega_delta = daxa_f32vec3(0);
+}
+
+void rigid_body_save_velocity(RigidBody r, daxa_u32 rigid_index) {
+    rigid_body_set_velocity_by_index(rigid_index, r.velocity);
+    rigid_body_set_omega_by_index(rigid_index, r.omega);
+
+    // TODO: reset here?
+    rigid_body_reset_velocity_delta_by_index(rigid_index);
+    rigid_body_reset_omega_delta_by_index(rigid_index);
+}
+
+void rigid_body_enforce_angular_velocity_parallel_to(inout RigidBody r, daxa_f32vec3 direction) {
+    direction = normalize(direction);
+
+    r.omega = dot(r.omega, direction) * direction;
+}
+
+daxa_f32vec4 rigid_body_aply_angular_velocity(daxa_f32vec4 rotation, daxa_f32vec3 omega, daxa_f32 dt) {
+    daxa_f32vec3 axis = omega;
+    daxa_f32 angle = length(omega);
+    if(angle < 1e-23f) {
+        return rotation;
+    }
+
+    axis = normalize(axis);
+    daxa_f32 ot = angle * dt;
+    daxa_f32 s = sin(ot * 0.5f);
+    daxa_f32 c = cos(ot * 0.5f);
+
+    daxa_f32vec4 q = daxa_f32vec4(c, s * axis.x, s * axis.y, s * axis.z);
+    return q * rotation;
+}
+
+void rigid_body_advance(inout RigidBody r, daxa_f32 dt) {
+    // TODO: check this
+    // linear velocity
+    r.velocity *= exp(-dt * r.linear_damping);
+    r.position += dt * r.velocity;
+    // angular velocity
+    r.omega *= exp(-dt * r.angular_damping);
+    r.rotation = rigid_body_aply_angular_velocity(r.rotation, r.omega, dt);
+}
+
+#endif // CHECK_RIGID_BODY_FLAG
 
 #if RESET_RIGID_GRID_COMPUTE_FLAG == 1
 layout(local_size_x = MPM_GRID_COMPUTE_X, local_size_y = MPM_GRID_COMPUTE_Y, local_size_z = MPM_GRID_COMPUTE_Z) in;
@@ -122,6 +262,11 @@ void main()
         return;
     }
 
+    RigidBody r = get_rigid_body_by_index(particle.rigid_id);
+
+    particle.min += r.position;
+    particle.max += r.position;
+
     Aabb aabb = Aabb(particle.min, particle.max);
 
     daxa_f32vec3 p_pos = (aabb.min + aabb.max) * 0.5f;
@@ -134,6 +279,10 @@ void main()
     vec3 p0 = get_first_vertex_by_triangle_index(particle.triangle_id);
     vec3 p1 = get_second_vertex_by_triangle_index(particle.triangle_id);
     vec3 p2 = get_third_vertex_by_triangle_index(particle.triangle_id);
+
+    p0 = r.position + p0;
+    p1 = r.position + p1;
+    p2 = r.position + p2;
     
     daxa_f32vec3 normal = get_normal_by_vertices(p0, p1, p2);
 
@@ -153,7 +302,7 @@ void main()
                 vec3 grid_pos = vec3(coord) * dx;
 
                 // TODO: check if this vector is correct (p_pos - grid_pos)
-                daxa_f32 signed_distance = dot(p_pos - grid_pos, normal);
+                daxa_f32 signed_distance = dot(grid_pos - p_pos, normal);
                 daxa_f32vec3 projected_point = grid_pos - signed_distance * normal;
 
                 if(!inside_triangle(projected_point, p0, p1, p2)) {
@@ -406,7 +555,7 @@ void main()
 
                 daxa_u32 particle_color = get_rigid_particle_CDF_color_by_index(pixel_i_x);
 
-        // only update compatible particles
+                // only update compatible particles
                 if(!cdf_is_compatible(grid_color, particle_color)) {
                     continue;
                 }
@@ -427,8 +576,7 @@ void main()
         }
     }
 
-    // TODO: optimize this write
-    set_particle_by_index(pixel_i_x, particle);
+    particle_set_F_by_index(pixel_i_x, particle.F);
 }
 #elif GRID_COMPUTE_FLAG == 1
 layout(local_size_x = MPM_GRID_COMPUTE_X, local_size_y = MPM_GRID_COMPUTE_Y, local_size_z = MPM_GRID_COMPUTE_Z) in;
@@ -544,11 +692,10 @@ void main()
 
     set_aabb_by_index(pixel_i_x, aabb);
 
-    // TODO: optimize this write
-    set_particle_by_index(pixel_i_x, particle);
+    particle_set_velocity_by_index(pixel_i_x, particle.v);
+    particle_set_C_by_index(pixel_i_x, particle.C);
 }
 #elif G2P_COMPUTE_FLAG == 1
-// Main compute shader
 layout(local_size_x = MPM_P2G_COMPUTE_X, local_size_y = 1, local_size_z = 1) in;
 void main()
 {
@@ -561,7 +708,9 @@ void main()
         return;
     }
 
+#if defined(CHECK_RIGID_BODY_FLAG)
     gather_CDF_compute(pixel_i_x);
+#endif // CHECK_RIGID_BODY_FLAG
 
     daxa_BufferPtr(GpuStatus) status = daxa_BufferPtr(GpuStatus)(daxa_id_to_address(p.status_buffer_id));
 
@@ -575,7 +724,6 @@ void main()
 
 #if defined(CHECK_RIGID_BODY_FLAG)
     ParticleCDF particle_CDF = get_rigid_particle_CDF_by_index(pixel_i_x);
-    daxa_u32 rigid_id = -1;
 #endif // CHECK_RIGID_BODY_FLAG
 
     daxa_f32vec3 w[3];
@@ -586,6 +734,8 @@ void main()
     daxa_f32vec3 particle_velocity = daxa_f32vec3(0);
 
     uvec3 array_grid = uvec3(base_coord);
+
+    vec3 pos_x = (aabb.min + aabb.max) * 0.5f;
 
     for (uint i = 0; i < 3; ++i)
     {
@@ -618,29 +768,25 @@ void main()
 
                 // the particle has collided and needs to be projected along the collider
                 if(!cdf_is_compatible(grid_color, particle_color)) {
-                    rigid_id = rigid_cell.rigid_id;
-                    daxa_u32 rigid_particle_index = rigid_cell.rigid_particle_index;
-
-                    daxa_f32vec3 fake_v = particle.v;
-
-                    daxa_f32 normal_vel_norm = dot(particle_CDF.normal, fake_v);
-
-                    daxa_f32vec3 tangential_relative_velocity = fake_v - normal_vel_norm * particle_CDF.normal;
-
-                    daxa_f32 tangential_norm = length(tangential_relative_velocity);
-
-                    daxa_f32 tangential_scale = max(tangential_norm + min(normal_vel_norm, 0.0f) * FRICTION, 0.0f) / max(1e-23f, tangential_norm);
-
-                    fake_v = tangential_scale * tangential_relative_velocity + max(0.0f, normal_vel_norm) * particle_CDF.normal;
-
-                    fake_v += dt * dx * PUSHING_FORCE * particle_CDF.normal;
-                    
-                    vel_value = fake_v;
+                    daxa_u32 rigid_id = rigid_cell.rigid_id;
 
                     if(rigid_id == -1) {
                         continue;
                     }
-                    // TODO: rigid impulse?
+
+                    RigidBody r = get_rigid_body_by_index(rigid_id);
+
+                    daxa_u32 rigid_particle_index = rigid_cell.rigid_particle_index;
+
+                    // Particle in collision with rigid body
+                    daxa_f32vec3 projected_velocity = particle_collision(particle.v, particle_CDF.normal, r, pos_x, dt, dx);
+                    
+                    vel_value = projected_velocity;
+
+                    // Apply impulse to rigid body
+                    daxa_f32vec3 impulse = weight * (particle.v - projected_velocity) * p_mass;
+                    // TODO: this is too slow
+                    rigid_body_apply_delta_impulse(r, rigid_id, impulse, pos_x);
                     
                 }
 #else
@@ -697,10 +843,39 @@ void main()
 
     set_aabb_by_index(pixel_i_x, aabb);
 
-    // TODO: optimize this write
-    set_particle_by_index(pixel_i_x, particle);
+    particle_set_velocity_by_index(pixel_i_x, particle.v);
+    particle_set_C_by_index(pixel_i_x, particle.C);
 }
+#if defined(CHECK_RIGID_BODY_FLAG)
+#elif ADVECT_RIGID_BODIES_FLAG == 1
+layout(local_size_x = MPM_CPIC_COMPUTE_X, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+    uint pixel_i_x = gl_GlobalInvocationID.x;
 
+    daxa_BufferPtr(GpuInput) config = daxa_BufferPtr(GpuInput)(daxa_id_to_address(p.input_buffer_id));
+
+    if (pixel_i_x >= deref(config).rigid_body_count)
+    {
+        return;
+    }
+    RigidBody r = get_rigid_body_by_index(pixel_i_x);
+    daxa_f32 dt = deref(config).dt;
+
+    rigid_body_apply_temporal_velocity(r);
+
+    rigid_body_enforce_angular_velocity_parallel_to(r, r.rotation_axis);
+
+    rigid_body_advance(r, dt);
+
+    rigid_body_apply_impulse(deref(config).gravity * r.mass * dt, r, r.position);
+
+    rigid_body_enforce_angular_velocity_parallel_to(r, r.rotation_axis);
+
+
+    rigid_body_save_velocity(r, pixel_i_x);
+}
+#endif // CHECK_RIGID_BODY_FLAG
 #else
 // Main compute shader
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
