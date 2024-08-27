@@ -111,37 +111,6 @@ daxa_f32vec3 particle_collision(daxa_f32vec3 velocity, daxa_f32vec3 normal,Rigid
     return projected_velocity;
 }
 
-// TODO: check this
-daxa_f32mat3x3 rigid_body_get_rotation_matrix(RigidBody r) {
-    daxa_f32vec4 quaternion = r.rotation;
-    daxa_f32 x = quaternion.x;
-    daxa_f32 y = quaternion.y;
-    daxa_f32 z = quaternion.z;
-    daxa_f32 w = quaternion.w;
-
-    daxa_f32 x2 = x + x;
-    daxa_f32 y2 = y + y;
-    daxa_f32 z2 = z + z;
-
-    daxa_f32 xx = x * x2;
-    daxa_f32 xy = x * y2;
-    daxa_f32 xz = x * z2;
-
-    daxa_f32 yy = y * y2;
-    daxa_f32 yz = y * z2;
-    daxa_f32 zz = z * z2;
-
-    daxa_f32 wx = w * x2;
-    daxa_f32 wy = w * y2;
-    daxa_f32 wz = w * z2;
-
-    daxa_f32vec3 col0 = daxa_f32vec3(1.0f - (yy + zz), xy + wz, xz - wy);
-    daxa_f32vec3 col1 = daxa_f32vec3(xy - wz, 1.0f - (xx + zz), yz + wx);
-    daxa_f32vec3 col2 = daxa_f32vec3(xz + wy, yz - wx, 1.0f - (xx + yy));
-
-    return daxa_f32mat3x3(col0, col1, col2);
-}
-
 daxa_f32mat3x3 rigid_body_get_transformed_inversed_inertia(RigidBody r) {
     daxa_f32mat3x3 rotation = rigid_body_get_rotation_matrix(r);
     return rotation * r.inv_inertia * transpose(rotation);
@@ -276,8 +245,10 @@ void main()
 
     RigidBody r = get_rigid_body_by_index(particle.rigid_id);
 
-    particle.min += r.position;
-    particle.max += r.position;
+    daxa_f32mat4x4 transform = rigid_body_get_transform_matrix(r);
+
+    particle.min = (transform * vec4(particle.min, 1)).xyz;
+    particle.max = (transform * vec4(particle.max, 1)).xyz;
 
     Aabb aabb = Aabb(particle.min, particle.max);
 
@@ -292,9 +263,9 @@ void main()
     vec3 p1 = get_second_vertex_by_triangle_index(particle.triangle_id);
     vec3 p2 = get_third_vertex_by_triangle_index(particle.triangle_id);
 
-    p0 = r.position + p0;
-    p1 = r.position + p1;
-    p2 = r.position + p2;
+    p0 = (transform * vec4(p0, 1)).xyz;
+    p1 = (transform * vec4(p1, 1)).xyz;
+    p2 = (transform * vec4(p2, 1)).xyz;
     
     daxa_f32vec3 normal = get_normal_by_vertices(p0, p1, p2);
 

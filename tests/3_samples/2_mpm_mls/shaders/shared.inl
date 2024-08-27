@@ -1150,6 +1150,45 @@ daxa_f32 vec3_abs_max(daxa_f32vec3 v)
 }
 
 
+daxa_f32mat3x3 rigid_body_get_rotation_matrix(RigidBody r) {
+    daxa_f32vec4 quaternion = r.rotation;
+    daxa_f32 x = quaternion.x;
+    daxa_f32 y = quaternion.y;
+    daxa_f32 z = quaternion.z;
+    daxa_f32 w = quaternion.w;
+
+    daxa_f32 x2 = x + x;
+    daxa_f32 y2 = y + y;
+    daxa_f32 z2 = z + z;
+
+    daxa_f32 xx = x * x2;
+    daxa_f32 xy = x * y2;
+    daxa_f32 xz = x * z2;
+
+    daxa_f32 yy = y * y2;
+    daxa_f32 yz = y * z2;
+    daxa_f32 zz = z * z2;
+
+    daxa_f32 wx = w * x2;
+    daxa_f32 wy = w * y2;
+    daxa_f32 wz = w * z2;
+
+    daxa_f32vec3 col0 = daxa_f32vec3(1.0f - (yy + zz), xy + wz, xz - wy);
+    daxa_f32vec3 col1 = daxa_f32vec3(xy - wz, 1.0f - (xx + zz), yz + wx);
+    daxa_f32vec3 col2 = daxa_f32vec3(xz + wy, yz - wx, 1.0f - (xx + yy));
+
+    return daxa_f32mat3x3(col0, col1, col2);
+}
+
+daxa_f32mat4x4 rigid_body_get_transform_matrix(RigidBody rigid_body) {
+  daxa_f32mat4x4 translation = daxa_f32mat4x4(1.0);
+  translation[3] = daxa_f32vec4(rigid_body.position, 1.0);
+  daxa_f32mat3x3 rotation = rigid_body_get_rotation_matrix(rigid_body);
+  daxa_f32mat4x4 rotation_matrix = daxa_f32mat4x4(rotation);
+  return translation * rotation_matrix;
+}
+
+
 #elif defined(__cplusplus) // C++
 #include <cmath> // std::sqrt
 
