@@ -192,6 +192,10 @@ struct NodeCDF {
   daxa_u32 rigid_id;
   daxa_u32 rigid_particle_index;
 };
+
+struct NodeLevelSet {
+  daxa_f32 distance;
+};
 #endif // CHECK_RIGID_BODY_FLAG
 
 DAXA_DECL_BUFFER_PTR(GpuInput)
@@ -202,6 +206,7 @@ DAXA_DECL_BUFFER_PTR(RigidBody)
 DAXA_DECL_BUFFER_PTR(RigidParticle)
 DAXA_DECL_BUFFER_PTR(NodeCDF)
 DAXA_DECL_BUFFER_PTR(ParticleCDF)
+DAXA_DECL_BUFFER_PTR(NodeLevelSet)
 #endif
 DAXA_DECL_BUFFER_PTR(Cell)
 DAXA_DECL_BUFFER_PTR(Camera)
@@ -221,6 +226,7 @@ struct ComputePush
     daxa_RWBufferPtr(RigidParticle) rigid_particles;
     daxa_RWBufferPtr(NodeCDF) rigid_cells;
     daxa_RWBufferPtr(ParticleCDF) rigid_particle_color;
+    daxa_BufferPtr(NodeLevelSet) level_set_grid;
 #endif
     daxa_RWBufferPtr(Cell) cells;
     daxa_RWBufferPtr(Aabb) aabbs;
@@ -1149,7 +1155,7 @@ daxa_f32 vec3_abs_max(daxa_f32vec3 v)
   return max(max(abs(v.x), abs(v.y)), abs(v.z));
 }
 
-
+#if defined(CHECK_RIGID_BODY_FLAG)
 daxa_f32mat3x3 rigid_body_get_rotation_matrix(RigidBody r) {
     daxa_f32vec4 quaternion = r.rotation;
     daxa_f32 x = quaternion.x;
@@ -1187,7 +1193,7 @@ daxa_f32mat4x4 rigid_body_get_transform_matrix(RigidBody rigid_body) {
   daxa_f32mat4x4 rotation_matrix = daxa_f32mat4x4(rotation);
   return translation * rotation_matrix;
 }
-
+#endif
 
 #elif defined(__cplusplus) // C++
 #include <cmath> // std::sqrt
@@ -1341,7 +1347,7 @@ inline daxa_f32mat3x3 inverse(const daxa_f32mat3x3 &m)
 }
 
 
-
+#if defined(CHECK_RIGID_BODY_FLAG)
 daxa_f32mat3x4 rigid_body_get_transform_matrix(const RigidBody &rigid_body) {
     daxa_f32vec3 translation = rigid_body.position;
     daxa_f32vec4 rotation = rigid_body.rotation;
@@ -1368,6 +1374,7 @@ daxa_f32mat3x4 rigid_body_get_transform_matrix(const RigidBody &rigid_body) {
                         daxa_f32vec4(rotation_matrix.x.y, rotation_matrix.y.y, rotation_matrix.z.y, translation.y),
                         daxa_f32vec4(rotation_matrix.x.z, rotation_matrix.y.z, rotation_matrix.z.z, translation.z));
 }
+#endif // CHECK_RIGID_BODY_FLAG
 
 #endif // GLSL & HLSL
 

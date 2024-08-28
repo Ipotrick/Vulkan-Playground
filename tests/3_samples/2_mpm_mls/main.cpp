@@ -207,6 +207,26 @@ struct App : BaseApp<App>
         }).value();
     }();
     // clang-format on
+
+    // clang-format off
+    std::shared_ptr<daxa::ComputePipeline> level_set_collision_compute_pipeline = [this]() {
+        update_virtual_shader();
+        return pipeline_manager.add_compute_pipeline({
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
+            .shader_info = {
+                .source = daxa::ShaderFile{"compute.glsl"}, 
+                .compile_options = {
+                    .defines =  std::vector{daxa::ShaderDefine{"LEVEL_SET_COLLISION_COMPUTE_FLAG", "1"}},
+                }
+            },
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+            .shader_info = {.source = daxa::ShaderFile{"compute.slang"}, .compile_options = {.entry_point = "entry_MPM_level_set_collision"}},
+#endif
+            .push_constant_size = sizeof(ComputePush),
+            .name = "level_set_collision_compute_pipeline",
+        }).value();
+    }();
+    // clang-format on
     
 
 
@@ -603,6 +623,15 @@ struct App : BaseApp<App>
     });
     daxa::TaskBuffer task_rigid_grid_buffer{{.initial_buffers = {.buffers = std::array{rigid_grid_buffer}}, .name = "rigid_grid_buffer_task"}};
 
+    daxa::usize level_set_grid_size = GRID_SIZE * sizeof(NodeLevelSet);
+    daxa::BufferId level_set_grid_buffer = device.create_buffer(daxa::BufferInfo{
+        .size = level_set_grid_size,
+        .name = "level_set_grid_buffer",
+    });
+    daxa::TaskBuffer task_level_set_grid_buffer{{.initial_buffers = {.buffers = std::array{level_set_grid_buffer}}, .name = "level_set_grid_buffer_task"}};
+
+    daxa::BufferClearInfo level_set_clear = {level_set_grid_buffer, 0, level_set_grid_size, 0};
+
 #if defined(_DEBUG)
     daxa::BufferId staging_rigid_grid_buffer = device.create_buffer({
         .size = rigid_grid_size,
@@ -808,6 +837,7 @@ struct App : BaseApp<App>
         device.destroy_buffer(_staging_aabb_buffer);
 #endif // _DEBUG
         device.destroy_buffer(particle_CDF_buffer);
+        device.destroy_buffer(level_set_grid_buffer);
 #endif // CHECK_RIGID_BODY_FLAG
         device.destroy_buffer(grid_buffer);
         device.destroy_buffer(aabb_buffer);
@@ -934,7 +964,7 @@ struct App : BaseApp<App>
         }
     }
 
-    void particle_set_position() {
+    void first_upload_task() {
         upload_task_graph.use_persistent_buffer(task_particles_buffer);
         upload_task_graph.use_persistent_buffer(task_aabb_buffer);
 #if defined(CHECK_RIGID_BODY_FLAG)
@@ -943,6 +973,7 @@ struct App : BaseApp<App>
         upload_task_graph.use_persistent_buffer(task_rigid_body_index_buffer);
         upload_task_graph.use_persistent_buffer(task_rigid_particles_buffer);
         upload_task_graph.use_persistent_buffer(task_rigid_grid_buffer);
+        upload_task_graph.use_persistent_buffer(task_level_set_grid_buffer);
 #endif
 
         upload_task_graph.add_task({
@@ -1087,8 +1118,6 @@ struct App : BaseApp<App>
 
                 }
 #if defined(CHECK_RIGID_BODY_FLAG)
-
-
                 // TODO: Add more shapes
                 for(u32 i = 0; i < NUM_RIGID_BOX_COUNT; i++) {
 
@@ -1264,7 +1293,7 @@ struct App : BaseApp<App>
 
                 ti.recorder.copy_buffer_to_buffer({
                     .src_buffer = staging_rigid_particles_buffer,
-                    .dst_buffer = rigid_particles_buffer,
+                    .dst_buffer = rigid_particles_buffer, 
                     .size = rigid_particles_size,
                 });
 #endif
@@ -1272,6 +1301,20 @@ struct App : BaseApp<App>
             },
             .name = ("Upload particles"),
         });
+#if defined(CHECK_RIGID_BODY_FLAG)
+        upload_task_graph.add_task({
+            .attachments = {
+                daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_WRITE, task_level_set_grid_buffer),
+            },
+            .task = [this](daxa::TaskInterface ti)
+            {
+                daxa_f32 max_dist = MAX_DIST;
+                std::memcpy(&level_set_clear.clear_value, &max_dist, sizeof(u32));
+                ti.recorder.clear_buffer(level_set_clear);
+            },
+            .name = ("Upload level set grid"),
+        });
+#endif // CHECK_RIGID_BODY_FLAG
 
         upload_task_graph.submit({});
         upload_task_graph.complete({});
@@ -1365,6 +1408,7 @@ struct App : BaseApp<App>
         sim_task_graph.use_persistent_buffer(task_rigid_particles_buffer);
         sim_task_graph.use_persistent_buffer(task_rigid_grid_buffer);
         sim_task_graph.use_persistent_buffer(task_particle_CDF_buffer);
+        sim_task_graph.use_persistent_buffer(task_level_set_grid_buffer);
 #endif // CHECK_RIGID_BODY_FLAG
         sim_task_graph.use_persistent_buffer(task_grid_buffer);
         sim_task_graph.use_persistent_buffer(task_aabb_buffer);
@@ -1396,6 +1440,7 @@ struct App : BaseApp<App>
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
                     .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
                     .camera = device.get_device_address(camera_buffer).value(),
@@ -1407,6 +1452,46 @@ struct App : BaseApp<App>
             .name = ("Reset Grid (Compute)"),
         });
 #if defined(CHECK_RIGID_BODY_FLAG)
+        sim_task_graph.add_task({
+            .attachments = {
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particle_CDF_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_level_set_grid_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_camera_buffer),
+                daxa::inl_attachment(daxa::TaskImageAccess::COMPUTE_SHADER_STORAGE_WRITE_ONLY, task_render_image),
+            },
+            .task = [this](daxa::TaskInterface ti)
+            {
+                
+                ti.recorder.set_pipeline(*level_set_collision_compute_pipeline);
+                ti.recorder.push_constant(ComputePush{
+                    .image_id = render_image.default_view(),
+                    .input_buffer_id = gpu_input_buffer,
+                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                    .status_buffer_id = gpu_status_buffer,
+                    .particles = device.get_device_address(particles_buffer).value(),
+                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
+                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
+                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
+                    .cells = device.get_device_address(grid_buffer).value(),
+                    .aabbs = device.get_device_address(aabb_buffer).value(),
+                    .camera = device.get_device_address(camera_buffer).value(),
+                    .tlas = tlas,
+                });
+                ti.recorder.dispatch({(gpu_input.r_p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
+            },
+            .name = ("Level Set Collision (Compute)"),
+        });
         sim_task_graph.add_task({
             .attachments = {
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
@@ -1435,6 +1520,7 @@ struct App : BaseApp<App>
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
                     .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
                     .camera = device.get_device_address(camera_buffer).value(),
@@ -1477,6 +1563,7 @@ struct App : BaseApp<App>
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
                     .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
@@ -1519,6 +1606,7 @@ struct App : BaseApp<App>
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
                     .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
@@ -1562,6 +1650,7 @@ struct App : BaseApp<App>
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
                     .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
@@ -1606,6 +1695,7 @@ struct App : BaseApp<App>
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
                     .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
@@ -1648,6 +1738,7 @@ struct App : BaseApp<App>
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
                     .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
                     .camera = device.get_device_address(camera_buffer).value(),
@@ -2005,6 +2096,7 @@ struct App : BaseApp<App>
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
                     .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
@@ -2192,7 +2284,7 @@ struct App : BaseApp<App>
 auto main() -> int
 {
     App app = {};
-    app.particle_set_position();
+    app.first_upload_task();
     app.gpu_status->flags = 0;
     while (true)
     {

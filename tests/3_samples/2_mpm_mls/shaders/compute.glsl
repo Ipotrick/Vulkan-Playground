@@ -149,7 +149,6 @@ void rigid_body_save_parameters(RigidBody r, daxa_u32 rigid_index) {
     rigid_body_set_position_by_index(rigid_index, r.position);
     rigid_body_set_rotation_by_index(rigid_index, r.rotation);
 
-    // TODO: reset here?
     rigid_body_reset_velocity_delta_by_index(rigid_index);
     rigid_body_reset_omega_delta_by_index(rigid_index);
 }
@@ -190,7 +189,6 @@ daxa_f32vec4 rigid_body_aply_angular_velocity(daxa_f32vec4 rotation, daxa_f32vec
 }
 
 void rigid_body_advance(inout RigidBody r, daxa_f32 dt) {
-    // TODO: check this
     // linear velocity
     r.velocity *= exp(-dt * r.linear_damping);
     r.position += dt * r.velocity;
@@ -217,6 +215,22 @@ void main()
     uint cell_index = pixel_i.x + pixel_i.y * deref(config).grid_dim.x + pixel_i.z * deref(config).grid_dim.x * deref(config).grid_dim.y;
 
     zeroed_out_node_cdf_by_index(cell_index);
+}
+#elif LEVEL_SET_COLLISION_COMPUTE_FLAG == 1
+// Main compute shader
+layout(local_size_x = MPM_P2G_COMPUTE_X, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+    uint pixel_i_x = gl_GlobalInvocationID.x;
+
+    daxa_BufferPtr(GpuInput) config = daxa_BufferPtr(GpuInput)(daxa_id_to_address(p.input_buffer_id));
+
+    if (pixel_i_x >= deref(config).r_p_count)
+    {
+        return;
+    }
+    
+    RigidParticle particle = get_rigid_particle_by_index(pixel_i_x);
 }
 
 #elif RASTER_RIGID_BOUND_COMPUTE_FLAG == 1
@@ -768,7 +782,6 @@ void main()
 
                     // Apply impulse to rigid body
                     daxa_f32vec3 impulse = weight * (particle.v - projected_velocity) * p_mass;
-                    // TODO: this is too slow
                     rigid_body_apply_delta_impulse(r, rigid_id, impulse, pos_x);
                     
                 }
