@@ -217,6 +217,7 @@ void rigid_body_advance(inout RigidBody r, daxa_f32 dt) {
     r.rotation = rigid_body_aply_angular_velocity(r.rotation, r.omega, dt);
 }
 
+#if defined(DAXA_LEVEL_SET_FLAG)
 daxa_f32 level_set_sample(daxa_f32vec3 pos, daxa_u32vec3 grid_size, daxa_f32 t) {
     daxa_f32 x = pos.x;
     daxa_f32 y = pos.y;
@@ -314,8 +315,9 @@ daxa_f32vec3 level_set_gradient(daxa_f32vec3 pos, daxa_u32vec3 grid_size, daxa_f
     daxa_f32 gz = mix(y1f, dz0, dz1);
 
     // Retun the gradient
-    return normalize(daxa_f32vec3(gx, gy, gz));
+    return daxa_f32vec3(gx, gy, gz);
 }
+#endif // DAXA_LEVEL_SET_FLAG
 
 #endif // DAXA_RIGID_BODY_FLAG
 
@@ -337,7 +339,6 @@ void main()
     zeroed_out_node_cdf_by_index(cell_index);
 }
 #elif LEVEL_SET_COLLISION_COMPUTE_FLAG == 1
-// Main compute shader
 layout(local_size_x = MPM_P2G_COMPUTE_X, local_size_y = 1, local_size_z = 1) in;
 void main()
 {
@@ -1051,8 +1052,12 @@ void main()
     rigid_body_advance(r, dt);
 
 #if defined(DAXA_LEVEL_SET_FLAG)
-    // Apply gravity force
-    rigid_body_apply_impulse(daxa_f32vec3(0, deref(config).gravity, 0) * r.mass * dt, r, r.position);
+    daxa_BufferPtr(GpuStatus) status = daxa_BufferPtr(GpuStatus)(daxa_id_to_address(p.status_buffer_id));
+
+    if ((deref(status).flags & RIGID_BODY_ADD_GRAVITY_FLAG) == RIGID_BODY_ADD_GRAVITY_FLAG) {
+        // Apply gravity force
+        rigid_body_apply_impulse(daxa_f32vec3(0, deref(config).gravity, 0) * r.mass * dt, r, r.position);
+    }
 #endif // DAXA_LEVEL_SET_FLAG
 
     // // Apply angular velocity

@@ -13,7 +13,7 @@
 #define DAXA_RIGID_BODY_FLAG
 
 #if defined(DAXA_RIGID_BODY_FLAG)
-#define DAXA_LEVEL_SET_FLAG
+// #define DAXA_LEVEL_SET_FLAG
 #endif // DAXA_RIGID_BODY_FLAG
 
 // #define DAXA_SIMULATION_WATER_MPM_MLS
@@ -51,6 +51,7 @@
 // #define VOXEL_PARTICLES 1
 #define MOUSE_DOWN_FLAG (1u << 0)
 #define MOUSE_TARGET_FLAG (1u << 1)
+#define RIGID_BODY_ADD_GRAVITY_FLAG (1u << 2)
 
 #define MAT_WATER 0
 #define MAT_SNOW 1
@@ -234,7 +235,9 @@ struct ComputePush
     daxa_RWBufferPtr(RigidParticle) rigid_particles;
     daxa_RWBufferPtr(NodeCDF) rigid_cells;
     daxa_RWBufferPtr(ParticleCDF) rigid_particle_color;
+#if defined(DAXA_LEVEL_SET_FLAG)
     daxa_BufferPtr(NodeLevelSet) level_set_grid;
+#endif // DAXA_LEVEL_SET_FLAG
 #endif
     daxa_RWBufferPtr(Cell) cells;
     daxa_RWBufferPtr(Aabb) aabbs;
@@ -530,6 +533,7 @@ void set_rigid_particle_CDF_by_index(daxa_u32 particle_index, ParticleCDF color)
   rigid_particle_color_buffer.particles[particle_index] = color;
 }
 
+#if defined(DAXA_LEVEL_SET_FLAG)
 NodeLevelSet level_set_get_node_by_index(daxa_u32 node_index) {
   LEVEL_SET_NODE_BUFFER level_set_buffer = LEVEL_SET_NODE_BUFFER(p.level_set_grid);
   return level_set_buffer.nodes[node_index];
@@ -544,6 +548,7 @@ void level_set_node_set_distance_by_index(daxa_u32 node_index, daxa_f32 distance
   LEVEL_SET_NODE_BUFFER level_set_buffer = LEVEL_SET_NODE_BUFFER(p.level_set_grid);
   level_set_buffer.nodes[node_index].distance = distance;
 }
+#endif // DAXA_LEVEL_SET_FLAG
 
 #endif // DAXA_RIGID_BODY_FLAG
 
