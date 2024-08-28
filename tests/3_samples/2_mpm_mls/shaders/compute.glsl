@@ -3,7 +3,7 @@
 
 
 
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
 void gather_CDF_compute(daxa_u32 particle_index) {
     daxa_BufferPtr(GpuInput) config = daxa_BufferPtr(GpuInput)(daxa_id_to_address(p.input_buffer_id));
 
@@ -80,7 +80,7 @@ void gather_CDF_compute(daxa_u32 particle_index) {
 }
 
 
-daxa_f32vec3 get_rigid_body_velocity_at(RigidBody r, daxa_f32vec3 position) {
+daxa_f32vec3 rigid_body_get_velocity_at(RigidBody r, daxa_f32vec3 position) {
 
     return r.velocity + cross(r.omega, position - r.position);
 }
@@ -90,7 +90,7 @@ daxa_f32vec3 particle_collision(daxa_f32vec3 velocity, daxa_f32vec3 normal,Rigid
 
     daxa_f32 friction = r.friction;
     daxa_f32 pushing_force = r.pushing_force;
-    daxa_f32vec3 rigid_velocity = get_rigid_body_velocity_at(r, particle_position);
+    daxa_f32vec3 rigid_velocity = rigid_body_get_velocity_at(r, particle_position);
 
     daxa_f32vec3 relative_velocity = velocity - rigid_velocity;
 
@@ -136,6 +136,22 @@ void rigid_body_apply_impulse(daxa_f32vec3 impulse, inout RigidBody r, daxa_f32v
     r.velocity += lineal_velocity;
     r.omega += angular_velocity;
 }
+
+daxa_f32mat3x3 cross_product_matrix(daxa_f32vec3 v) {
+    return daxa_f32mat3x3(0, -v.z, v.y,
+                          v.z, 0, -v.x,
+                          -v.y, v.x, 0);
+}
+
+// Inputs: impulse point minus position, and normal
+daxa_f32 rigid_body_get_impulse_contribution(RigidBody r, daxa_f32vec3 position, daxa_f32vec3 direction) {
+    daxa_f32 ret = r.inv_mass;
+    daxa_f32mat3x3 inversed_inertia = rigid_body_get_transformed_inversed_inertia(r);
+    daxa_f32mat3x3 rn = cross_product_matrix(position);
+    inversed_inertia = transpose(rn) * inversed_inertia * rn;
+    ret += dot(direction, inversed_inertia * direction);
+    return ret;
+}
     
 
 void rigid_body_apply_temporal_velocity(inout RigidBody r) {
@@ -143,9 +159,13 @@ void rigid_body_apply_temporal_velocity(inout RigidBody r) {
     r.omega += r.omega_delta;
 }
 
-void rigid_body_save_parameters(RigidBody r, daxa_u32 rigid_index) {
+void rigid_body_save_velocity(RigidBody r, daxa_u32 rigid_index) {
     rigid_body_set_velocity_by_index(rigid_index, r.velocity);
     rigid_body_set_omega_by_index(rigid_index, r.omega);
+}
+
+void rigid_body_save_parameters(RigidBody r, daxa_u32 rigid_index) {
+    rigid_body_save_velocity(r, rigid_index);
     rigid_body_set_position_by_index(rigid_index, r.position);
     rigid_body_set_rotation_by_index(rigid_index, r.rotation);
 
@@ -197,7 +217,107 @@ void rigid_body_advance(inout RigidBody r, daxa_f32 dt) {
     r.rotation = rigid_body_aply_angular_velocity(r.rotation, r.omega, dt);
 }
 
-#endif // CHECK_RIGID_BODY_FLAG
+daxa_f32 level_set_sample(daxa_f32vec3 pos, daxa_u32vec3 grid_size, daxa_f32 t) {
+    daxa_f32 x = pos.x;
+    daxa_f32 y = pos.y;
+    daxa_f32 z = pos.z;
+
+    x = clamp(x - 0.5f, 0.0f, grid_size.x - 1.0f - EPSILON);
+    y = clamp(y - 0.5f, 0.0f, grid_size.y - 1.0f - EPSILON);
+    z = clamp(z - 0.5f, 0.0f, grid_size.z - 1.0f - EPSILON);
+
+    daxa_u32 x0 = clamp(daxa_u32(x), 0u, grid_size.x - 2u);
+    daxa_u32 y0 = clamp(daxa_u32(y), 0u, grid_size.y - 2u);
+    daxa_u32 z0 = clamp(daxa_u32(z), 0u, grid_size.z - 2u);
+
+    daxa_f32 x1 = x - x0;
+    daxa_f32 y1 = y - y0;
+    daxa_f32 z1 = z - z0;
+
+    daxa_f32 x0f = x0;
+    daxa_f32 y0f = y0;
+    daxa_f32 z0f = z0;
+
+    daxa_f32 x1f = x1;
+    daxa_f32 y1f = y1;
+    daxa_f32 z1f = z1;
+
+    // Interpolation
+    daxa_f32 c00 = mix(level_set_get_distance_by_index(x0 + y0 * grid_size.x + z0 * grid_size.x * grid_size.y),
+                       level_set_get_distance_by_index(x0 + 1 + y0 * grid_size.x + z0 * grid_size.x * grid_size.y), x1f);
+
+    daxa_f32 c10 = mix(level_set_get_distance_by_index(x0 + y0 * grid_size.x + (z0 + 1) * grid_size.x * grid_size.y),
+
+                          level_set_get_distance_by_index(x0 + 1 + y0 * grid_size.x + (z0 + 1) * grid_size.x * grid_size.y), x1f);
+
+    daxa_f32 c01 = mix(c00, c10, z1f);
+
+    c00 = mix(level_set_get_distance_by_index(x0 + (y0 + 1) * grid_size.x + z0 * grid_size.x * grid_size.y),
+               level_set_get_distance_by_index(x0 + 1 + (y0 + 1) * grid_size.x + z0 * grid_size.x * grid_size.y), x1f);
+
+    c10 = mix(level_set_get_distance_by_index(x0 + (y0 + 1) * grid_size.x + (z0 + 1) * grid_size.x * grid_size.y),
+
+                    level_set_get_distance_by_index(x0 + 1 + (y0 + 1) * grid_size.x + (z0 + 1) * grid_size.x * grid_size.y), x1f);
+
+    daxa_f32 c11 = mix(c00, c10, z1f);
+
+    return mix(c01, c11, y1f);
+}
+
+daxa_f32vec3 level_set_gradient(daxa_f32vec3 pos, daxa_u32vec3 grid_size, daxa_f32 t) {
+    daxa_f32 x = pos.x;
+    daxa_f32 y = pos.y;
+    daxa_f32 z = pos.z;
+
+    x = clamp(x - 0.5f, 0.0f, grid_size.x - 1.0f - EPSILON);
+    y = clamp(y - 0.5f, 0.0f, grid_size.y - 1.0f - EPSILON);
+    z = clamp(z - 0.5f, 0.0f, grid_size.z - 1.0f - EPSILON);
+
+    daxa_u32 x0 = clamp(daxa_u32(x), 0u, grid_size.x - 2u);
+    daxa_u32 y0 = clamp(daxa_u32(y), 0u, grid_size.y - 2u);
+    daxa_u32 z0 = clamp(daxa_u32(z), 0u, grid_size.z - 2u);
+
+    daxa_f32 x1 = x - x0;
+    daxa_f32 y1 = y - y0;
+    daxa_f32 z1 = z - z0;
+
+    daxa_f32 x0f = x0;
+    daxa_f32 y0f = y0;
+    daxa_f32 z0f = z0;
+
+    daxa_f32 x1f = x1;
+    daxa_f32 y1f = y1;
+    daxa_f32 z1f = z1;
+
+    // Finite differences to compute the gradient
+    daxa_f32 dx0 = level_set_get_distance_by_index(x0 + 1 + y0 * grid_size.x + z0 * grid_size.x * grid_size.y) -
+                   level_set_get_distance_by_index(x0 + y0 * grid_size.x + z0 * grid_size.x * grid_size.y);
+
+    daxa_f32 dx1 = level_set_get_distance_by_index(x0 + 1 + y0 * grid_size.x + (z0 + 1) * grid_size.x * grid_size.y) -
+                   level_set_get_distance_by_index(x0 + y0 * grid_size.x + (z0 + 1) * grid_size.x * grid_size.y);
+
+    daxa_f32 dy0 = level_set_get_distance_by_index(x0 + (y0 + 1) * grid_size.x + z0 * grid_size.x * grid_size.y) -
+                   level_set_get_distance_by_index(x0 + y0 * grid_size.x + z0 * grid_size.x * grid_size.y);
+
+    daxa_f32 dy1 = level_set_get_distance_by_index((x0 + 1) + (y0 + 1) * grid_size.x + z0 * grid_size.x * grid_size.y) -
+                   level_set_get_distance_by_index((x0 + 1) + y0 * grid_size.x + z0 * grid_size.x * grid_size.y);
+
+    daxa_f32 dz0 = level_set_get_distance_by_index(x0 + y0 * grid_size.x + (z0 + 1) * grid_size.x * grid_size.y) -
+                   level_set_get_distance_by_index(x0 + y0 * grid_size.x + z0 * grid_size.x * grid_size.y);
+
+    daxa_f32 dz1 = level_set_get_distance_by_index((x0 + 1) + y0 * grid_size.x + (z0 + 1) * grid_size.x * grid_size.y) -
+                   level_set_get_distance_by_index((x0 + 1) + y0 * grid_size.x + z0 * grid_size.x * grid_size.y);
+
+    // Interpolate the gradients
+    daxa_f32 gx = mix(z1f, dx0, dx1);
+    daxa_f32 gy = mix(x1f, dy0, dy1);
+    daxa_f32 gz = mix(y1f, dz0, dz1);
+
+    // Retun the gradient
+    return normalize(daxa_f32vec3(gx, gy, gz));
+}
+
+#endif // DAXA_RIGID_BODY_FLAG
 
 #if RESET_RIGID_GRID_COMPUTE_FLAG == 1
 layout(local_size_x = MPM_GRID_COMPUTE_X, local_size_y = MPM_GRID_COMPUTE_Y, local_size_z = MPM_GRID_COMPUTE_Z) in;
@@ -229,8 +349,69 @@ void main()
     {
         return;
     }
+
+    float dx = deref(config).dx;
+    float inv_dx = deref(config).inv_dx;
+    float dt = deref(config).dt;
     
     RigidParticle particle = get_rigid_particle_by_index(pixel_i_x);
+
+    if (particle.rigid_id > MAX_RIGID_BODY_COUNT)
+    {
+        return;
+    }
+    
+    RigidBody r = get_rigid_body_by_index(particle.rigid_id);
+
+    daxa_f32vec3 center = (particle.min + particle.max) * 0.5f;
+    daxa_f32mat4x4 transform = rigid_body_get_transform_matrix(r);
+
+    center = (transform * vec4(center, 1)).xyz;
+
+    daxa_f32vec3 pos = center * inv_dx;
+    daxa_u32vec3 base_coord = daxa_u32vec3(pos);
+    daxa_u32 index = base_coord.x + base_coord.y * deref(config).grid_dim.x + base_coord.z * deref(config).grid_dim.x * deref(config).grid_dim.y;
+    if(index >= deref(config).grid_dim.x * deref(config).grid_dim.y * deref(config).grid_dim.z) {
+        return;
+    }
+
+    //TODO: this is a temporary hack
+    daxa_f32 t = 0.0f;
+
+    daxa_f32 phi = level_set_sample(pos, deref(config).grid_dim, t);
+    daxa_f32vec3 gradient = level_set_gradient(pos, deref(config).grid_dim, t);
+
+    if(phi < 0) {
+        
+        daxa_f32 friction = r.friction;
+        daxa_f32 restitution = r.restitution;
+        daxa_f32vec3 v10 = rigid_body_get_velocity_at(r, center);
+        daxa_f32vec3 r0 = center - r.position;
+        daxa_f32 v0 = dot(gradient, v10);
+
+        daxa_f32 J = -((1 + restitution) * v0) * inverse_f32(rigid_body_get_impulse_contribution(r, r0, gradient));
+
+        if(J < 0) {
+            return;
+        }
+
+        daxa_f32vec3 impulse = J * gradient;
+        rigid_body_apply_impulse(impulse, r, center);
+
+        // Friction 
+        v10 = rigid_body_get_velocity_at(r, center);
+        daxa_f32vec3 tao = v10 - gradient * dot(gradient, v10);
+        if(vec3_abs_max(tao) > COLLISION_GUARD) {
+            tao = normalize(tao);
+            daxa_f32 j = -dot(v10, tao) * inverse_f32(rigid_body_get_impulse_contribution(r, r0, tao));
+            j = clamp(j, friction * -J, friction * J);
+            daxa_f32vec3 friction_impulse = j * tao;
+            rigid_body_apply_impulse(friction_impulse, r, center);
+        }
+    }
+
+    rigid_body_save_velocity(r, particle.rigid_id);
+
 }
 
 #elif RASTER_RIGID_BOUND_COMPUTE_FLAG == 1
@@ -513,9 +694,9 @@ void main()
 
     Particle particle = get_particle_by_index(pixel_i_x);
 
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
     ParticleCDF particle_CDF = get_rigid_particle_CDF_by_index(pixel_i_x);
-#endif // CHECK_RIGID_BODY_FLAG
+#endif // DAXA_RIGID_BODY_FLAG
 
     Aabb aabb = get_aabb_by_index(pixel_i_x);
 
@@ -547,7 +728,7 @@ void main()
 
                 uint index = (coord.x + coord.y * deref(config).grid_dim.x + coord.z * deref(config).grid_dim.x * deref(config).grid_dim.y);
 
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
                 daxa_u32 grid_color = get_node_cdf_color_by_index(index);
 
                 daxa_u32 particle_color = get_rigid_particle_CDF_color_by_index(pixel_i_x);
@@ -556,7 +737,7 @@ void main()
                 if(!cdf_is_compatible(grid_color, particle_color)) {
                     continue;
                 }
-#endif // CHECK_RIGID_BODY_FLAG
+#endif // DAXA_RIGID_BODY_FLAG
 
                 vec3 dpos = (vec3(i, j, k) - fx) * dx;
 
@@ -593,7 +774,7 @@ void main()
     float dt = deref(config).dt;
     float gravity = deref(config).gravity;
     float inv_dx = deref(config).inv_dx;
-    uint bound = 3;
+    uint bound = BOUNDARY;
 
     Cell cell = get_cell_by_index(cell_index);
 
@@ -705,9 +886,9 @@ void main()
         return;
     }
 
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
     gather_CDF_compute(pixel_i_x);
-#endif // CHECK_RIGID_BODY_FLAG
+#endif // DAXA_RIGID_BODY_FLAG
 
     daxa_BufferPtr(GpuStatus) status = daxa_BufferPtr(GpuStatus)(daxa_id_to_address(p.status_buffer_id));
 
@@ -719,9 +900,9 @@ void main()
     Particle particle = get_particle_by_index(pixel_i_x);
     Aabb aabb = get_aabb_by_index(pixel_i_x);
 
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
     ParticleCDF particle_CDF = get_rigid_particle_CDF_by_index(pixel_i_x);
-#endif // CHECK_RIGID_BODY_FLAG
+#endif // DAXA_RIGID_BODY_FLAG
 
     daxa_f32vec3 w[3];
     daxa_f32vec3 fx;
@@ -754,7 +935,7 @@ void main()
 
                 vec3 vel_value;
 
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
                 
                 vel_value = get_cell_by_index(index).v;
 
@@ -787,7 +968,7 @@ void main()
                 }
 #else
                 vel_value = get_cell_by_index(index).v;
-#endif // CHECK_RIGID_BODY_FLAG
+#endif // DAXA_RIGID_BODY_FLAG
                 vec3 w_grid = vec3(vel_value * weight);
 
                 particle_velocity += w_grid; // Velocity
@@ -799,13 +980,13 @@ void main()
     particle.v = particle_velocity;
     particle.C = particle_C;
 
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
     if(particle_CDF.difference != 0) {
         daxa_f32vec3 f_penalty = abs(particle_CDF.distance) * particle_CDF.normal * PENALTY_FORCE;
         particle.v += dt * f_penalty / p_mass;
     }
     // }
-#endif // CHECK_RIGID_BODY_FLAG
+#endif // DAXA_RIGID_BODY_FLAG
 
     aabb.min += dt * particle.v;
     aabb.max += dt * particle.v;
@@ -869,8 +1050,10 @@ void main()
     // Advance rigid body simulation
     rigid_body_advance(r, dt);
 
-    // // Apply gravity force
-    // rigid_body_apply_impulse(daxa_f32vec3(0, deref(config).gravity, 0) * r.mass * dt, r, r.position);
+#if defined(DAXA_LEVEL_SET_FLAG)
+    // Apply gravity force
+    rigid_body_apply_impulse(daxa_f32vec3(0, deref(config).gravity, 0) * r.mass * dt, r, r.position);
+#endif // DAXA_LEVEL_SET_FLAG
 
     // // Apply angular velocity
     if(vec3_abs_max(r.rotation_axis) > 0.1f) {
@@ -880,9 +1063,41 @@ void main()
     // Save parameters
     rigid_body_save_parameters(r, pixel_i_x);
 }
+#elif LEVEL_SET_ADD_PLANE_COMPUTE_FLAG == 1
+layout(local_size_x = MPM_GRID_COMPUTE_X, local_size_y = MPM_GRID_COMPUTE_Y, local_size_z = MPM_GRID_COMPUTE_Z) in;
+void main()
+{
+    uvec3 pixel_i = gl_GlobalInvocationID.xyz;
+
+    daxa_BufferPtr(GpuInput) config = daxa_BufferPtr(GpuInput)(daxa_id_to_address(p.input_buffer_id));
+
+    if (pixel_i.x >= deref(config).grid_dim.x || pixel_i.y >= deref(config).grid_dim.y || pixel_i.z >= deref(config).grid_dim.z)
+    {
+        return;
+    }
+
+    uint cell_index = pixel_i.x + pixel_i.y * deref(config).grid_dim.x + pixel_i.z * deref(config).grid_dim.x * deref(config).grid_dim.y;
+
+    daxa_f32 dx = deref(config).dx;
+    uint bound = BOUNDARY;
+
+    // TODO:hardcoded values
+    daxa_f32vec3 plane_normal = daxa_f32vec3(0, 1, 0);
+    daxa_f32 plane_distance = -0.48f / dx;
+    // TODO:hardcoded values
+
+    daxa_f32vec3 normal = normalize(plane_normal);
+    daxa_f32 coeff = 1.0f / length(normal);
+    
+    NodeLevelSet node = level_set_get_node_by_index(cell_index);
+    daxa_f32vec3 sample_pos = (daxa_f32vec3(pixel_i) + daxa_f32vec3(0.5f));
+    daxa_f32 distance = (dot(normal, sample_pos) + plane_distance) * coeff;
+    distance = min(distance, node.distance);
+    level_set_node_set_distance_by_index(cell_index, distance);
+}
 #else
 // Main compute shader
-layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 void main()
 {
 }

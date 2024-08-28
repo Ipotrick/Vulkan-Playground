@@ -10,7 +10,11 @@
 
 #include "daxa/daxa.inl"
 
-#define CHECK_RIGID_BODY_FLAG
+#define DAXA_RIGID_BODY_FLAG
+
+#if defined(DAXA_RIGID_BODY_FLAG)
+#define DAXA_LEVEL_SET_FLAG
+#endif // DAXA_RIGID_BODY_FLAG
 
 // #define DAXA_SIMULATION_WATER_MPM_MLS
 // #define DAXA_SIMULATION_MANY_MATERIALS
@@ -29,6 +33,7 @@
 // #define NUM_PARTICLES 64
 // #define TOTAL_AABB_COUNT (NUM_PARTICLES + NUM_RIGID_BOX_COUNT)
 #define TOTAL_AABB_COUNT NUM_PARTICLES
+#define BOUNDARY 3U
 
 #define MPM_P2G_COMPUTE_X 64
 #define MPM_GRID_COMPUTE_X 4 
@@ -55,7 +60,7 @@
 #define MAT_COUNT (MAT_JELLY + 1)
 
 
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
 #define MAX_RIGID_BODY_COUNT 16U
 #define RIGID_BODY_BOX 0
 #define RIGID_BODY_MAX_ENUM (RIGID_BODY_BOX + 1)
@@ -68,7 +73,7 @@
 const daxa_f32 rigid_body_densities[NUM_RIGID_BOX_COUNT] = {600.0f, 400.0f, 200.0f};
 #else 
 #define NUM_RIGID_BOX_COUNT 1
-const daxa_f32 rigid_body_densities[NUM_RIGID_BOX_COUNT] = {100000.0f};
+const daxa_f32 rigid_body_densities[NUM_RIGID_BOX_COUNT] = {1000000.0f};
 #endif
 #define NUM_RIGID_PARTICLES 32768
 
@@ -82,6 +87,8 @@ const daxa_f32 rigid_body_densities[NUM_RIGID_BOX_COUNT] = {100000.0f};
 // #define SIGN_MASK 0x55555555U
 #define TAG_DISPLACEMENT MAX_RIGID_BODY_COUNT
 #define RECONSTRUCTION_GUARD 1e-10f
+#define COLLISION_GUARD 1e-7f
+#define EPSILON 1e-6f
 
 #define COUNTER_CLOCKWISE 0
 #define CLOCKWISE 1
@@ -91,11 +98,11 @@ const daxa_f32 rigid_body_densities[NUM_RIGID_BOX_COUNT] = {100000.0f};
 #define FRICTION -0.2f
 // #define PUSHING_FORCE 2000.0f
 #define PUSHING_FORCE 0.0f
-#else // CHECK_RIGID_BODY_FLAG
+#else // DAXA_RIGID_BODY_FLAG
 
 #define NUM_RIGID_BOX_COUNT 0
 
-#endif // CHECK_RIGID_BODY_FLAG
+#endif // DAXA_RIGID_BODY_FLAG
 
 struct Camera {
   daxa_f32mat4x4 inv_view;
@@ -106,7 +113,7 @@ struct Camera {
 struct GpuInput
 {
   daxa_u32 p_count;
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
   daxa_u32 rigid_body_count;
   daxa_u32 r_p_count;
 #endif
@@ -146,7 +153,7 @@ struct Aabb {
   daxa_f32vec3 max;
 };
 
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
 struct RigidBody  {
   daxa_u32 type;
   daxa_u32 p_count;
@@ -169,6 +176,7 @@ struct RigidBody  {
   daxa_f32vec3 rotation_axis;
   daxa_f32 linear_damping;
   daxa_f32 angular_damping;
+  daxa_f32 restitution;
 };
 
 struct RigidParticle  {
@@ -196,12 +204,12 @@ struct NodeCDF {
 struct NodeLevelSet {
   daxa_f32 distance;
 };
-#endif // CHECK_RIGID_BODY_FLAG
+#endif // DAXA_RIGID_BODY_FLAG
 
 DAXA_DECL_BUFFER_PTR(GpuInput)
 DAXA_DECL_BUFFER_PTR(GpuStatus)
 DAXA_DECL_BUFFER_PTR(Particle)
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
 DAXA_DECL_BUFFER_PTR(RigidBody)
 DAXA_DECL_BUFFER_PTR(RigidParticle)
 DAXA_DECL_BUFFER_PTR(NodeCDF)
@@ -219,7 +227,7 @@ struct ComputePush
     daxa_RWBufferPtr(GpuInput) input_ptr;
     daxa_BufferId status_buffer_id;
     daxa_RWBufferPtr(Particle) particles;
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
     daxa_BufferPtr(RigidBody) rigid_bodies;
     daxa_BufferPtr(daxa_u32) indices;
     daxa_BufferPtr(daxa_f32vec3) vertices;
@@ -276,13 +284,14 @@ DAXA_DECL_PUSH_CONSTANT(ComputePush, p)
 layout(buffer_reference, scalar) buffer PARTICLE_BUFFER {Particle particles[]; }; // Particle buffer
 layout(buffer_reference, scalar) buffer CELL_BUFFER {Cell cells[]; }; // Positions of an object
 layout(buffer_reference, scalar) buffer AABB_BUFFER {Aabb aabbs[]; }; // Particle positions
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
 layout(buffer_reference, scalar) buffer RIGID_BODY_BUFFER {RigidBody rigid_bodies[]; }; // Rigid body information
 layout(buffer_reference, scalar) buffer INDEX_BUFFER {uint indices[]; }; // Rigid body indices info
 layout(buffer_reference, scalar) buffer VERTEX_BUFFER {vec3 vertices[]; }; // Rigid body vertices info
 layout(buffer_reference, scalar) buffer RIGID_PARTICLE_BUFFER {RigidParticle particles[]; }; // Rigid particle buffer
 layout(buffer_reference, scalar) buffer RIGID_CELL_BUFFER {NodeCDF cells[]; }; // Rigid cell buffer
 layout(buffer_reference, scalar) buffer RIGID_PARTICLE_STATUS_BUFFER {ParticleCDF particles[]; }; // Rigid  Particle color buffer
+layout(buffer_reference, scalar) buffer LEVEL_SET_NODE_BUFFER {NodeLevelSet nodes[]; }; // Rigid cell level set buffer
 #endif
 
 daxa_i32
@@ -310,6 +319,10 @@ from_emulated_positive_float(daxa_i32 bits)
    return intBitsToFloat(bits);
 }
 
+daxa_f32 inverse_f32(daxa_f32 f) {
+  return 1.0f / f;
+}
+
 
 Particle get_particle_by_index(daxa_u32 particle_index) {
   PARTICLE_BUFFER particle_buffer =
@@ -317,7 +330,7 @@ Particle get_particle_by_index(daxa_u32 particle_index) {
   return particle_buffer.particles[particle_index];
 }
 
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
 RigidBody get_rigid_body_by_index(daxa_u32 rigid_body_index) {
   RIGID_BODY_BUFFER rigid_body_buffer =
       RIGID_BODY_BUFFER(p.rigid_bodies);
@@ -452,6 +465,11 @@ NodeCDF get_node_cdf_by_index(daxa_u32 cell_index) {
   return rigid_cell_buffer.cells[cell_index];
 }
 
+void node_cdf_set_by_index(daxa_u32 cell_index, NodeCDF cell) {
+  RIGID_CELL_BUFFER rigid_cell_buffer = RIGID_CELL_BUFFER(p.rigid_cells);
+  rigid_cell_buffer.cells[cell_index] = cell;
+}
+
 
 daxa_u32 get_node_cdf_color_by_index(daxa_u32 cell_index) {
   RIGID_CELL_BUFFER rigid_cell_buffer = RIGID_CELL_BUFFER(p.rigid_cells);
@@ -512,7 +530,22 @@ void set_rigid_particle_CDF_by_index(daxa_u32 particle_index, ParticleCDF color)
   rigid_particle_color_buffer.particles[particle_index] = color;
 }
 
-#endif // CHECK_RIGID_BODY_FLAG
+NodeLevelSet level_set_get_node_by_index(daxa_u32 node_index) {
+  LEVEL_SET_NODE_BUFFER level_set_buffer = LEVEL_SET_NODE_BUFFER(p.level_set_grid);
+  return level_set_buffer.nodes[node_index];
+}
+
+daxa_f32 level_set_get_distance_by_index(daxa_u32 node_index) {
+  LEVEL_SET_NODE_BUFFER level_set_buffer = LEVEL_SET_NODE_BUFFER(p.level_set_grid);
+  return level_set_buffer.nodes[node_index].distance;
+}
+
+void level_set_node_set_distance_by_index(daxa_u32 node_index, daxa_f32 distance) {
+  LEVEL_SET_NODE_BUFFER level_set_buffer = LEVEL_SET_NODE_BUFFER(p.level_set_grid);
+  level_set_buffer.nodes[node_index].distance = distance;
+}
+
+#endif // DAXA_RIGID_BODY_FLAG
 
 Cell get_cell_by_index(daxa_u32 cell_index) {
   CELL_BUFFER cell_buffer = CELL_BUFFER(p.cells);
@@ -608,6 +641,7 @@ void set_aabb_by_index(daxa_u32 aabb_index, Aabb aabb) {
   AABB_BUFFER aabb_buffer = AABB_BUFFER(p.aabbs);
   aabb_buffer.aabbs[aabb_index] = aabb;
 }
+
 #endif // GL_core_profile
 
 
@@ -1155,7 +1189,7 @@ daxa_f32 vec3_abs_max(daxa_f32vec3 v)
   return max(max(abs(v.x), abs(v.y)), abs(v.z));
 }
 
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
 daxa_f32mat3x3 rigid_body_get_rotation_matrix(RigidBody r) {
     daxa_f32vec4 quaternion = r.rotation;
     daxa_f32 x = quaternion.x;
@@ -1321,6 +1355,27 @@ inline daxa_f32vec3 operator/= (daxa_f32vec3 &a, const daxa_f32vec3 &b)
     return a;
 }
 
+inline daxa_f32mat3x3 mat3_inverse(const daxa_f32mat3x3 &m)
+{
+    daxa_f32 a00 = m.y.y * m.z.z - m.y.z * m.z.y;
+    daxa_f32 a01 = m.y.x * m.z.z - m.y.z * m.z.x;
+    daxa_f32 a02 = m.y.x * m.z.y - m.y.y * m.z.x;
+    daxa_f32 a10 = m.x.y * m.z.z - m.x.z * m.z.y;
+    daxa_f32 a11 = m.x.x * m.z.z - m.x.z * m.z.x;
+    daxa_f32 a12 = m.x.x * m.z.y - m.x.y * m.z.x;
+    daxa_f32 a20 = m.x.y * m.y.z - m.x.z * m.y.y;
+    daxa_f32 a21 = m.x.x * m.y.z - m.x.z * m.y.x;
+    daxa_f32 a22 = m.x.x * m.y.y - m.x.y * m.y.x;
+
+    daxa_f32 det = m.x.x * a00 - m.x.y * a01 + m.x.z * a02;
+    daxa_f32 inv_det = 1.0f / det;
+
+    return daxa_f32mat3x3(daxa_f32vec3(a00 * inv_det, -a10 * inv_det, a20 * inv_det),
+                          daxa_f32vec3(-a01 * inv_det, a11 * inv_det, -a21 * inv_det),
+                          daxa_f32vec3(a02 * inv_det, -a12 * inv_det, a22 * inv_det));
+}
+
+
 inline daxa_f32vec3 cross(const daxa_f32vec3 &a, const daxa_f32vec3 &b)
 {
     return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
@@ -1347,7 +1402,7 @@ inline daxa_f32mat3x3 inverse(const daxa_f32mat3x3 &m)
 }
 
 
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
 daxa_f32mat3x4 rigid_body_get_transform_matrix(const RigidBody &rigid_body) {
     daxa_f32vec3 translation = rigid_body.position;
     daxa_f32vec4 rotation = rigid_body.rotation;
@@ -1374,13 +1429,13 @@ daxa_f32mat3x4 rigid_body_get_transform_matrix(const RigidBody &rigid_body) {
                         daxa_f32vec4(rotation_matrix.x.y, rotation_matrix.y.y, rotation_matrix.z.y, translation.y),
                         daxa_f32vec4(rotation_matrix.x.z, rotation_matrix.y.z, rotation_matrix.z.z, translation.z));
 }
-#endif // CHECK_RIGID_BODY_FLAG
+#endif // DAXA_RIGID_BODY_FLAG
 
 #endif // GLSL & HLSL
 
 
 
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
 // Credits: https://github.com/taichi-dev/taichi/blob/c5af2f92bc481e99cac2bc548dfa98e188bbcc44/include/taichi/geometry/mesh.h
 // Note: assuming world origin aligns with elem.v[0]
 daxa_f32mat3x3 get_world_to_object_matrix(daxa_f32vec3 v0, daxa_f32vec3 v1, daxa_f32vec3 v2) {
@@ -1540,4 +1595,4 @@ ParticleCDF particle_CDF_check_and_correct_penetration(ParticleCDF particle_cdf,
 
 #endif // GLSL
 
-#endif // CHECK_RIGID_BODY_FLAG
+#endif // DAXA_RIGID_BODY_FLAG

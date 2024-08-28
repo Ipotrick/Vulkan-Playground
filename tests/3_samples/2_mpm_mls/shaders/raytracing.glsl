@@ -189,7 +189,7 @@ void main()
     aabb = get_aabb_by_index(i);
     particle = get_particle_by_index(i);
   } 
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
   else {
     RigidParticle rigid_particle = get_rigid_particle_by_index(i);
       
@@ -198,7 +198,7 @@ void main()
     particle.type = MAT_RIGID;
     particle.v = vec3(0);
   }
-#endif // CHECK_RIGID_BODY_FLAG
+#endif // DAXA_RIGID_BODY_FLAG
 
   vec3 center = (aabb.min + aabb.max) * 0.5;
 
@@ -326,7 +326,7 @@ void main()
     aabb = get_aabb_by_index(i);
     particle = get_particle_by_index(i);
   } 
-#if defined(CHECK_RIGID_BODY_FLAG)
+#if defined(DAXA_RIGID_BODY_FLAG)
   else {
     RigidParticle rigid_particle = get_rigid_particle_by_index(i);
 
