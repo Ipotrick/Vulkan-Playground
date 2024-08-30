@@ -74,11 +74,11 @@
 const daxa_f32 rigid_body_densities[NUM_RIGID_BOX_COUNT] = {600.0f, 400.0f, 200.0f};
 #else 
 #define NUM_RIGID_BOX_COUNT 1
-const daxa_f32 rigid_body_densities[NUM_RIGID_BOX_COUNT] = {1000000.0f};
+const daxa_f32 rigid_body_densities[NUM_RIGID_BOX_COUNT] = {600.0f};
 #endif
 #define NUM_RIGID_PARTICLES 32768
 
-#define BOX_VOLUME 0.00047684f // dim.x * dim.y * dim.z
+#define BOX_VOLUME 0.47684f // dim.x * dim.y * dim.z
 
 #define BOX_VERTEX_COUNT 8
 #define BOX_INDEX_COUNT 36
@@ -157,6 +157,8 @@ struct Aabb {
 #if defined(DAXA_RIGID_BODY_FLAG)
 struct RigidBody  {
   daxa_u32 type;
+  daxa_f32vec3 min;
+  daxa_f32vec3 max;
   daxa_u32 p_count;
   daxa_u32 p_offset;
   daxa_u32 triangle_count;
@@ -202,9 +204,11 @@ struct NodeCDF {
   daxa_u32 rigid_particle_index;
 };
 
+#if defined(DAXA_LEVEL_SET_FLAG)
 struct NodeLevelSet {
   daxa_f32 distance;
 };
+#endif // DAXA_LEVEL_SET_FLAG
 #endif // DAXA_RIGID_BODY_FLAG
 
 DAXA_DECL_BUFFER_PTR(GpuInput)
@@ -215,8 +219,10 @@ DAXA_DECL_BUFFER_PTR(RigidBody)
 DAXA_DECL_BUFFER_PTR(RigidParticle)
 DAXA_DECL_BUFFER_PTR(NodeCDF)
 DAXA_DECL_BUFFER_PTR(ParticleCDF)
+#if defined(DAXA_LEVEL_SET_FLAG)
 DAXA_DECL_BUFFER_PTR(NodeLevelSet)
-#endif
+#endif // DAXA_LEVEL_SET_FLAG
+#endif // DAXA_RIGID_BODY_FLAG
 DAXA_DECL_BUFFER_PTR(Cell)
 DAXA_DECL_BUFFER_PTR(Camera)
 DAXA_DECL_BUFFER_PTR(Aabb)
@@ -238,7 +244,7 @@ struct ComputePush
 #if defined(DAXA_LEVEL_SET_FLAG)
     daxa_BufferPtr(NodeLevelSet) level_set_grid;
 #endif // DAXA_LEVEL_SET_FLAG
-#endif
+#endif // DAXA_RIGID_BODY_FLAG
     daxa_RWBufferPtr(Cell) cells;
     daxa_RWBufferPtr(Aabb) aabbs;
     daxa_BufferPtr(Camera) camera;
@@ -294,8 +300,10 @@ layout(buffer_reference, scalar) buffer VERTEX_BUFFER {vec3 vertices[]; }; // Ri
 layout(buffer_reference, scalar) buffer RIGID_PARTICLE_BUFFER {RigidParticle particles[]; }; // Rigid particle buffer
 layout(buffer_reference, scalar) buffer RIGID_CELL_BUFFER {NodeCDF cells[]; }; // Rigid cell buffer
 layout(buffer_reference, scalar) buffer RIGID_PARTICLE_STATUS_BUFFER {ParticleCDF particles[]; }; // Rigid  Particle color buffer
+#if defined(DAXA_LEVEL_SET_FLAG)
 layout(buffer_reference, scalar) buffer LEVEL_SET_NODE_BUFFER {NodeLevelSet nodes[]; }; // Rigid cell level set buffer
-#endif
+#endif // DAXA_LEVEL_SET_FLAG
+#endif 
 
 daxa_i32
 to_emulated_float(daxa_f32 f)
@@ -323,7 +331,8 @@ from_emulated_positive_float(daxa_i32 bits)
 }
 
 daxa_f32 inverse_f32(daxa_f32 f) {
-  return 1.0f / f;
+  // check for divide by zero
+  return f == 0.0f ? 0.0f : 1.0f / f;
 }
 
 
@@ -344,6 +353,23 @@ daxa_f32vec3 get_rigid_body_color_by_index(daxa_u32 rigid_body_index) {
   RIGID_BODY_BUFFER rigid_body_buffer =
       RIGID_BODY_BUFFER(p.rigid_bodies);
   return rigid_body_buffer.rigid_bodies[rigid_body_index].color;
+}
+
+
+daxa_f32vec3 rigid_body_add_atomic_velocity_by_index(daxa_u32 rigid_body_index, daxa_f32vec3 velocity) {
+  RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
+  daxa_f32 x = atomicAdd(rigid_body_buffer.rigid_bodies[rigid_body_index].velocity.x, velocity.x);
+  daxa_f32 y = atomicAdd(rigid_body_buffer.rigid_bodies[rigid_body_index].velocity.y, velocity.y);
+  daxa_f32 z = atomicAdd(rigid_body_buffer.rigid_bodies[rigid_body_index].velocity.z, velocity.z);
+  return vec3(x, y, z);
+}
+
+daxa_f32vec3 rigid_body_add_atomic_omega_by_index(daxa_u32 rigid_body_index, daxa_f32vec3 omega) {
+  RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
+  daxa_f32 x = atomicAdd(rigid_body_buffer.rigid_bodies[rigid_body_index].omega.x, omega.x);
+  daxa_f32 y = atomicAdd(rigid_body_buffer.rigid_bodies[rigid_body_index].omega.y, omega.y);
+  daxa_f32 z = atomicAdd(rigid_body_buffer.rigid_bodies[rigid_body_index].omega.z, omega.z);
+  return vec3(x, y, z);
 }
 
 void rigid_body_add_atomic_velocity_delta_by_index(daxa_u32 rigid_body_index, daxa_f32vec3 velocity_delta) {

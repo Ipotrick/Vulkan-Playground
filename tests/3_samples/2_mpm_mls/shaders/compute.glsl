@@ -4,14 +4,12 @@
 
 
 #if defined(DAXA_RIGID_BODY_FLAG)
-void gather_CDF_compute(daxa_u32 particle_index) {
+void gather_CDF_compute(daxa_u32 particle_index, Aabb aabb) {
     daxa_BufferPtr(GpuInput) config = daxa_BufferPtr(GpuInput)(daxa_id_to_address(p.input_buffer_id));
 
     float dx = deref(config).dx;
     float inv_dx = deref(config).inv_dx;
     daxa_u32 rigid_body_count = deref(config).rigid_body_count;
-
-    Aabb aabb = get_aabb_by_index(particle_index);
 
     daxa_f32vec3 w[3];
     daxa_f32vec3 fx;
@@ -127,7 +125,7 @@ void rigid_body_apply_delta_impulse(RigidBody r, daxa_u32 rigid_index, daxa_f32v
     rigid_body_add_atomic_omega_delta_by_index(rigid_index, angular_velocity);
 }
 
-void rigid_body_apply_impulse(daxa_f32vec3 impulse, inout RigidBody r, daxa_f32vec3 position) {
+void rigid_body_apply_impulse(inout RigidBody r, daxa_f32vec3 impulse,  daxa_f32vec3 position) {
     daxa_f32vec3 torque = cross(position - r.position, impulse);
     
     daxa_f32vec3 lineal_velocity = impulse * r.inv_mass;
@@ -218,104 +216,111 @@ void rigid_body_advance(inout RigidBody r, daxa_f32 dt) {
 }
 
 #if defined(DAXA_LEVEL_SET_FLAG)
-daxa_f32 level_set_sample(daxa_f32vec3 pos, daxa_u32vec3 grid_size, daxa_f32 t) {
-    daxa_f32 x = pos.x;
-    daxa_f32 y = pos.y;
-    daxa_f32 z = pos.z;
 
-    x = clamp(x - 0.5f, 0.0f, grid_size.x - 1.0f - EPSILON);
-    y = clamp(y - 0.5f, 0.0f, grid_size.y - 1.0f - EPSILON);
-    z = clamp(z - 0.5f, 0.0f, grid_size.z - 1.0f - EPSILON);
-
-    daxa_u32 x0 = clamp(daxa_u32(x), 0u, grid_size.x - 2u);
-    daxa_u32 y0 = clamp(daxa_u32(y), 0u, grid_size.y - 2u);
-    daxa_u32 z0 = clamp(daxa_u32(z), 0u, grid_size.z - 2u);
-
-    daxa_f32 x1 = x - x0;
-    daxa_f32 y1 = y - y0;
-    daxa_f32 z1 = z - z0;
-
-    daxa_f32 x0f = x0;
-    daxa_f32 y0f = y0;
-    daxa_f32 z0f = z0;
-
-    daxa_f32 x1f = x1;
-    daxa_f32 y1f = y1;
-    daxa_f32 z1f = z1;
-
-    // Interpolation
-    daxa_f32 c00 = mix(level_set_get_distance_by_index(x0 + y0 * grid_size.x + z0 * grid_size.x * grid_size.y),
-                       level_set_get_distance_by_index(x0 + 1 + y0 * grid_size.x + z0 * grid_size.x * grid_size.y), x1f);
-
-    daxa_f32 c10 = mix(level_set_get_distance_by_index(x0 + y0 * grid_size.x + (z0 + 1) * grid_size.x * grid_size.y),
-
-                          level_set_get_distance_by_index(x0 + 1 + y0 * grid_size.x + (z0 + 1) * grid_size.x * grid_size.y), x1f);
-
-    daxa_f32 c01 = mix(c00, c10, z1f);
-
-    c00 = mix(level_set_get_distance_by_index(x0 + (y0 + 1) * grid_size.x + z0 * grid_size.x * grid_size.y),
-               level_set_get_distance_by_index(x0 + 1 + (y0 + 1) * grid_size.x + z0 * grid_size.x * grid_size.y), x1f);
-
-    c10 = mix(level_set_get_distance_by_index(x0 + (y0 + 1) * grid_size.x + (z0 + 1) * grid_size.x * grid_size.y),
-
-                    level_set_get_distance_by_index(x0 + 1 + (y0 + 1) * grid_size.x + (z0 + 1) * grid_size.x * grid_size.y), x1f);
-
-    daxa_f32 c11 = mix(c00, c10, z1f);
-
-    return mix(c01, c11, y1f);
+daxa_u32 get_index(daxa_u32 x, daxa_u32 y, daxa_u32 z, daxa_u32vec3 grid_size) {
+    return x + y * grid_size.x + z * grid_size.x * grid_size.y;
 }
 
-daxa_f32vec3 level_set_gradient(daxa_f32vec3 pos, daxa_u32vec3 grid_size, daxa_f32 t) {
-    daxa_f32 x = pos.x;
-    daxa_f32 y = pos.y;
-    daxa_f32 z = pos.z;
+// GLSL function for trilinear interpolation
+float level_set_get_distance(vec3 pos, uvec3 grid_size, vec3 storage_offset) {
+    // Clamping the position inside the grid boundaries
+    float x = clamp(pos.x - storage_offset.x, 0.0, float(grid_size.x) - 1.0 - EPSILON);
+    float y = clamp(pos.y - storage_offset.y, 0.0, float(grid_size.y) - 1.0 - EPSILON);
+    float z = clamp(pos.z - storage_offset.z, 0.0, float(grid_size.z) - 1.0 - EPSILON);
 
-    x = clamp(x - 0.5f, 0.0f, grid_size.x - 1.0f - EPSILON);
-    y = clamp(y - 0.5f, 0.0f, grid_size.y - 1.0f - EPSILON);
-    z = clamp(z - 0.5f, 0.0f, grid_size.z - 1.0f - EPSILON);
+    // Integer indices of the voxel
+    uint x_i = uint(clamp(int(x), 0, int(grid_size.x) - 2));
+    uint y_i = uint(clamp(int(y), 0, int(grid_size.y) - 2));
+    uint z_i = uint(clamp(int(z), 0, int(grid_size.z) - 2));
 
-    daxa_u32 x0 = clamp(daxa_u32(x), 0u, grid_size.x - 2u);
-    daxa_u32 y0 = clamp(daxa_u32(y), 0u, grid_size.y - 2u);
-    daxa_u32 z0 = clamp(daxa_u32(z), 0u, grid_size.z - 2u);
+    // Fractional components for interpolation
+    float x_r = x - float(x_i);
+    float y_r = y - float(y_i);
+    float z_r = z - float(z_i);
 
-    daxa_f32 x1 = x - x0;
-    daxa_f32 y1 = y - y0;
-    daxa_f32 z1 = z - z0;
+    // Fetch values from the level set grid using computed indices
+    float c000 = level_set_get_distance_by_index(get_index(x_i, y_i, z_i, grid_size));
+    float c001 = level_set_get_distance_by_index(get_index(x_i, y_i, z_i + 1, grid_size));
+    float c010 = level_set_get_distance_by_index(get_index(x_i, y_i + 1, z_i, grid_size));
+    float c011 = level_set_get_distance_by_index(get_index(x_i, y_i + 1, z_i + 1, grid_size));
+    float c100 = level_set_get_distance_by_index(get_index(x_i + 1, y_i, z_i, grid_size));
+    float c101 = level_set_get_distance_by_index(get_index(x_i + 1, y_i, z_i + 1, grid_size));
+    float c110 = level_set_get_distance_by_index(get_index(x_i + 1, y_i + 1, z_i, grid_size));
+    float c111 = level_set_get_distance_by_index(get_index(x_i + 1, y_i + 1, z_i + 1, grid_size));
 
-    daxa_f32 x0f = x0;
-    daxa_f32 y0f = y0;
-    daxa_f32 z0f = z0;
+    // Perform trilinear interpolation
+    float c00 = mix(c000, c001, z_r);
+    float c01 = mix(c010, c011, z_r);
+    float c10 = mix(c100, c101, z_r);
+    float c11 = mix(c110, c111, z_r);
 
-    daxa_f32 x1f = x1;
-    daxa_f32 y1f = y1;
-    daxa_f32 z1f = z1;
+    float c0 = mix(c00, c01, y_r);
+    float c1 = mix(c10, c11, y_r);
 
-    // Finite differences to compute the gradient
-    daxa_f32 dx0 = level_set_get_distance_by_index(x0 + 1 + y0 * grid_size.x + z0 * grid_size.x * grid_size.y) -
-                   level_set_get_distance_by_index(x0 + y0 * grid_size.x + z0 * grid_size.x * grid_size.y);
+    return mix(c0, c1, x_r);
+}
 
-    daxa_f32 dx1 = level_set_get_distance_by_index(x0 + 1 + y0 * grid_size.x + (z0 + 1) * grid_size.x * grid_size.y) -
-                   level_set_get_distance_by_index(x0 + y0 * grid_size.x + (z0 + 1) * grid_size.x * grid_size.y);
 
-    daxa_f32 dy0 = level_set_get_distance_by_index(x0 + (y0 + 1) * grid_size.x + z0 * grid_size.x * grid_size.y) -
-                   level_set_get_distance_by_index(x0 + y0 * grid_size.x + z0 * grid_size.x * grid_size.y);
+// GLSL function to compute the gradient of the level set
+vec3 level_set_get_gradient(vec3 pos, uvec3 grid_size, vec3 storage_offset) {
+    // Clamping the position inside the grid boundaries
+    float x = clamp(pos.x - storage_offset.x, 0.0, float(grid_size.x) - 1.0 - EPSILON);
+    float y = clamp(pos.y - storage_offset.y, 0.0, float(grid_size.y) - 1.0 - EPSILON);
+    float z = clamp(pos.z - storage_offset.z, 0.0, float(grid_size.z) - 1.0 - EPSILON);
 
-    daxa_f32 dy1 = level_set_get_distance_by_index((x0 + 1) + (y0 + 1) * grid_size.x + z0 * grid_size.x * grid_size.y) -
-                   level_set_get_distance_by_index((x0 + 1) + y0 * grid_size.x + z0 * grid_size.x * grid_size.y);
+    // Integer indices of the voxel
+    uint x_i = uint(clamp(int(x), 0, int(grid_size.x) - 2));
+    uint y_i = uint(clamp(int(y), 0, int(grid_size.y) - 2));
+    uint z_i = uint(clamp(int(z), 0, int(grid_size.z) - 2));
 
-    daxa_f32 dz0 = level_set_get_distance_by_index(x0 + y0 * grid_size.x + (z0 + 1) * grid_size.x * grid_size.y) -
-                   level_set_get_distance_by_index(x0 + y0 * grid_size.x + z0 * grid_size.x * grid_size.y);
+    // Fractional components for interpolation
+    float x_r = x - float(x_i);
+    float y_r = y - float(y_i);
+    float z_r = z - float(z_i);
 
-    daxa_f32 dz1 = level_set_get_distance_by_index((x0 + 1) + y0 * grid_size.x + (z0 + 1) * grid_size.x * grid_size.y) -
-                   level_set_get_distance_by_index((x0 + 1) + y0 * grid_size.x + z0 * grid_size.x * grid_size.y);
+    // Compute gradient in the x-direction
+    float gx = mix(
+        mix(level_set_get_distance_by_index(get_index(x_i + 1, y_i, z_i, grid_size)) -
+                level_set_get_distance_by_index(get_index(x_i, y_i, z_i, grid_size)),
+            level_set_get_distance_by_index(get_index(x_i + 1, y_i, z_i + 1, grid_size)) -
+                level_set_get_distance_by_index(get_index(x_i, y_i, z_i + 1, grid_size)),
+            z_r),
+        mix(level_set_get_distance_by_index(get_index(x_i + 1, y_i + 1, z_i, grid_size)) -
+                level_set_get_distance_by_index(get_index(x_i, y_i + 1, z_i, grid_size)),
+            level_set_get_distance_by_index(get_index(x_i + 1, y_i + 1, z_i + 1, grid_size)) -
+                level_set_get_distance_by_index(get_index(x_i, y_i + 1, z_i + 1, grid_size)),
+            z_r),
+        y_r);
 
-    // Interpolate the gradients
-    daxa_f32 gx = mix(z1f, dx0, dx1);
-    daxa_f32 gy = mix(x1f, dy0, dy1);
-    daxa_f32 gz = mix(y1f, dz0, dz1);
+    // Compute gradient in the y-direction
+    float gy = mix(
+        mix(level_set_get_distance_by_index(get_index(x_i, y_i + 1, z_i, grid_size)) -
+                level_set_get_distance_by_index(get_index(x_i, y_i, z_i, grid_size)),
+            level_set_get_distance_by_index(get_index(x_i + 1, y_i + 1, z_i, grid_size)) -
+                level_set_get_distance_by_index(get_index(x_i + 1, y_i, z_i, grid_size)),
+            x_r),
+        mix(level_set_get_distance_by_index(get_index(x_i, y_i + 1, z_i + 1, grid_size)) -
+                level_set_get_distance_by_index(get_index(x_i, y_i, z_i + 1, grid_size)),
+            level_set_get_distance_by_index(get_index(x_i + 1, y_i + 1, z_i + 1, grid_size)) -
+                level_set_get_distance_by_index(get_index(x_i + 1, y_i, z_i + 1, grid_size)),
+            x_r),
+        z_r);
 
-    // Retun the gradient
-    return daxa_f32vec3(gx, gy, gz);
+    // Compute gradient in the z-direction
+    float gz = mix(
+        mix(level_set_get_distance_by_index(get_index(x_i, y_i, z_i + 1, grid_size)) -
+                level_set_get_distance_by_index(get_index(x_i, y_i, z_i, grid_size)),
+            level_set_get_distance_by_index(get_index(x_i, y_i + 1, z_i + 1, grid_size)) -
+                level_set_get_distance_by_index(get_index(x_i, y_i + 1, z_i, grid_size)),
+            y_r),
+        mix(level_set_get_distance_by_index(get_index(x_i + 1, y_i, z_i + 1, grid_size)) -
+                level_set_get_distance_by_index(get_index(x_i + 1, y_i, z_i, grid_size)),
+            level_set_get_distance_by_index(get_index(x_i + 1, y_i + 1, z_i + 1, grid_size)) -
+                level_set_get_distance_by_index(get_index(x_i + 1, y_i + 1, z_i, grid_size)),
+            y_r),
+        x_r);
+
+    return vec3(gx, gy, gz);
 }
 #endif // DAXA_LEVEL_SET_FLAG
 
@@ -365,9 +370,14 @@ void main()
     RigidBody r = get_rigid_body_by_index(particle.rigid_id);
 
     daxa_f32vec3 center = (particle.min + particle.max) * 0.5f;
+
     daxa_f32mat4x4 transform = rigid_body_get_transform_matrix(r);
 
     center = (transform * vec4(center, 1)).xyz;
+
+    if(any(lessThan(center, vec3(0))) || any(greaterThanEqual(center, vec3(1)))) {
+        return;
+    }
 
     daxa_f32vec3 pos = center * inv_dx;
     daxa_u32vec3 base_coord = daxa_u32vec3(pos);
@@ -379,8 +389,8 @@ void main()
     //TODO: this is a temporary hack
     daxa_f32 t = 0.0f;
 
-    daxa_f32 phi = level_set_sample(pos, deref(config).grid_dim, t);
-    daxa_f32vec3 gradient = level_set_gradient(pos, deref(config).grid_dim, t);
+    daxa_f32 phi = level_set_get_distance(pos, deref(config).grid_dim, vec3(0.5f, 0.5f, 0.5f));
+    daxa_f32vec3 gradient = level_set_get_gradient(pos, deref(config).grid_dim, vec3(0.5f, 0.5f, 0.5f));
 
     if(phi < 0) {
         
@@ -397,7 +407,7 @@ void main()
         }
 
         daxa_f32vec3 impulse = J * gradient;
-        rigid_body_apply_impulse(impulse, r, center);
+        rigid_body_apply_delta_impulse(r, particle.rigid_id, impulse, center);
 
         // Friction 
         v10 = rigid_body_get_velocity_at(r, center);
@@ -407,14 +417,102 @@ void main()
             daxa_f32 j = -dot(v10, tao) * inverse_f32(rigid_body_get_impulse_contribution(r, r0, tao));
             j = clamp(j, friction * -J, friction * J);
             daxa_f32vec3 friction_impulse = j * tao;
-            rigid_body_apply_impulse(friction_impulse, r, center);
+            rigid_body_apply_delta_impulse(r, particle.rigid_id, friction_impulse, center);
         }
     }
 
-    rigid_body_save_velocity(r, particle.rigid_id);
-
 }
+#elif UPDATE_RIGID_BODIES_COMPUTE_FLAG == 1
+layout(local_size_x = MPM_CPIC_COMPUTE_X, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+    uint pixel_i_x = gl_GlobalInvocationID.x;
 
+    daxa_BufferPtr(GpuInput) config = daxa_BufferPtr(GpuInput)(daxa_id_to_address(p.input_buffer_id));
+
+    if (pixel_i_x >= deref(config).rigid_body_count)
+    {
+        return;
+    }
+    daxa_f32 dt = deref(config).dt;
+    daxa_f32 dx = deref(config).dx;
+
+    RigidBody r = get_rigid_body_by_index(pixel_i_x);
+
+    // Apply delta velocity
+    rigid_body_apply_temporal_velocity(r);
+
+    // Save parameters
+    rigid_body_save_parameters(r, pixel_i_x);
+}
+#elif RIGID_BODY_CHECK_BOUNDARIES_COMPUTE_FLAG == 1
+layout(local_size_x = MPM_CPIC_COMPUTE_X, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+    uint pixel_i_x = gl_GlobalInvocationID.x;
+
+    daxa_BufferPtr(GpuInput) config = daxa_BufferPtr(GpuInput)(daxa_id_to_address(p.input_buffer_id));
+
+    if (pixel_i_x >= deref(config).rigid_body_count)
+    {
+        return;
+    }
+    daxa_f32 dt = deref(config).dt;
+    daxa_f32 dx = deref(config).dx;
+
+    RigidBody r = get_rigid_body_by_index(pixel_i_x);
+
+    daxa_f32mat4x4 transform = rigid_body_get_transform_matrix(r);
+
+    // Check boundaries
+    daxa_f32vec3 minimum = (transform * vec4(r.min, 1)).xyz;
+    daxa_f32vec3 maximum = (transform * vec4(r.max, 1)).xyz;
+    
+    uint bound = BOUNDARY;
+    daxa_f32 min_bound = dx * bound;
+    daxa_f32 max_bound = 1 - dx * bound;
+
+    bvec3 bmin = lessThan(minimum, vec3(min_bound));
+    bvec3 bmax = greaterThanEqual(maximum, vec3(max_bound));
+
+    // Apply impulse to keep the rigid body inside the grid
+    if(any(bmin) || any(bmax)) {
+        daxa_f32vec3 velocity = r.velocity;
+        daxa_f32vec3 position = r.position;
+
+        if(bmin.x) {
+            position.x = max(position.x, min_bound);
+            velocity.x = -velocity.x * (1.0 - r.friction); // Reverse and apply friction
+        }
+        if(bmin.y) {
+            position.y = max(position.y, min_bound);
+            velocity.y = -velocity.y * (1.0 - r.friction); // Reverse and apply friction
+        }
+        if(bmin.z) {
+            position.z = max(position.z, min_bound);
+            velocity.z = -velocity.z * (1.0 - r.friction); // Reverse and apply friction
+        }
+
+        if(bmax.x) {
+            position.x = min(position.x, max_bound);
+            velocity.x = -velocity.x * (1.0 - r.friction); // Reverse and apply friction
+        }
+        if(bmax.y) {
+            position.y = min(position.y, max_bound);
+            velocity.y = -velocity.y * (1.0 - r.friction); // Reverse and apply friction
+        }
+        if(bmax.z) {
+            position.z = min(position.z, max_bound);
+            velocity.z = -velocity.z * (1.0 - r.friction); // Reverse and apply friction
+        }
+
+        r.velocity = velocity;
+    }
+ 
+
+    // Save parameters
+    rigid_body_save_parameters(r, pixel_i_x);
+}
 #elif RASTER_RIGID_BOUND_COMPUTE_FLAG == 1
 // Main compute shader
 layout(local_size_x = MPM_P2G_COMPUTE_X, local_size_y = 1, local_size_z = 1) in;
@@ -449,6 +547,10 @@ void main()
     Aabb aabb = Aabb(particle.min, particle.max);
 
     daxa_f32vec3 p_pos = (aabb.min + aabb.max) * 0.5f;
+
+    if(any(lessThan(p_pos, vec3(0))) || any(greaterThanEqual(p_pos, vec3(1)))) {
+        return;
+    }
 
     daxa_i32vec3 base_coord = calculate_particle_grid_pos(aabb, inv_dx);
 
@@ -695,11 +797,17 @@ void main()
 
     Particle particle = get_particle_by_index(pixel_i_x);
 
+    Aabb aabb = get_aabb_by_index(pixel_i_x);
+    
+    daxa_f32vec3 center = (aabb.min + aabb.max) * 0.5f;
+    
+    if(any(lessThan(center, vec3(0))) || any(greaterThanEqual(center, vec3(1)))) {
+        return;
+    }
+
 #if defined(DAXA_RIGID_BODY_FLAG)
     ParticleCDF particle_CDF = get_rigid_particle_CDF_by_index(pixel_i_x);
 #endif // DAXA_RIGID_BODY_FLAG
-
-    Aabb aabb = get_aabb_by_index(pixel_i_x);
 
     daxa_f32vec3 w[3];
     daxa_f32vec3 fx;
@@ -887,8 +995,17 @@ void main()
         return;
     }
 
+    Particle particle = get_particle_by_index(pixel_i_x);
+    Aabb aabb = get_aabb_by_index(pixel_i_x);
+
+    daxa_f32vec3 center = (aabb.min + aabb.max) * 0.5f;
+    
+    if(any(lessThan(center, vec3(0))) || any(greaterThanEqual(center, vec3(1)))) {
+        return;
+    }
+
 #if defined(DAXA_RIGID_BODY_FLAG)
-    gather_CDF_compute(pixel_i_x);
+    gather_CDF_compute(pixel_i_x, aabb);
 #endif // DAXA_RIGID_BODY_FLAG
 
     daxa_BufferPtr(GpuStatus) status = daxa_BufferPtr(GpuStatus)(daxa_id_to_address(p.status_buffer_id));
@@ -897,9 +1014,6 @@ void main()
     float inv_dx = deref(config).inv_dx;
     float dt = deref(config).dt;
     float p_mass = 1.0f;
-
-    Particle particle = get_particle_by_index(pixel_i_x);
-    Aabb aabb = get_aabb_by_index(pixel_i_x);
 
 #if defined(DAXA_RIGID_BODY_FLAG)
     ParticleCDF particle_CDF = get_rigid_particle_CDF_by_index(pixel_i_x);
@@ -954,8 +1068,6 @@ void main()
                     }
 
                     RigidBody r = get_rigid_body_by_index(rigid_id);
-
-                    daxa_u32 rigid_particle_index = rigid_cell.rigid_particle_index;
 
                     // Particle in collision with rigid body
                     daxa_f32vec3 projected_velocity = particle_collision(particle.v, particle_CDF.normal, r, pos_x, dt, dx);
@@ -1051,14 +1163,12 @@ void main()
     // Advance rigid body simulation
     rigid_body_advance(r, dt);
 
-#if defined(DAXA_LEVEL_SET_FLAG)
     daxa_BufferPtr(GpuStatus) status = daxa_BufferPtr(GpuStatus)(daxa_id_to_address(p.status_buffer_id));
 
     if ((deref(status).flags & RIGID_BODY_ADD_GRAVITY_FLAG) == RIGID_BODY_ADD_GRAVITY_FLAG) {
         // Apply gravity force
-        rigid_body_apply_impulse(daxa_f32vec3(0, deref(config).gravity, 0) * r.mass * dt, r, r.position);
+        rigid_body_apply_impulse(r, daxa_f32vec3(0, deref(config).gravity, 0) * r.mass * dt, r.position);
     }
-#endif // DAXA_LEVEL_SET_FLAG
 
     // // Apply angular velocity
     if(vec3_abs_max(r.rotation_axis) > 0.1f) {
@@ -1069,6 +1179,23 @@ void main()
     rigid_body_save_parameters(r, pixel_i_x);
 }
 #elif LEVEL_SET_ADD_PLANE_COMPUTE_FLAG == 1
+
+#define PLANE_COUNT 6
+// TODO:hardcoded values
+const daxa_f32vec3 plane_normals[PLANE_COUNT] =
+{       daxa_f32vec3(0, 1, 0),
+        daxa_f32vec3(0, -1, 0),
+        daxa_f32vec3(1, 0, 0),
+        daxa_f32vec3(-1, 0, 0),
+        daxa_f32vec3(0, 0, 1),
+        daxa_f32vec3(0, 0, -1)
+};
+
+const daxa_f32 plane_distances[PLANE_COUNT] = { -0.49f, 0.49f, -0.49f, 0.49f, -0.49f, 0.49f };
+// TODO:hardcoded values
+
+
+
 layout(local_size_x = MPM_GRID_COMPUTE_X, local_size_y = MPM_GRID_COMPUTE_Y, local_size_z = MPM_GRID_COMPUTE_Z) in;
 void main()
 {
@@ -1084,21 +1211,18 @@ void main()
     uint cell_index = pixel_i.x + pixel_i.y * deref(config).grid_dim.x + pixel_i.z * deref(config).grid_dim.x * deref(config).grid_dim.y;
 
     daxa_f32 dx = deref(config).dx;
+    daxa_f32 inv_dx = deref(config).inv_dx;
     uint bound = BOUNDARY;
-
-    // TODO:hardcoded values
-    daxa_f32vec3 plane_normal = daxa_f32vec3(0, 1, 0);
-    daxa_f32 plane_distance = -0.48f / dx;
-    // TODO:hardcoded values
-
-    daxa_f32vec3 normal = normalize(plane_normal);
-    daxa_f32 coeff = 1.0f / length(normal);
     
-    NodeLevelSet node = level_set_get_node_by_index(cell_index);
-    daxa_f32vec3 sample_pos = (daxa_f32vec3(pixel_i) + daxa_f32vec3(0.5f));
-    daxa_f32 distance = (dot(normal, sample_pos) + plane_distance) * coeff;
-    distance = min(distance, node.distance);
-    level_set_node_set_distance_by_index(cell_index, distance);
+    for(uint i = 0; i < PLANE_COUNT; i++) {
+        daxa_f32vec3 normal = plane_normals[i];
+        daxa_f32 distance = plane_distances[i] * inv_dx;
+        daxa_f32vec3 sample_pos = (daxa_f32vec3(pixel_i) + daxa_f32vec3(0.5f));
+        daxa_f32 coeff = 1.0f / length(normal);
+        daxa_f32 dist = (dot(normal, sample_pos) + distance) * coeff;
+        dist = min(dist, level_set_get_node_by_index(cell_index).distance);
+        level_set_node_set_distance_by_index(cell_index, dist);
+    }
 }
 #else
 // Main compute shader

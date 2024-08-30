@@ -78,9 +78,11 @@ struct App : BaseApp<App>
     u32 sim_loop_count = SIM_LOOP_COUNT;
 #if defined(_DEBUG)
     bool print_rigid_cells = false;
+    bool print_level_set_cells = false;
     bool stop_when_detected = false;
     bool slow_down = false;
     bool print_CDF_cell = false;
+    bool print_CDF_particles = false;
 #endif // _DEBUG
     camera cam = {};
     daxa::TlasId tlas = {};
@@ -208,6 +210,26 @@ struct App : BaseApp<App>
     }();
     // clang-format on
 
+    // clang-format off
+    std::shared_ptr<daxa::ComputePipeline> rigid_body_check_boundaries_compute_pipeline = [this]() {
+        update_virtual_shader();
+        return pipeline_manager.add_compute_pipeline({
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
+            .shader_info = {
+                .source = daxa::ShaderFile{"compute.glsl"}, 
+                .compile_options = {
+                    .defines =  std::vector{daxa::ShaderDefine{"RIGID_BODY_CHECK_BOUNDARIES_COMPUTE_FLAG", "1"}},
+                }
+            },
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+            .shader_info = {.source = daxa::ShaderFile{"compute.slang"}, .compile_options = {.entry_point = "entry_MPM_rigid_body_check_boundaries"}},
+#endif
+            .push_constant_size = sizeof(ComputePush),
+            .name = "rigid_body_check_boundaries_compute_pipeline",
+        }).value();
+    }();
+    // clang-format on
+
 #if defined(DAXA_LEVEL_SET_FLAG)
     // clang-format off
     std::shared_ptr<daxa::ComputePipeline> level_set_collision_compute_pipeline = [this]() {
@@ -248,7 +270,28 @@ struct App : BaseApp<App>
         }).value();
     }();
     // clang-format on
+
+    // clang-format off
+    std::shared_ptr<daxa::ComputePipeline> update_rigid_bodies_compute_pipeline = [this]() {
+        update_virtual_shader();
+        return pipeline_manager.add_compute_pipeline({
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
+            .shader_info = {
+                .source = daxa::ShaderFile{"compute.glsl"}, 
+                .compile_options = {
+                    .defines =  std::vector{daxa::ShaderDefine{"UPDATE_RIGID_BODIES_COMPUTE_FLAG", "1"}},
+                }
+            },
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+            .shader_info = {.source = daxa::ShaderFile{"compute.slang"}, .compile_options = {.entry_point = "entry_MPM_update_rigid_bodies"}},
+#endif // DAXA_SHADERLANG
+            .push_constant_size = sizeof(ComputePush),
+            .name = "update_rigid_bodies_compute_pipeline",
+        }).value();
+    }();
+    // clang-format on
 #endif // DAXA_LEVEL_SET_FLAG
+
     
 
 
@@ -988,6 +1031,10 @@ struct App : BaseApp<App>
             sim_loop_count = slow_down ? 1 : SIM_LOOP_COUNT;
         } else if(key == GLFW_KEY_U && action == GLFW_PRESS) {
             print_CDF_cell = true;
+        } else if(key == GLFW_KEY_Y && action == GLFW_PRESS) {
+            print_CDF_particles = true;
+        } else if(key == GLFW_KEY_L && action == GLFW_PRESS) {
+            print_level_set_cells = true;
 #endif // _DEBUG
         }
     }
@@ -1283,6 +1330,8 @@ struct App : BaseApp<App>
 
                     rigid_body_ptr[i] = {
                         .type = RIGID_BODY_BOX,
+                        .min = min,
+                        .max = max,
                         .p_count = r_p_count,
                         .p_offset = r_p_offset,
                         .triangle_count = BOX_TRIANGLE_COUNT,
@@ -1592,6 +1641,46 @@ struct App : BaseApp<App>
             },
             .name = ("Reset Grid (Compute)"),
         });
+
+        
+        sim_task_graph.add_task({
+            .attachments = {
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_WRITE, task_grid_buffer),
+#if defined(DAXA_RIGID_BODY_FLAG)
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
+#endif // DAXA_RIGID_BODY_FLAG
+            },
+            .task = [this](daxa::TaskInterface ti)
+            {
+                ti.recorder.clear_buffer(clear_info);
+#if defined(DAXA_RIGID_BODY_FLAG)
+                ti.recorder.set_pipeline(*rigid_body_check_boundaries_compute_pipeline);
+                ti.recorder.push_constant(ComputePush{
+                    .image_id = render_image.default_view(),
+                    .input_buffer_id = gpu_input_buffer,
+                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                    .status_buffer_id = gpu_status_buffer,
+                    .particles = device.get_device_address(particles_buffer).value(),
+                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
+                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
+                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+#if defined(DAXA_LEVEL_SET_FLAG)
+                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
+#endif // DAXA_LEVEL_SET_FLAG
+                    .cells = device.get_device_address(grid_buffer).value(),
+                    .aabbs = device.get_device_address(aabb_buffer).value(),
+                    .camera = device.get_device_address(camera_buffer).value(),
+                    .tlas = tlas,
+                });
+                ti.recorder.dispatch({(gpu_input.rigid_body_count + MPM_CPIC_COMPUTE_X - 1) / MPM_CPIC_COMPUTE_X});
+#endif 
+            },
+            .name = ("Check Boundaries (Compute)"),
+        });
 #if defined(DAXA_LEVEL_SET_FLAG)
         sim_task_graph.add_task({
             .attachments = {
@@ -1632,6 +1721,46 @@ struct App : BaseApp<App>
                 ti.recorder.dispatch({(gpu_input.r_p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
             },
             .name = ("Level Set Collision (Compute)"),
+        });
+        sim_task_graph.add_task({
+            .attachments = {
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particle_CDF_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_level_set_grid_buffer),
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_camera_buffer),
+                daxa::inl_attachment(daxa::TaskImageAccess::COMPUTE_SHADER_STORAGE_WRITE_ONLY, task_render_image),
+            },
+            .task = [this](daxa::TaskInterface ti)
+            {
+                
+                ti.recorder.set_pipeline(*update_rigid_bodies_compute_pipeline);
+                ti.recorder.push_constant(ComputePush{
+                    .image_id = render_image.default_view(),
+                    .input_buffer_id = gpu_input_buffer,
+                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                    .status_buffer_id = gpu_status_buffer,
+                    .particles = device.get_device_address(particles_buffer).value(),
+                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
+                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
+                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
+                    .cells = device.get_device_address(grid_buffer).value(),
+                    .aabbs = device.get_device_address(aabb_buffer).value(),
+                    .camera = device.get_device_address(camera_buffer).value(),
+                    .tlas = tlas,
+                });
+                ti.recorder.dispatch({(gpu_input.rigid_body_count + MPM_CPIC_COMPUTE_X - 1) / MPM_CPIC_COMPUTE_X});
+            },
+            .name = ("Update Rigid Bodies (Compute)"),
         });
 #endif // DAXA_LEVEL_SET_FLAG
 #if defined(DAXA_RIGID_BODY_FLAG)
@@ -2367,6 +2496,19 @@ struct App : BaseApp<App>
 #if defined(DAXA_RIGID_BODY_FLAG)
         std::cout << "Printing ... frame " << gpu_input.frame_number << std::endl;
 
+        
+        auto * rigid_body_ptr = device.get_host_address_as<RigidBody>(rigid_body_buffer).value();
+
+        std::cout << "Printing rigid bodies" << std::endl;
+
+        for(u32 i = 0; i < gpu_input.rigid_body_count; i++) {
+            auto rigid_body = rigid_body_ptr[i];
+            std::cout << "  Rigid body " << i << " position (" << rigid_body.position.x << ", " << rigid_body.position.y << ", " << rigid_body.position.z << ")" << ", velocity (" << rigid_body.velocity.x << ", " << rigid_body.velocity.y << ", " << rigid_body.velocity.z << ")" 
+            << ", angular velocity (" << rigid_body.omega.x << ", " << rigid_body.omega.y << ", " << rigid_body.omega.z << ")" << ", orientation (" << rigid_body.rotation.x << ", " << rigid_body.rotation.y << ", " << rigid_body.rotation.z << ", " << rigid_body.rotation.w << ")" << std::endl;
+        }
+
+        std::cout << std::endl << std::endl;
+
         if(print_CDF_cell) {
             print_CDF_cell = false;
             auto rigid_cells = device.get_host_address_as<NodeCDF>(staging_rigid_grid_buffer).value();
@@ -2397,8 +2539,12 @@ struct App : BaseApp<App>
                     ++rigid_cells_count;
                 }
             }
-
             std::cout << "  Rigid cells count: " << rigid_cells_count << std::endl << std::endl;
+
+        }
+
+        if(print_level_set_cells) {
+            print_level_set_cells = false;
 
 #if defined(DAXA_LEVEL_SET_FLAG)
             auto level_set_cells = device.get_host_address_as<NodeLevelSet>(staging_level_set_grid_buffer).value();
@@ -2428,50 +2574,54 @@ struct App : BaseApp<App>
         }
 
 
-        auto particle_CDFs = device.get_host_address_as<ParticleCDF>(_staging_particle_CDF_buffer).value();
+        if(print_CDF_particles) {
+            print_CDF_particles = false;
 
-        auto particles = device.get_host_address_as<Particle>(_staging_particles_buffer).value();
+            auto particle_CDFs = device.get_host_address_as<ParticleCDF>(_staging_particle_CDF_buffer).value();
 
-        auto aabbs = device.get_host_address_as<Aabb>(_staging_aabb_buffer).value();
+            auto particles = device.get_host_address_as<Particle>(_staging_particles_buffer).value();
 
-        std::cout << "Printing particle CDF" << std::endl;
+            auto aabbs = device.get_host_address_as<Aabb>(_staging_aabb_buffer).value();
 
-        daxa_u32 particles_CDF_count = 0;
+            std::cout << "Printing particle CDF" << std::endl;
 
-        for(daxa_u32 i = 0; i < gpu_input.p_count; i++) {
-            auto particle_CDF = particle_CDFs[i];
-            if(particle_CDF.color != 0) {
-                auto particle = particles[i];
-                auto center = (aabbs[i].min + aabbs[i].max) * 0.5f;
-                std::cout << "      Particle " << i << " signed distance " << particle_CDF.distance << ", normal (" << particle_CDF.normal.x << ", " << particle_CDF.normal.y << ", " << particle_CDF.normal.z << ")" << ", velocity (" << particle.v.x << ", " << particle.v.y << ", " << particle.v.z << ")" << ", position (" << center.x << ", " << center.y << ", " << center.z << "), grid position (" << center.x * gpu_input.inv_dx << ", " << center.y * gpu_input.inv_dx << ", " << center.z * gpu_input.inv_dx << ")" 
-                << std::endl;
-                std::cout << "      Affinities" << std::endl;
-                for(daxa_u32 j = 0; j < MAX_RIGID_BODY_COUNT; j++) {
-                    auto affinity = (particle_CDF.color >> j) & 0x1;
-                    auto tag = (particle_CDF.color >> (j + TAG_DISPLACEMENT)) & 0x1;
-                    if(affinity) {
-                        auto sign = tag ? "-" : "+";
-                        std::cout << "        Rigid body " << j << " " << sign  << std::endl;
+            daxa_u32 particles_CDF_count = 0;
+
+            for(daxa_u32 i = 0; i < gpu_input.p_count; i++) {
+                auto particle_CDF = particle_CDFs[i];
+                if(particle_CDF.color != 0) {
+                    auto particle = particles[i];
+                    auto center = (aabbs[i].min + aabbs[i].max) * 0.5f;
+                    std::cout << "      Particle " << i << " signed distance " << particle_CDF.distance << ", normal (" << particle_CDF.normal.x << ", " << particle_CDF.normal.y << ", " << particle_CDF.normal.z << ")" << ", velocity (" << particle.v.x << ", " << particle.v.y << ", " << particle.v.z << ")" << ", position (" << center.x << ", " << center.y << ", " << center.z << "), grid position (" << center.x * gpu_input.inv_dx << ", " << center.y * gpu_input.inv_dx << ", " << center.z * gpu_input.inv_dx << ")" 
+                    << std::endl;
+                    std::cout << "      Affinities" << std::endl;
+                    for(daxa_u32 j = 0; j < MAX_RIGID_BODY_COUNT; j++) {
+                        auto affinity = (particle_CDF.color >> j) & 0x1;
+                        auto tag = (particle_CDF.color >> (j + TAG_DISPLACEMENT)) & 0x1;
+                        if(affinity) {
+                            auto sign = tag ? "-" : "+";
+                            std::cout << "        Rigid body " << j << " " << sign  << std::endl;
+                        }
                     }
-                }
-                std::cout << "      Differences" << std::endl;
-                for(daxa_u32 j = 0; j < MAX_RIGID_BODY_COUNT; j++) {
-                    auto affinity = (particle_CDF.difference >> j) & 0x1;
-                    auto tag = (particle_CDF.difference >> (j + TAG_DISPLACEMENT)) & 0x1;
-                    if(affinity) {
-                        auto sign = tag ? "-" : "+";
-                        std::cout << "        Rigid body " << j << " " << sign  << std::endl;
+                    std::cout << "      Differences" << std::endl;
+                    for(daxa_u32 j = 0; j < MAX_RIGID_BODY_COUNT; j++) {
+                        auto affinity = (particle_CDF.difference >> j) & 0x1;
+                        auto tag = (particle_CDF.difference >> (j + TAG_DISPLACEMENT)) & 0x1;
+                        if(affinity) {
+                            auto sign = tag ? "-" : "+";
+                            std::cout << "        Rigid body " << j << " " << sign  << std::endl;
+                        }
                     }
+                    ++particles_CDF_count;
                 }
-                ++particles_CDF_count;
             }
-        }
 
-        if(particles_CDF_count > 0 && stop_when_detected) {
-            print_rigid_cells = false;
-        }
+            if(particles_CDF_count > 0 && stop_when_detected) {
+                print_rigid_cells = false;
+            }
 
-        std::cout << "  Particle CDF count: " << particles_CDF_count << std::endl << std::endl << std::endl;
+            std::cout << "  Particle CDF count: " << particles_CDF_count << std::endl << std::endl << std::endl;
+        }
 #endif
     }
 };
