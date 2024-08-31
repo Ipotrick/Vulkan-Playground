@@ -483,32 +483,29 @@ void main()
         if(bmin.x) {
             position.x = max(position.x, min_bound);
             velocity.x = -velocity.x * (1.0 - r.friction); // Reverse and apply friction
-        }
-        if(bmin.y) {
-            position.y = max(position.y, min_bound);
-            velocity.y = -velocity.y * (1.0 - r.friction); // Reverse and apply friction
-        }
-        if(bmin.z) {
-            position.z = max(position.z, min_bound);
-            velocity.z = -velocity.z * (1.0 - r.friction); // Reverse and apply friction
-        }
-
-        if(bmax.x) {
+        } else if(bmax.x) {
             position.x = min(position.x, max_bound);
             velocity.x = -velocity.x * (1.0 - r.friction); // Reverse and apply friction
         }
-        if(bmax.y) {
+
+        if(bmin.y) {
+            position.y = max(position.y, min_bound);
+            velocity.y = -velocity.y * (1.0 - r.friction); // Reverse and apply friction
+        } else if(bmax.y) {
             position.y = min(position.y, max_bound);
             velocity.y = -velocity.y * (1.0 - r.friction); // Reverse and apply friction
         }
-        if(bmax.z) {
+
+        if(bmin.z) {
+            position.z = max(position.z, min_bound);
+            velocity.z = -velocity.z * (1.0 - r.friction); // Reverse and apply friction
+        } else if(bmax.z) {
             position.z = min(position.z, max_bound);
             velocity.z = -velocity.z * (1.0 - r.friction); // Reverse and apply friction
         }
 
         r.velocity = velocity;
     }
- 
 
     // Save parameters
     rigid_body_save_parameters(r, pixel_i_x);
@@ -1071,6 +1068,10 @@ void main()
 
                     // Particle in collision with rigid body
                     daxa_f32vec3 projected_velocity = particle_collision(particle.v, particle_CDF.normal, r, pos_x, dt, dx);
+
+                    if(any(isnan(projected_velocity)) || any(isinf(projected_velocity))) {
+                        continue;
+                    }
                     
                     vel_value = projected_velocity;
 
@@ -1093,12 +1094,12 @@ void main()
     particle.v = particle_velocity;
     particle.C = particle_C;
 
+    // Apply penalty force to particle if it is in collision with a rigid body
 #if defined(DAXA_RIGID_BODY_FLAG)
     if(particle_CDF.difference != 0) {
         daxa_f32vec3 f_penalty = abs(particle_CDF.distance) * particle_CDF.normal * PENALTY_FORCE;
         particle.v += dt * f_penalty / p_mass;
     }
-    // }
 #endif // DAXA_RIGID_BODY_FLAG
 
     aabb.min += dt * particle.v;
@@ -1107,6 +1108,40 @@ void main()
     vec3 pos = (aabb.min + aabb.max) * 0.5f;
     const float wall_min = 3 * dx;
     float wall_max = (float(deref(config).grid_dim.x) - 3) * dx;
+
+    // Check boundaries
+    if (pos.x < wall_min)
+    {
+        pos.x = wall_min;
+        particle.v.x = -particle.v.x;
+    }
+    else if (pos.x > wall_max)
+    {
+        pos.x = wall_max;
+        particle.v.x = -particle.v.x;
+    }
+
+    if (pos.y < wall_min)
+    {
+        pos.y = wall_min;
+        particle.v.y = -particle.v.y;
+    }
+    else if (pos.y > wall_max)
+    {
+        pos.y = wall_max;
+        particle.v.y = -particle.v.y;
+    }
+
+    if (pos.z < wall_min)
+    {
+        pos.z = wall_min;
+        particle.v.z = -particle.v.z;
+    }
+    else if (pos.z > wall_max)
+    {
+        pos.z = wall_max;
+        particle.v.z = -particle.v.z;
+    }
 
     // Repulsion force
     if ((deref(status).flags & MOUSE_TARGET_FLAG) == MOUSE_TARGET_FLAG)
