@@ -71,6 +71,7 @@ struct App : BaseApp<App>
 {
     bool my_toggle = true;
     bool simulate = false;
+    bool simulate_mpm = true;
 #if defined(DAXA_RIGID_BODY_FLAG)
     bool show_rigid_particles = false;
     bool show_rigid_bodies = true;
@@ -608,7 +609,8 @@ struct App : BaseApp<App>
         .mouse_pos = {0.0f, 0.0f},
         .mouse_radius = 0.1f,
         .max_velocity = 
-            MAX_VELOCITY
+            MAX_VELOCITY,
+        .applied_force = APPLIED_FORCE_RIGID_BODY,
         };
 
     daxa::TaskBuffer task_gpu_input_buffer{{.initial_buffers = {.buffers = std::array{gpu_input_buffer}}, .name = "input_buffer"}};
@@ -1009,17 +1011,52 @@ struct App : BaseApp<App>
     void on_key(i32 key, i32 action) {
         if(key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
             simulate = !simulate;
+        } else if(key == GLFW_KEY_E  && action == GLFW_PRESS) {
+            simulate_mpm = !simulate_mpm;
+            std::cout << "SIMULATE MPM: " << simulate_mpm << std::endl;
 #if defined(DAXA_RIGID_BODY_FLAG)            
         } else if(key == GLFW_KEY_R && action == GLFW_PRESS) {
             show_rigid_particles = !show_rigid_particles;
+            std::cout << "SHOW RIGID PARTICLES: " << show_rigid_particles << std::endl;
         } else if(key == GLFW_KEY_T && action == GLFW_PRESS) {
             show_rigid_bodies = !show_rigid_bodies;
+            std::cout << "SHOW RIGID BODIES: " << show_rigid_bodies << std::endl;
         } else if(key == GLFW_KEY_G && action == GLFW_PRESS) {
             if(gpu_status->flags & RIGID_BODY_ADD_GRAVITY_FLAG) {
                 gpu_status->flags &= ~RIGID_BODY_ADD_GRAVITY_FLAG;
+                std::cout << "RIGID BODY GRAVITY DISABLED" << std::endl;
             } else {
                 gpu_status->flags |= RIGID_BODY_ADD_GRAVITY_FLAG;
+                std::cout << "RIGID BODY GRAVITY ENABLED" << std::endl;
             }
+#endif // DAXA_RIGID_BODY_FLAG
+        } else if(key == GLFW_KEY_0 && action == GLFW_PRESS) {
+            gpu_status->flags &= ~(
+            PARTICLE_FORCE_ENABLED_FLAG
+#if defined(DAXA_RIGID_BODY_FLAG) 
+                | RIGID_BODY_PICK_UP_ENABLED_FLAG | RIGID_BODY_IMPULSE_ENABLED_FLAG
+#endif // DAXA_RIGID_BODY_FLAG
+                );
+            std::cout << "ALL FORCES DISABLED" << std::endl;
+        } else if(key == GLFW_KEY_1 && action == GLFW_PRESS) {
+            gpu_status->flags |= PARTICLE_FORCE_ENABLED_FLAG;
+#if defined(DAXA_RIGID_BODY_FLAG)   
+            gpu_status->flags &= ~RIGID_BODY_PICK_UP_ENABLED_FLAG;
+            gpu_status->flags &= ~RIGID_BODY_IMPULSE_ENABLED_FLAG;
+#endif // DAXA_RIGID_BODY_FLAG
+            std::cout << "PARTICLE FORCE ENABLED" << std::endl;
+#if defined(DAXA_RIGID_BODY_FLAG)   
+        } else if(key == GLFW_KEY_2 && action == GLFW_PRESS) {
+            gpu_status->flags |= RIGID_BODY_PICK_UP_ENABLED_FLAG;
+            gpu_status->flags &= ~RIGID_BODY_IMPULSE_ENABLED_FLAG;
+            gpu_status->flags &= ~PARTICLE_FORCE_ENABLED_FLAG;
+            std::cout << "RIGID BODY PICK UP ENABLED" << std::endl;
+        } else if(key == GLFW_KEY_3 && action == GLFW_PRESS) {
+            gpu_status->flags |= RIGID_BODY_IMPULSE_ENABLED_FLAG;
+            gpu_status->flags &= ~RIGID_BODY_PICK_UP_ENABLED_FLAG;
+            gpu_status->flags &= ~PARTICLE_FORCE_ENABLED_FLAG;
+            std::cout << "RIGID BODY IMPULSE ENABLED" << std::endl;
+            
 #endif
 #if defined(_DEBUG)
         } else if(key == GLFW_KEY_P && action == GLFW_PRESS) {
@@ -1029,6 +1066,7 @@ struct App : BaseApp<App>
         } else if(key == GLFW_KEY_I && action == GLFW_PRESS) {
             slow_down = !slow_down;
             sim_loop_count = slow_down ? 1 : SIM_LOOP_COUNT;
+            std::cout << "SIMULATION ITERATIONS: " << sim_loop_count << std::endl;
         } else if(key == GLFW_KEY_U && action == GLFW_PRESS) {
             print_CDF_cell = true;
         } else if(key == GLFW_KEY_Y && action == GLFW_PRESS) {
@@ -1613,36 +1651,36 @@ struct App : BaseApp<App>
             },
             .task = [this](daxa::TaskInterface ti)
             {
-                ti.recorder.clear_buffer(clear_info);
+                if(simulate_mpm) {
+                    ti.recorder.clear_buffer(clear_info);
 #if defined(DAXA_RIGID_BODY_FLAG)
-                ti.recorder.set_pipeline(*reset_rigid_grid_compute_pipeline);
-                ti.recorder.push_constant(ComputePush{
-                    .image_id = render_image.default_view(),
-                    .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
-                    .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
-                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                    ti.recorder.set_pipeline(*reset_rigid_grid_compute_pipeline);
+                    ti.recorder.push_constant(ComputePush{
+                        .image_id = render_image.default_view(),
+                        .input_buffer_id = gpu_input_buffer,
+                        .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                        .status_buffer_id = gpu_status_buffer,
+                        .particles = device.get_device_address(particles_buffer).value(),
+                        .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
+                        .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                        .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
+                        .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                        .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                        .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
 #if defined(DAXA_LEVEL_SET_FLAG)
-                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
+                        .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
 #endif // DAXA_LEVEL_SET_FLAG
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
-                    .tlas = tlas,
-                });
-                ti.recorder.dispatch({(gpu_input.grid_dim.x + MPM_GRID_COMPUTE_X - 1) / MPM_GRID_COMPUTE_X, (gpu_input.grid_dim.y + MPM_GRID_COMPUTE_Y - 1) / MPM_GRID_COMPUTE_Y, (gpu_input.grid_dim.z + MPM_GRID_COMPUTE_Z - 1) / MPM_GRID_COMPUTE_Z});
+                        .cells = device.get_device_address(grid_buffer).value(),
+                        .aabbs = device.get_device_address(aabb_buffer).value(),
+                        .camera = device.get_device_address(camera_buffer).value(),
+                        .tlas = tlas,
+                    });
+                    ti.recorder.dispatch({(gpu_input.grid_dim.x + MPM_GRID_COMPUTE_X - 1) / MPM_GRID_COMPUTE_X, (gpu_input.grid_dim.y + MPM_GRID_COMPUTE_Y - 1) / MPM_GRID_COMPUTE_Y, (gpu_input.grid_dim.z + MPM_GRID_COMPUTE_Z - 1) / MPM_GRID_COMPUTE_Z});
+                }
 #endif 
             },
             .name = ("Reset Grid (Compute)"),
         });
-
-        
         sim_task_graph.add_task({
             .attachments = {
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
@@ -1779,28 +1817,30 @@ struct App : BaseApp<App>
             },
             .task = [this](daxa::TaskInterface ti)
             {
-                ti.recorder.set_pipeline(*rasterize_rigid_boundary_compute_pipeline);
-                ti.recorder.push_constant(ComputePush{
-                    .image_id = render_image.default_view(),
-                    .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
-                    .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
-                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-#if defined(DAXA_LEVEL_SET_FLAG)
-                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
-#endif // DAXA_LEVEL_SET_FLAG
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
-                    .tlas = tlas,
-                });
-                ti.recorder.dispatch({(gpu_input.r_p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
+                if(simulate_mpm) {
+                    ti.recorder.set_pipeline(*rasterize_rigid_boundary_compute_pipeline);
+                    ti.recorder.push_constant(ComputePush{
+                        .image_id = render_image.default_view(),
+                        .input_buffer_id = gpu_input_buffer,
+                        .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                        .status_buffer_id = gpu_status_buffer,
+                        .particles = device.get_device_address(particles_buffer).value(),
+                        .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
+                        .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                        .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
+                        .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                        .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                        .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+    #if defined(DAXA_LEVEL_SET_FLAG)
+                        .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
+    #endif // DAXA_LEVEL_SET_FLAG
+                        .cells = device.get_device_address(grid_buffer).value(),
+                        .aabbs = device.get_device_address(aabb_buffer).value(),
+                        .camera = device.get_device_address(camera_buffer).value(),
+                        .tlas = tlas,
+                    });
+                    ti.recorder.dispatch({(gpu_input.r_p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
+                }
             },
             .name = ("Rigid Boundary (Compute)"),
         });
@@ -1823,30 +1863,32 @@ struct App : BaseApp<App>
             },
             .task = [this](daxa::TaskInterface ti)
             {
-                ti.recorder.set_pipeline(*p2g_compute_pipeline);
-                ti.recorder.push_constant(ComputePush{
-                    .image_id = render_image.default_view(),
-                    .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
-                    .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
+                if(simulate_mpm) {
+                    ti.recorder.set_pipeline(*p2g_compute_pipeline);
+                    ti.recorder.push_constant(ComputePush{
+                        .image_id = render_image.default_view(),
+                        .input_buffer_id = gpu_input_buffer,
+                        .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                        .status_buffer_id = gpu_status_buffer,
+                        .particles = device.get_device_address(particles_buffer).value(),
 #if defined(DAXA_RIGID_BODY_FLAG)
-                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                        .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
+                        .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                        .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
+                        .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                        .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                        .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
 #if defined(DAXA_LEVEL_SET_FLAG)
-                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
+                        .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
 #endif // DAXA_LEVEL_SET_FLAG
 #endif // DAXA_RIGID_BODY_FLAG
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
-                    .tlas = tlas,
-                });
-                ti.recorder.dispatch({(gpu_input.p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
+                        .cells = device.get_device_address(grid_buffer).value(),
+                        .aabbs = device.get_device_address(aabb_buffer).value(),
+                        .camera = device.get_device_address(camera_buffer).value(),
+                        .tlas = tlas,
+                    });
+                    ti.recorder.dispatch({(gpu_input.p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
+                }
             },
             .name = ("P2G (Compute)"),
         });
@@ -1868,30 +1910,32 @@ struct App : BaseApp<App>
             },
             .task = [this](daxa::TaskInterface ti)
             {
-                ti.recorder.set_pipeline(*p2g_second_compute_pipeline);
-                ti.recorder.push_constant(ComputePush{
-                    .image_id = render_image.default_view(),
-                    .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
-                    .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
+                if(simulate_mpm) {
+                    ti.recorder.set_pipeline(*p2g_second_compute_pipeline);
+                    ti.recorder.push_constant(ComputePush{
+                        .image_id = render_image.default_view(),
+                        .input_buffer_id = gpu_input_buffer,
+                        .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                        .status_buffer_id = gpu_status_buffer,
+                        .particles = device.get_device_address(particles_buffer).value(),
 #if defined(DAXA_RIGID_BODY_FLAG)
-                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                        .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
+                        .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                        .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
+                        .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                        .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                        .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
 #if defined(DAXA_LEVEL_SET_FLAG)
-                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
+                        .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
 #endif // DAXA_LEVEL_SET_FLAG
 #endif
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
-                    .tlas = tlas,
-                });
-                ti.recorder.dispatch({(gpu_input.p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
+                        .cells = device.get_device_address(grid_buffer).value(),
+                        .aabbs = device.get_device_address(aabb_buffer).value(),
+                        .camera = device.get_device_address(camera_buffer).value(),
+                        .tlas = tlas,
+                    });
+                    ti.recorder.dispatch({(gpu_input.p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
+                }
             },
             .name = ("P2G Second (Compute)"),
         });
@@ -1913,31 +1957,32 @@ struct App : BaseApp<App>
             },
             .task = [this](daxa::TaskInterface ti)
             {
-                ti.recorder.set_pipeline(*grid_compute_pipeline);
-
-                ti.recorder.push_constant(ComputePush{
-                    .image_id = render_image.default_view(),
-                    .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
-                    .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
+                if(simulate_mpm) {
+                    ti.recorder.set_pipeline(*grid_compute_pipeline);
+                    ti.recorder.push_constant(ComputePush{
+                        .image_id = render_image.default_view(),
+                        .input_buffer_id = gpu_input_buffer,
+                        .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                        .status_buffer_id = gpu_status_buffer,
+                        .particles = device.get_device_address(particles_buffer).value(),
 #if defined(DAXA_RIGID_BODY_FLAG)
-                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                        .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
+                        .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                        .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
+                        .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                        .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                        .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
 #if defined(DAXA_LEVEL_SET_FLAG)
-                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
+                        .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
 #endif // DAXA_LEVEL_SET_FLAG
 #endif
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
-                    .tlas = tlas,
-                });
-                ti.recorder.dispatch({(gpu_input.grid_dim.x + MPM_GRID_COMPUTE_X - 1) / MPM_GRID_COMPUTE_X, (gpu_input.grid_dim.y + MPM_GRID_COMPUTE_Y - 1) / MPM_GRID_COMPUTE_Y, (gpu_input.grid_dim.z + MPM_GRID_COMPUTE_Z - 1) / MPM_GRID_COMPUTE_Z});
+                        .cells = device.get_device_address(grid_buffer).value(),
+                        .aabbs = device.get_device_address(aabb_buffer).value(),
+                        .camera = device.get_device_address(camera_buffer).value(),
+                        .tlas = tlas,
+                    });
+                    ti.recorder.dispatch({(gpu_input.grid_dim.x + MPM_GRID_COMPUTE_X - 1) / MPM_GRID_COMPUTE_X, (gpu_input.grid_dim.y + MPM_GRID_COMPUTE_Y - 1) / MPM_GRID_COMPUTE_Y, (gpu_input.grid_dim.z + MPM_GRID_COMPUTE_Z - 1) / MPM_GRID_COMPUTE_Z});
+                }
             },
             .name = ("Grid (Compute)"),
         });
@@ -1960,31 +2005,32 @@ struct App : BaseApp<App>
             },
             .task = [this](daxa::TaskInterface ti)
             {
-                ti.recorder.set_pipeline(*g2p_compute_pipeline);
-
-                ti.recorder.push_constant(ComputePush{
-                    .image_id = render_image.default_view(),
-                    .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
-                    .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
+                if(simulate_mpm) {
+                    ti.recorder.set_pipeline(*g2p_compute_pipeline);
+                    ti.recorder.push_constant(ComputePush{
+                        .image_id = render_image.default_view(),
+                        .input_buffer_id = gpu_input_buffer,
+                        .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                        .status_buffer_id = gpu_status_buffer,
+                        .particles = device.get_device_address(particles_buffer).value(),
 #if defined(DAXA_RIGID_BODY_FLAG)
-                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                        .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
+                        .indices = device.get_device_address(rigid_body_index_buffer).value(),
+                        .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
+                        .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
+                        .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
+                        .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
 #if defined(DAXA_LEVEL_SET_FLAG)
-                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
+                        .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
 #endif // DAXA_LEVEL_SET_FLAG
 #endif // DAXA_RIGID_BODY_FLAG
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
-                    .tlas = tlas,
-                });
-                ti.recorder.dispatch({(gpu_input.p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
+                        .cells = device.get_device_address(grid_buffer).value(),
+                        .aabbs = device.get_device_address(aabb_buffer).value(),
+                        .camera = device.get_device_address(camera_buffer).value(),
+                        .tlas = tlas,
+                    });
+                    ti.recorder.dispatch({(gpu_input.p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
+                }
             },
             .name = ("G2P (Compute)"),
         });
@@ -2007,7 +2053,6 @@ struct App : BaseApp<App>
             .task = [this](daxa::TaskInterface ti)
             {
                 ti.recorder.set_pipeline(*advecting_rigid_bodies_compute_pipeline);
-
                 ti.recorder.push_constant(ComputePush{
                     .image_id = render_image.default_view(),
                     .input_buffer_id = gpu_input_buffer,
@@ -2635,6 +2680,9 @@ auto main() -> int
     app.upload_level_set_grid();
 #endif
     app.gpu_status->flags = 0;
+#if defined(DAXA_RIGID_BODY_FLAG)
+    app.gpu_status->flags |= RIGID_BODY_ADD_GRAVITY_FLAG;
+#endif
     while (true)
     {
         app.update_input_task();

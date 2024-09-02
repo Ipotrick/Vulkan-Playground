@@ -5,6 +5,8 @@ struct hitPayload
   daxa_f32vec3 hit_value;
   daxa_u32 seed;
   daxa_f32vec3 hit_pos;
+  daxa_u32 rigid_body_index;
+  daxa_u32 rigid_element_index;
 };
 
 #if DAXA_SHADER_STAGE == DAXA_SHADER_STAGE_RAYGEN
@@ -19,6 +21,8 @@ void main()
   prd.hit_value = daxa_f32vec3(0.0);
   prd.seed = 0;
   prd.hit_pos = daxa_f32vec3(MAX_DIST);
+  prd.rigid_body_index = -1;
+  prd.rigid_element_index = -1;
 
   const daxa_u32 cull_mask = 0xff;
   const daxa_u32 ray_flags = gl_RayFlagsNoneEXT;
@@ -56,12 +60,19 @@ void main()
         if (prd.hit_pos != daxa_f32vec3(MAX_DIST))
         {
           deref(status).flags |= MOUSE_TARGET_FLAG;
-            deref(status).mouse_target = prd.hit_pos;
+          deref(status).mouse_target = prd.hit_pos;
+          deref(status).hit_origin = ray.origin;
+          deref(status).rigid_body_index = prd.rigid_body_index;
+          deref(status).rigid_element_index = prd.rigid_element_index;
         } 
     }
   }
   else {
     deref(status).flags &= ~MOUSE_TARGET_FLAG;
+    deref(status).mouse_target = daxa_f32vec3(0);
+    deref(status).hit_origin = daxa_f32vec3(0);
+    deref(status).rigid_body_index = -1;
+    deref(status).rigid_element_index = -1;
   }
 
 }
@@ -84,10 +95,13 @@ void main()
 
   vec3 world_pos = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
 
-  prd.hit_pos = world_pos;
-
   uint o = gl_InstanceCustomIndexEXT - (1 + deref(config).rigid_body_count);
   uint i = gl_PrimitiveID;
+
+  // store hit information
+  prd.hit_pos = world_pos;
+  prd.rigid_body_index = o;
+  prd.rigid_element_index = i;
 
   mat3 vertices = get_vertices_by_triangle_index(i);
 

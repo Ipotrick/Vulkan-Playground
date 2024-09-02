@@ -51,7 +51,12 @@
 // #define VOXEL_PARTICLES 1
 #define MOUSE_DOWN_FLAG (1u << 0)
 #define MOUSE_TARGET_FLAG (1u << 1)
-#define RIGID_BODY_ADD_GRAVITY_FLAG (1u << 2)
+#define PARTICLE_FORCE_ENABLED_FLAG (1u << 2)
+#if defined(DAXA_RIGID_BODY_FLAG)
+#define RIGID_BODY_ADD_GRAVITY_FLAG (1u << 3)
+#define RIGID_BODY_PICK_UP_ENABLED_FLAG (1u << 4)
+#define RIGID_BODY_IMPULSE_ENABLED_FLAG (1u << 5)
+#endif // DAXA_RIGID_BODY_FLAG
 
 #define MAT_WATER 0
 #define MAT_SNOW 1
@@ -99,6 +104,8 @@ const daxa_f32 rigid_body_densities[NUM_RIGID_BOX_COUNT] = {600.0f};
 #define FRICTION -0.2f
 // #define PUSHING_FORCE 2000.0f
 #define PUSHING_FORCE 0.0f
+#define APPLIED_FORCE_RIGID_BODY 100.0f
+#define BOUNDARY_FRICTION 0.1f
 #else // DAXA_RIGID_BODY_FLAG
 
 #define NUM_RIGID_BOX_COUNT 0
@@ -127,12 +134,16 @@ struct GpuInput
   daxa_f32vec2 mouse_pos;
   daxa_f32 mouse_radius;
   daxa_f32 max_velocity;
-};
+  daxa_f32 applied_force;
+  };
 
 struct GpuStatus 
 {
   daxa_u32 flags;
+  daxa_f32vec3 hit_origin;
   daxa_f32vec3 mouse_target;
+  daxa_u32 rigid_body_index;
+  daxa_u32 rigid_element_index;
 };
 
 struct Particle {

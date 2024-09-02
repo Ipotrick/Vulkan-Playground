@@ -190,7 +190,7 @@ daxa_f32vec4 quaternion_multiply(daxa_f32vec4 q1, daxa_f32vec4 q2) {
     return daxa_f32vec4(v, w);
 }
 
-daxa_f32vec4 rigid_body_aply_angular_velocity(daxa_f32vec4 rotation, daxa_f32vec3 omega, daxa_f32 dt) {
+daxa_f32vec4 rigid_body_apply_angular_velocity(daxa_f32vec4 rotation, daxa_f32vec3 omega, daxa_f32 dt) {
     daxa_f32vec3 axis = omega;
     daxa_f32 angle = length(omega);
     if(angle < 1e-23f) {
@@ -212,7 +212,11 @@ void rigid_body_advance(inout RigidBody r, daxa_f32 dt) {
     r.position += dt * r.velocity;
     // angular velocity
     r.omega *= exp(-dt * r.angular_damping);
-    r.rotation = rigid_body_aply_angular_velocity(r.rotation, r.omega, dt);
+    r.rotation = rigid_body_apply_angular_velocity(r.rotation, r.omega, dt);
+}
+
+daxa_f32 rigid_body_get_boundary_friction(RigidBody r) {
+    return BOUNDARY_FRICTION;
 }
 
 #if defined(DAXA_LEVEL_SET_FLAG)
@@ -467,10 +471,47 @@ void main()
     // Check boundaries
     daxa_f32vec3 minimum = (transform * vec4(r.min, 1)).xyz;
     daxa_f32vec3 maximum = (transform * vec4(r.max, 1)).xyz;
+
     
+  daxa_BufferPtr(GpuStatus) status = daxa_BufferPtr(GpuStatus)(daxa_id_to_address(p.status_buffer_id));
+
+    // Repulsion force
+    if (((deref(status).flags & MOUSE_TARGET_FLAG) == MOUSE_TARGET_FLAG) && 
+    deref(status).rigid_body_index == pixel_i_x)
+    {
+        if ((deref(status).flags & RIGID_BODY_PICK_UP_ENABLED_FLAG) == RIGID_BODY_PICK_UP_ENABLED_FLAG) {
+            daxa_f32mat4x4 transform = rigid_body_get_transform_matrix(r);
+            daxa_u32 triangle_index = deref(status).rigid_element_index;
+
+            // get primitive position and orientation
+            vec3 p0 = get_first_vertex_by_triangle_index(triangle_index);
+            vec3 p1 = get_second_vertex_by_triangle_index(triangle_index);
+            vec3 p2 = get_third_vertex_by_triangle_index(triangle_index);
+
+            p0 = (transform * vec4(p0, 1)).xyz;
+            p1 = (transform * vec4(p1, 1)).xyz;
+            p2 = (transform * vec4(p2, 1)).xyz;
+    
+            daxa_f32vec3 normal = get_normal_by_vertices(p0, p1, p2);
+
+            daxa_f32vec3 grip_position = deref(status).mouse_target;
+            // daxa_f32vec3 grip_dir = normalize(deref(status).hit_origin - grip_position); 
+            daxa_f32vec3 grid_dir = normal;
+            daxa_f32vec3 grip_force = (grid_dir * deref(config).applied_force * r.mass  * dt);
+            rigid_body_apply_impulse(r, -grip_force, r.position);
+
+        } else if ((deref(status).flags & RIGID_BODY_IMPULSE_ENABLED_FLAG) == RIGID_BODY_IMPULSE_ENABLED_FLAG) {
+            daxa_f32vec3 impulse_position = deref(status).mouse_target;
+            daxa_f32vec3 impulse_dir = normalize(impulse_position - deref(status).hit_origin);
+            daxa_f32vec3 impulse = (impulse_dir * deref(config).applied_force * r.mass * dt);
+            rigid_body_apply_impulse(r, impulse, r.position);
+        }
+    }
+    
+    daxa_f32 length = length(r.max - r.min) * 0.5f;
     uint bound = BOUNDARY;
-    daxa_f32 min_bound = dx * bound;
-    daxa_f32 max_bound = 1 - dx * bound;
+    daxa_f32 min_bound = dx * bound + length;
+    daxa_f32 max_bound = 1 - dx * bound - length;
 
     bvec3 bmin = lessThan(minimum, vec3(min_bound));
     bvec3 bmax = greaterThanEqual(maximum, vec3(max_bound));
@@ -482,29 +523,30 @@ void main()
 
         if(bmin.x) {
             position.x = max(position.x, min_bound);
-            velocity.x = -velocity.x * (1.0 - r.friction); // Reverse and apply friction
+            velocity.x = -velocity.x * (1.0 - rigid_body_get_boundary_friction(r)); // Reverse and apply friction
         } else if(bmax.x) {
             position.x = min(position.x, max_bound);
-            velocity.x = -velocity.x * (1.0 - r.friction); // Reverse and apply friction
+            velocity.x = -velocity.x * (1.0 - rigid_body_get_boundary_friction(r)); // Reverse and apply friction
         }
 
         if(bmin.y) {
             position.y = max(position.y, min_bound);
-            velocity.y = -velocity.y * (1.0 - r.friction); // Reverse and apply friction
+            velocity.y = -velocity.y * (1.0 - rigid_body_get_boundary_friction(r)); // Reverse and apply friction
         } else if(bmax.y) {
             position.y = min(position.y, max_bound);
-            velocity.y = -velocity.y * (1.0 - r.friction); // Reverse and apply friction
+            velocity.y = -velocity.y * (1.0 - rigid_body_get_boundary_friction(r)); // Reverse and apply friction
         }
 
         if(bmin.z) {
             position.z = max(position.z, min_bound);
-            velocity.z = -velocity.z * (1.0 - r.friction); // Reverse and apply friction
+            velocity.z = -velocity.z * (1.0 - rigid_body_get_boundary_friction(r)); // Reverse and apply friction
         } else if(bmax.z) {
             position.z = min(position.z, max_bound);
-            velocity.z = -velocity.z * (1.0 - r.friction); // Reverse and apply friction
+            velocity.z = -velocity.z * (1.0 - rigid_body_get_boundary_friction(r)); // Reverse and apply friction
         }
 
         r.velocity = velocity;
+        
     }
 
     // Save parameters
@@ -1144,7 +1186,8 @@ void main()
     }
 
     // Repulsion force
-    if ((deref(status).flags & MOUSE_TARGET_FLAG) == MOUSE_TARGET_FLAG)
+    if (((deref(status).flags & MOUSE_TARGET_FLAG) == MOUSE_TARGET_FLAG) &&
+    ((deref(status).flags & PARTICLE_FORCE_ENABLED_FLAG) == PARTICLE_FORCE_ENABLED_FLAG))
     {
         if (all(greaterThan(deref(status).mouse_target, vec3(wall_min))) &&
             all(lessThan(deref(status).mouse_target, vec3(wall_max))))
