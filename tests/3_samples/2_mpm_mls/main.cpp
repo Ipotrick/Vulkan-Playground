@@ -992,6 +992,17 @@ struct App : BaseApp<App>
     void on_mouse_move(f32 x, f32 y) {
         if(gpu_status->flags & MOUSE_TARGET_FLAG) {
             gpu_input.mouse_pos = {static_cast<f32>(x), static_cast<f32>(y)};
+#if defined(_DEBUG)
+            // daxa_f32vec3 hit_position = gpu_status->mouse_target;
+            // daxa_f32vec3 impulse_src_pos = gpu_status->hit_origin + gpu_status->hit_direction * gpu_status->hit_distance;
+            // daxa_f32vec3 impulse_dir = normalize(impulse_src_pos - hit_position);
+            // std::cout << "Hit origin (" << gpu_status->hit_origin.x << ", " << gpu_status->hit_origin.y << ", " << gpu_status->hit_origin.z << ")" << " Hit direction (" << gpu_status->hit_direction.x << ", " << gpu_status->hit_direction.y << ", " << gpu_status->hit_direction.z << ")" << ", Hit position (" << hit_position.x << ", " << hit_position.y << ", " << hit_position.z <<
+            // ")" << ", Local Hit position (" << gpu_status->local_hit_position.x << ", " << gpu_status->local_hit_position.y << ", " << gpu_status->local_hit_position.z
+            // << ")" << ", Distance " << gpu_status->hit_distance <<
+            // ", Impulse source position (" << impulse_src_pos.x << ", " << impulse_src_pos.y << ", " << impulse_src_pos.z << ")" << ", Impulse direction (" << impulse_dir.x << ", " << impulse_dir.y << ", " << impulse_dir.z << ")" 
+            //  << ", Rigid body index: " << gpu_status->rigid_body_index << ", Rigid element index: " << gpu_status->rigid_element_index << std::endl;
+#endif // _DEBUG
+
         }
     }
     void on_mouse_button(i32 button, i32 action) {
@@ -1003,10 +1014,13 @@ struct App : BaseApp<App>
             if (action == GLFW_PRESS) {
                 gpu_status->flags |= MOUSE_DOWN_FLAG;
             } else if(action == GLFW_RELEASE) {
-                gpu_status->flags &= ~MOUSE_DOWN_FLAG;
+                gpu_status->flags &= ~(MOUSE_DOWN_FLAG | MOUSE_TARGET_FLAG);
                 gpu_status->hit_origin = daxa_f32vec3(0);
-                gpu_status->rigid_body_index = -1;
-                gpu_status->rigid_element_index = -1;
+                gpu_status->hit_direction = daxa_f32vec3(0);
+                gpu_status->local_hit_position = daxa_f32vec3(0);
+                gpu_status->hit_distance = MAX_DIST;
+                gpu_status->rigid_body_index = static_cast<u32>(-1);
+                gpu_status->rigid_element_index = static_cast<u32>(-1);
             }
             gpu_input.mouse_pos = {static_cast<f32>(mouse_x), static_cast<f32>(mouse_y)};
         }

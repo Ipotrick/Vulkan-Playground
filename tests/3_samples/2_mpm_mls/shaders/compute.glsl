@@ -110,7 +110,7 @@ daxa_f32vec3 particle_collision(daxa_f32vec3 velocity, daxa_f32vec3 normal,Rigid
 }
 
 daxa_f32mat3x3 rigid_body_get_transformed_inversed_inertia(RigidBody r) {
-    daxa_f32mat3x3 rotation = rigid_body_get_rotation_matrix(r);
+    daxa_f32mat3x3 rotation = rigid_body_get_rotation_matrix(r.rotation);
     return rotation * r.inv_inertia * transpose(rotation);
 }
 
@@ -480,10 +480,11 @@ void main()
     deref(status).rigid_body_index == pixel_i_x)
     {
         if ((deref(status).flags & RIGID_BODY_PICK_UP_ENABLED_FLAG) == RIGID_BODY_PICK_UP_ENABLED_FLAG) {
-            daxa_f32vec3 impulse_position = deref(status).mouse_target;
-            daxa_f32vec3 impulse_dir = normalize(deref(status).hit_origin - impulse_position);
+            daxa_f32vec3 hit_position = (transform * daxa_f32vec4(deref(status).local_hit_position, 1.0)).xyz;
+            daxa_f32vec3 impulse_src_pos = deref(status).hit_origin + deref(status).hit_direction * deref(status).hit_distance;
+            daxa_f32vec3 impulse_dir = normalize(impulse_src_pos - hit_position);
             daxa_f32vec3 impulse = (impulse_dir * deref(config).applied_force * r.mass * dt);
-            rigid_body_apply_impulse(r, impulse, r.position);
+            rigid_body_apply_impulse(r, impulse, hit_position);
 
         } else if ((deref(status).flags & RIGID_BODY_IMPULSE_ENABLED_FLAG) == RIGID_BODY_IMPULSE_ENABLED_FLAG) {
             daxa_f32vec3 impulse_position = deref(status).mouse_target;

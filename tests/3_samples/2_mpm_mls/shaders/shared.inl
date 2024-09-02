@@ -141,7 +141,10 @@ struct GpuStatus
 {
   daxa_u32 flags;
   daxa_f32vec3 hit_origin;
+  daxa_f32vec3 hit_direction;
+  daxa_f32 hit_distance;
   daxa_f32vec3 mouse_target;
+  daxa_f32vec3 local_hit_position;
   daxa_u32 rigid_body_index;
   daxa_u32 rigid_element_index;
 };
@@ -397,7 +400,7 @@ void rigid_body_add_atomic_omega_delta_by_index(daxa_u32 rigid_body_index, daxa_
   atomicAdd(rigid_body_buffer.rigid_bodies[rigid_body_index].omega_delta.z, omega_delta.z);
 }
 
-daxa_f32vec3 get_rigid_body_position_by_index(daxa_u32 rigid_body_index) {
+daxa_f32vec3 rigid_body_get_position_by_index(daxa_u32 rigid_body_index) {
   RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
   return rigid_body_buffer.rigid_bodies[rigid_body_index].position;
 }
@@ -412,7 +415,7 @@ void rigid_body_set_rotation_by_index(daxa_u32 rigid_body_index, daxa_f32vec4 ro
   rigid_body_buffer.rigid_bodies[rigid_body_index].rotation = rotation;
 }
 
-daxa_f32vec3 get_rigid_body_velocity_by_index(daxa_u32 rigid_body_index) {
+daxa_f32vec3 rigid_body_get_velocity_by_index(daxa_u32 rigid_body_index) {
   RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
   return rigid_body_buffer.rigid_bodies[rigid_body_index].velocity;
 }
@@ -422,7 +425,7 @@ void rigid_body_set_velocity_by_index(daxa_u32 rigid_body_index, daxa_f32vec3 ve
   rigid_body_buffer.rigid_bodies[rigid_body_index].velocity = velocity;
 }
 
-daxa_f32vec3 get_rigid_body_omega_by_index(daxa_u32 rigid_body_index) {
+daxa_f32vec3 rigid_body_get_omega_by_index(daxa_u32 rigid_body_index) {
   RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
   return rigid_body_buffer.rigid_bodies[rigid_body_index].omega;
 }
@@ -432,7 +435,7 @@ void rigid_body_set_omega_by_index(daxa_u32 rigid_body_index, daxa_f32vec3 omega
   rigid_body_buffer.rigid_bodies[rigid_body_index].omega = omega;
 }
 
-daxa_f32vec3 get_rigid_body_velocity_delta_by_index(daxa_u32 rigid_body_index) {
+daxa_f32vec3 rigid_body_get_velocity_delta_by_index(daxa_u32 rigid_body_index) {
   RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
   return rigid_body_buffer.rigid_bodies[rigid_body_index].velocity_delta;
 }
@@ -442,7 +445,7 @@ void rigid_body_reset_velocity_delta_by_index(daxa_u32 rigid_body_index) {
   rigid_body_buffer.rigid_bodies[rigid_body_index].velocity_delta = vec3(0, 0, 0);
 }
 
-daxa_f32vec3 get_rigid_body_omega_delta_by_index(daxa_u32 rigid_body_index) {
+daxa_f32vec3 rigid_body_get_omega_delta_by_index(daxa_u32 rigid_body_index) {
   RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
   return rigid_body_buffer.rigid_bodies[rigid_body_index].omega_delta;
 }
@@ -450,6 +453,11 @@ daxa_f32vec3 get_rigid_body_omega_delta_by_index(daxa_u32 rigid_body_index) {
 void rigid_body_reset_omega_delta_by_index(daxa_u32 rigid_body_index) {
   RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
   rigid_body_buffer.rigid_bodies[rigid_body_index].omega_delta = vec3(0, 0, 0);
+}
+
+daxa_f32vec4 rigid_body_get_rotation_by_index(daxa_u32 rigid_body_index) {
+  RIGID_BODY_BUFFER rigid_body_buffer = RIGID_BODY_BUFFER(p.rigid_bodies);
+  return rigid_body_buffer.rigid_bodies[rigid_body_index].rotation;
 }
 
 uint get_first_index_by_triangle_index(daxa_u32 triangle_index) {
@@ -1232,8 +1240,8 @@ daxa_f32 vec3_abs_max(daxa_f32vec3 v)
 }
 
 #if defined(DAXA_RIGID_BODY_FLAG)
-daxa_f32mat3x3 rigid_body_get_rotation_matrix(RigidBody r) {
-    daxa_f32vec4 quaternion = r.rotation;
+daxa_f32mat3x3 rigid_body_get_rotation_matrix(daxa_f32vec4 rotation) {
+    daxa_f32vec4 quaternion = rotation;
     daxa_f32 x = quaternion.x;
     daxa_f32 y = quaternion.y;
     daxa_f32 z = quaternion.z;
@@ -1265,8 +1273,16 @@ daxa_f32mat3x3 rigid_body_get_rotation_matrix(RigidBody r) {
 daxa_f32mat4x4 rigid_body_get_transform_matrix(RigidBody rigid_body) {
   daxa_f32mat4x4 translation = daxa_f32mat4x4(1.0);
   translation[3] = daxa_f32vec4(rigid_body.position, 1.0);
-  daxa_f32mat3x3 rotation = rigid_body_get_rotation_matrix(rigid_body);
+  daxa_f32mat3x3 rotation = rigid_body_get_rotation_matrix(rigid_body.rotation);
   daxa_f32mat4x4 rotation_matrix = daxa_f32mat4x4(rotation);
+  return translation * rotation_matrix;
+}
+
+daxa_f32mat4x4 rigid_body_get_transform_matrix_from_rotation_translation(daxa_f32vec4 rotation, daxa_f32vec3 position) {
+  daxa_f32mat4x4 translation = daxa_f32mat4x4(1.0);
+  translation[3] = daxa_f32vec4(position, 1.0);
+  daxa_f32mat3x3 rotation_mat3 = rigid_body_get_rotation_matrix(rotation);
+  daxa_f32mat4x4 rotation_matrix = daxa_f32mat4x4(rotation_mat3);
   return translation * rotation_matrix;
 }
 #endif

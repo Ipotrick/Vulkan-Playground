@@ -53,31 +53,35 @@ void main()
   daxa_f32vec3 color = prd.hit_value;
 
   imageStore(daxa_image2D(p.image_id), daxa_i32vec2(gl_LaunchIDEXT.xy), vec4(color, 1.0));
-
-  if ((deref(status).flags & MOUSE_DOWN_FLAG) == MOUSE_DOWN_FLAG) {
-    if (gl_LaunchIDEXT.x == uint(deref(config).mouse_pos.x) && gl_LaunchIDEXT.y == uint(deref(config).mouse_pos.y))
-    {
+  if (gl_LaunchIDEXT.x == uint(deref(config).mouse_pos.x) && gl_LaunchIDEXT.y == uint(deref(config).mouse_pos.y))
+  {
+    if ((deref(status).flags & MOUSE_DOWN_FLAG) == MOUSE_DOWN_FLAG) {
         if (prd.hit_pos != daxa_f32vec3(MAX_DIST))
         {
           deref(status).flags |= MOUSE_TARGET_FLAG;
           deref(status).mouse_target = prd.hit_pos;
-          deref(status).hit_origin = ray.origin;
+          deref(status).hit_distance = length(prd.hit_pos - ray.origin);
           deref(status).rigid_body_index = prd.rigid_body_index;
           deref(status).rigid_element_index = prd.rigid_element_index;
         } 
 
         if (((deref(status).flags & RIGID_BODY_PICK_UP_ENABLED_FLAG) == RIGID_BODY_PICK_UP_ENABLED_FLAG) || ((deref(status).flags & RIGID_BODY_IMPULSE_ENABLED_FLAG) == RIGID_BODY_IMPULSE_ENABLED_FLAG)) {
           deref(status).flags &= ~MOUSE_DOWN_FLAG;
+          if (prd.rigid_body_index != -1)
+          {
+            daxa_f32vec3 rigid_body_pos = rigid_body_get_position_by_index(prd.rigid_body_index);
+            daxa_f32vec4 rigid_body_rot = rigid_body_get_rotation_by_index(prd.rigid_body_index);
+            daxa_f32mat4x4 transform = rigid_body_get_transform_matrix_from_rotation_translation(
+              rigid_body_rot, rigid_body_pos);
+            deref(status).local_hit_position = (inverse(transform) * vec4(prd.hit_pos, 1)).xyz;
+          }
         }
     }
+    if((deref(status).flags & MOUSE_TARGET_FLAG) == MOUSE_TARGET_FLAG) {
+      deref(status).hit_origin = ray.origin;
+      deref(status).hit_direction = ray.direction;
+    }
   }
-  // else {
-  //   deref(status).flags &= ~MOUSE_TARGET_FLAG;
-  //   deref(status).mouse_target = daxa_f32vec3(0);
-  //   deref(status).hit_origin = daxa_f32vec3(0);
-  //   deref(status).rigid_body_index = -1;
-  //   deref(status).rigid_element_index = -1;
-  // }
 
 }
 #elif DAXA_SHADER_STAGE == DAXA_SHADER_STAGE_CLOSEST_HIT
