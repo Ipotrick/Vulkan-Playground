@@ -480,25 +480,10 @@ void main()
     deref(status).rigid_body_index == pixel_i_x)
     {
         if ((deref(status).flags & RIGID_BODY_PICK_UP_ENABLED_FLAG) == RIGID_BODY_PICK_UP_ENABLED_FLAG) {
-            daxa_f32mat4x4 transform = rigid_body_get_transform_matrix(r);
-            daxa_u32 triangle_index = deref(status).rigid_element_index;
-
-            // get primitive position and orientation
-            vec3 p0 = get_first_vertex_by_triangle_index(triangle_index);
-            vec3 p1 = get_second_vertex_by_triangle_index(triangle_index);
-            vec3 p2 = get_third_vertex_by_triangle_index(triangle_index);
-
-            p0 = (transform * vec4(p0, 1)).xyz;
-            p1 = (transform * vec4(p1, 1)).xyz;
-            p2 = (transform * vec4(p2, 1)).xyz;
-    
-            daxa_f32vec3 normal = get_normal_by_vertices(p0, p1, p2);
-
-            daxa_f32vec3 grip_position = deref(status).mouse_target;
-            // daxa_f32vec3 grip_dir = normalize(deref(status).hit_origin - grip_position); 
-            daxa_f32vec3 grid_dir = normal;
-            daxa_f32vec3 grip_force = (grid_dir * deref(config).applied_force * r.mass  * dt);
-            rigid_body_apply_impulse(r, -grip_force, r.position);
+            daxa_f32vec3 impulse_position = deref(status).mouse_target;
+            daxa_f32vec3 impulse_dir = normalize(deref(status).hit_origin - impulse_position);
+            daxa_f32vec3 impulse = (impulse_dir * deref(config).applied_force * r.mass * dt);
+            rigid_body_apply_impulse(r, impulse, r.position);
 
         } else if ((deref(status).flags & RIGID_BODY_IMPULSE_ENABLED_FLAG) == RIGID_BODY_IMPULSE_ENABLED_FLAG) {
             daxa_f32vec3 impulse_position = deref(status).mouse_target;

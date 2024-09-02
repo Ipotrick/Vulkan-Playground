@@ -990,7 +990,7 @@ struct App : BaseApp<App>
     }
 
     void on_mouse_move(f32 x, f32 y) {
-        if(gpu_status->flags & MOUSE_DOWN_FLAG) {
+        if(gpu_status->flags & MOUSE_TARGET_FLAG) {
             gpu_input.mouse_pos = {static_cast<f32>(x), static_cast<f32>(y)};
         }
     }
@@ -1002,10 +1002,13 @@ struct App : BaseApp<App>
             // Click right button store the current mouse position
             if (action == GLFW_PRESS) {
                 gpu_status->flags |= MOUSE_DOWN_FLAG;
-                gpu_input.mouse_pos = {static_cast<f32>(mouse_x), static_cast<f32>(mouse_y)};
             } else if(action == GLFW_RELEASE) {
                 gpu_status->flags &= ~MOUSE_DOWN_FLAG;
+                gpu_status->hit_origin = daxa_f32vec3(0);
+                gpu_status->rigid_body_index = -1;
+                gpu_status->rigid_element_index = -1;
             }
+            gpu_input.mouse_pos = {static_cast<f32>(mouse_x), static_cast<f32>(mouse_y)};
         }
     }
     void on_key(i32 key, i32 action) {

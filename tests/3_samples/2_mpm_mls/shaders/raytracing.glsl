@@ -65,15 +65,19 @@ void main()
           deref(status).rigid_body_index = prd.rigid_body_index;
           deref(status).rigid_element_index = prd.rigid_element_index;
         } 
+
+        if (((deref(status).flags & RIGID_BODY_PICK_UP_ENABLED_FLAG) == RIGID_BODY_PICK_UP_ENABLED_FLAG) || ((deref(status).flags & RIGID_BODY_IMPULSE_ENABLED_FLAG) == RIGID_BODY_IMPULSE_ENABLED_FLAG)) {
+          deref(status).flags &= ~MOUSE_DOWN_FLAG;
+        }
     }
   }
-  else {
-    deref(status).flags &= ~MOUSE_TARGET_FLAG;
-    deref(status).mouse_target = daxa_f32vec3(0);
-    deref(status).hit_origin = daxa_f32vec3(0);
-    deref(status).rigid_body_index = -1;
-    deref(status).rigid_element_index = -1;
-  }
+  // else {
+  //   deref(status).flags &= ~MOUSE_TARGET_FLAG;
+  //   deref(status).mouse_target = daxa_f32vec3(0);
+  //   deref(status).hit_origin = daxa_f32vec3(0);
+  //   deref(status).rigid_body_index = -1;
+  //   deref(status).rigid_element_index = -1;
+  // }
 
 }
 #elif DAXA_SHADER_STAGE == DAXA_SHADER_STAGE_CLOSEST_HIT
