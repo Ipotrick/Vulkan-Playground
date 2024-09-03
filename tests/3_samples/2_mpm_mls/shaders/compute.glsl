@@ -844,6 +844,10 @@ void main()
   }
 
 #if defined(DAXA_RIGID_BODY_FLAG)
+  gather_CDF_compute(pixel_i_x, aabb);
+#endif // DAXA_RIGID_BODY_FLAG
+
+#if defined(DAXA_RIGID_BODY_FLAG)
   ParticleCDF particle_CDF = get_rigid_particle_CDF_by_index(pixel_i_x);
 #endif // DAXA_RIGID_BODY_FLAG
 
@@ -1057,10 +1061,6 @@ void main()
   if(any(lessThan(pos_x, vec3(0))) || any(greaterThanEqual(pos_x, vec3(1)))) {
       return;
   }
-
-#if defined(DAXA_RIGID_BODY_FLAG)
-  gather_CDF_compute(pixel_i_x, aabb);
-#endif // DAXA_RIGID_BODY_FLAG
 
   daxa_BufferPtr(GpuStatus) status = daxa_BufferPtr(GpuStatus)(daxa_id_to_address(p.status_buffer_id));
 
