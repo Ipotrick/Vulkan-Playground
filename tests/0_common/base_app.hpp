@@ -23,39 +23,23 @@ using Clock = std::chrono::high_resolution_clock;
 #define DAXA_SHADERLANG DAXA_SHADERLANG_GLSL
 #endif
 
-
 template <typename T>
 struct BaseApp : AppWindow<T>
 {
     daxa::Instance daxa_ctx = daxa::create_instance({});
-    daxa::Device device = daxa_ctx.create_device({
-        .selector = [](daxa::DeviceProperties const & device_props) -> i32
-        {
-            i32 score = 0;
-            switch (device_props.device_type)
-            {
-            case daxa::DeviceType::DISCRETE_GPU: score += 10000; break;
-            case daxa::DeviceType::VIRTUAL_GPU: score += 1000; break;
-            case daxa::DeviceType::INTEGRATED_GPU: score += 100; break;
-            default: break;
-            }
-            return score;
-        },
-#if defined(DAXA_ATOMIC_FLOAT_FLAG) || defined(DAXA_RAY_TRACING_FLAG)
-        .flags =
+    daxa::Device device = [&]()
+    {
+        daxa::DeviceInfo2 info = {.name = "default device"};
+        daxa::ImplicitFeatureFlags required_features = {};
 #if defined(DAXA_ATOMIC_FLOAT_FLAG)
-            daxa::DeviceFlagBits::SHADER_ATOMIC_FLOAT
+        required_features |= daxa::ImplicitFeatureFlags::SHADER_ATOMIC_FLOAT;
 #endif
 #if defined(DAXA_RAY_TRACING_FLAG)
-#if defined(DAXA_ATOMIC_FLOAT_FLAG)
-            |
+        required_features |= daxa::ImplicitFeatureFlags::BASIC_RAY_TRACING;
 #endif
-            daxa::DeviceFlagBits::RAY_TRACING
-#endif
-        ,
-#endif
-        .name = "device",
-    });
+        info = daxa_ctx.choose_device(required_features, info);
+        return daxa_ctx.create_device_2(info);
+    }();
 
     daxa::Swapchain swapchain = device.create_swapchain({
         .native_window = AppWindow<T>::get_native_handle(),

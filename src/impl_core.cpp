@@ -233,6 +233,40 @@ auto construct_daxa_physical_device_properties(VkPhysicalDevice physical_device)
         ret.mesh_shader_properties.value.prefers_compact_vertex_output = static_cast<daxa_Bool8>(vk_physical_device_mesh_shader_properties_ext.prefersCompactVertexOutput);
         ret.mesh_shader_properties.value.prefers_compact_primitive_output = static_cast<daxa_Bool8>(vk_physical_device_mesh_shader_properties_ext.prefersCompactPrimitiveOutput);
     }
+
+    u32 queue_family_props_count = 0;
+    std::vector<VkQueueFamilyProperties> queue_props;
+    vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_props_count, nullptr);
+    queue_props.resize(queue_family_props_count);
+    vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_props_count, queue_props.data());
+    std::vector<VkBool32> supports_present;
+    supports_present.resize(queue_family_props_count);
+
+    ret.compute_queue_count = ~0u;
+    ret.transfer_queue_count = ~0u;
+    for (u32 i = 0; i < queue_family_props_count; i++)
+    {
+        bool const supports_graphics = queue_props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT;
+        bool const supports_compute = queue_props[i].queueFlags & VK_QUEUE_COMPUTE_BIT;
+        bool const supports_transfer = queue_props[i].queueFlags & VK_QUEUE_TRANSFER_BIT;
+        if (ret.compute_queue_count == ~0u && !supports_graphics && supports_compute && supports_transfer)
+        {
+            ret.compute_queue_count = std::min(queue_props[i].queueCount, DAXA_MAX_COMPUTE_QUEUE_COUNT);
+        }
+        if (ret.transfer_queue_count == ~0u && !supports_graphics && !supports_compute && supports_transfer)
+        {
+            ret.transfer_queue_count = std::min(queue_props[i].queueCount, DAXA_MAX_TRANSFER_QUEUE_COUNT);
+        }
+    }
+    if (ret.compute_queue_count == ~0u)
+    {
+        ret.compute_queue_count = 0u;
+    }
+    if (ret.transfer_queue_count == ~0u)
+    {
+        ret.transfer_queue_count = 0u;
+    }
+    
     return ret;
 }
 
@@ -549,10 +583,10 @@ auto daxa_memory_block_dec_refcnt(daxa_MemoryBlock self) -> u64
 void daxa_ImplMemoryBlock::zero_ref_callback(ImplHandle const * handle)
 {
     auto * self = rc_cast<daxa_ImplMemoryBlock *>(handle);
-    std::unique_lock const lock{self->device->main_queue_zombies_mtx};
-    u64 const main_queue_cpu_timeline_value = self->device->main_queue_cpu_timeline.load(std::memory_order::relaxed);
-    self->device->main_queue_memory_block_zombies.emplace_front(
-        main_queue_cpu_timeline_value,
+    std::unique_lock const lock{self->device->zombies_mtx};
+    u64 const submit_timeline_value = self->device->global_submit_timeline.load(std::memory_order::relaxed);
+    self->device->memory_block_zombies.emplace_front(
+        submit_timeline_value,
         MemoryBlockZombie{
             .allocation = self->allocation,
         });

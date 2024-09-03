@@ -1054,8 +1054,8 @@ namespace daxa
         std::string_view task_name = impl.global_image_infos[task_image_index].get_name();
         for (u32 index = 0; index < actual_images.size(); ++index)
         {
-            ImageMipArraySlice const full_slice = impl.info.device.info_image_view(actual_images[index].default_view()).value().slice;
-            auto name_sw = impl.info.device.info_image(actual_images[index]).value().name;
+            ImageMipArraySlice const full_slice = impl.info.device.image_view_info(actual_images[index].default_view()).value().slice;
+            auto name_sw = impl.info.device.image_info(actual_images[index]).value().name;
             std::string const & name = {name_sw.data(), name_sw.size()};
             [[maybe_unused]] bool const use_within_runtime_image_counts =
                 (access_slice.base_mip_level + access_slice.level_count <= full_slice.base_mip_level + full_slice.level_count) &&
@@ -1074,10 +1074,10 @@ namespace daxa
         std::string_view task_image_name = impl.global_image_infos[task_image_index].get_name();
         for (auto image : actual_images)
         {
-            [[maybe_unused]] bool const access_valid = (impl.info.device.info_image(image).value().usage & use_flags) != ImageUsageFlagBits::NONE;
+            [[maybe_unused]] bool const access_valid = (impl.info.device.image_info(image).value().usage & use_flags) != ImageUsageFlagBits::NONE;
             DAXA_DBG_ASSERT_TRUE_M(access_valid, fmt::format("Detected invalid runtime image \"{}\" of task image \"{}\", in use {} of task \"{}\". "
                                                              "The given runtime image does NOT have the image use flag {} set, but the task use requires this use for all runtime images!",
-                                                             impl.info.device.info_image(image).value().name.view(), task_image_name, use_index, task_name, daxa::to_string(use_flags)));
+                                                             impl.info.device.image_info(image).value().name.view(), task_image_name, use_index, task_name, daxa::to_string(use_flags)));
         }
     }
 
@@ -1133,7 +1133,7 @@ namespace daxa
                     {
                         if (info.device.is_id_valid(view))
                         {
-                            ImageViewId const parent_image_default_view = info.device.info_image_view(view).value().image.default_view();
+                            ImageViewId const parent_image_default_view = info.device.image_view_info(view).value().image.default_view();
                             // Can not destroy the default view of an image!!!
                             if (parent_image_default_view != view)
                             {
@@ -1146,7 +1146,7 @@ namespace daxa
                     {
                         for (auto parent : actual_images)
                         {
-                            ImageViewInfo view_info = info.device.info_image_view(parent.default_view()).value();
+                            ImageViewInfo view_info = info.device.image_view_info(parent.default_view()).value();
                             ImageViewType const use_view_type = (image_attach.view_type != ImageViewType::MAX_ENUM) ? image_attach.view_type : view_info.type;
                             if (parent.default_view() == daxa::ImageViewId{})
                             {
@@ -1180,7 +1180,7 @@ namespace daxa
                         auto filled_views = std::min(image_attach.translated_view.slice.level_count, u32(image_attach.shader_array_size));
                         for (u32 index = 0; index < filled_views; ++index)
                         {
-                            ImageViewInfo view_info = info.device.info_image_view(actual_images[0].default_view()).value();
+                            ImageViewInfo view_info = info.device.image_view_info(actual_images[0].default_view()).value();
                             ImageViewType const use_view_type = (image_attach.view_type != ImageViewType::MAX_ENUM) ? image_attach.view_type : view_info.type;
                             view_info.type = use_view_type;
                             view_info.slice = image_attach.translated_view.slice;
@@ -1300,7 +1300,7 @@ namespace daxa
                         for (u32 shader_array_i = 0; shader_array_i < buffer_attach.shader_array_size; ++shader_array_i)
                         {
                             BufferId const buf_id = buffer_attach.ids[shader_array_i];
-                            DeviceAddress const buf_address = buffer_attach.view.is_null() ? DeviceAddress{} : device.get_device_address(buf_id).value();
+                            DeviceAddress const buf_address = buffer_attach.view.is_null() ? DeviceAddress{} : device.device_address(buf_id).value();
                             auto mini_blob = std::bit_cast<std::array<std::byte, sizeof(DeviceAddress)>>(buf_address);
                             std::memcpy(attachment_shader_blob.data() + shader_byte_blob_offset, &mini_blob, sizeof(DeviceAddress));
                             shader_byte_blob_offset += sizeof(DeviceAddress);
@@ -1320,12 +1320,24 @@ namespace daxa
                 }
                 if constexpr (std::is_same_v<std::decay_t<decltype(attach)>, TaskTlasAttachmentInfo>)
                 {
-                    upalign(sizeof(DeviceAddress));
-                    TlasId const tlas_id = attach.ids[0];
-                    DeviceAddress const tlas_address = attach.view.is_null() ? DeviceAddress{} : device.get_device_address(tlas_id).value();
-                    auto mini_blob = std::bit_cast<std::array<std::byte, sizeof(DeviceAddress)>>(tlas_address);
-                    std::memcpy(attachment_shader_blob.data() + shader_byte_blob_offset, &mini_blob, sizeof(DeviceAddress));
-                    shader_byte_blob_offset += sizeof(DeviceAddress);
+                    TaskTlasAttachmentInfo const & tlas_attach = attach;
+                    if(tlas_attach.shader_as_address)
+                    {
+                        upalign(sizeof(DeviceAddress));
+                        TlasId const tlas_id = attach.ids[0];
+                        DeviceAddress const tlas_address = attach.view.is_null() ? DeviceAddress{} : device.device_address(tlas_id).value();
+                        auto mini_blob = std::bit_cast<std::array<std::byte, sizeof(DeviceAddress)>>(tlas_address);
+                        std::memcpy(attachment_shader_blob.data() + shader_byte_blob_offset, &mini_blob, sizeof(DeviceAddress));
+                        shader_byte_blob_offset += sizeof(DeviceAddress);
+                    }
+                    else 
+                    {
+                        upalign(sizeof(daxa_TlasId));
+                        TlasId const tlas_id = tlas_attach.ids[0];
+                        auto mini_blob = std::bit_cast<std::array<std::byte, sizeof(daxa_TlasId)>>(tlas_id);
+                        std::memcpy(attachment_shader_blob.data() + shader_byte_blob_offset, &mini_blob, sizeof(daxa_TlasId));
+                        shader_byte_blob_offset += sizeof(daxa_TlasId);
+                    }
                 }
             },
             [&](u32, TaskImageAttachmentInfo const & image_attach)
@@ -2309,7 +2321,7 @@ namespace daxa
                         .allocate_info = MemoryFlagBits::DEDICATED_MEMORY,
                         .name = "Dummy to figure mem requirements",
                     };
-                    permut_image.memory_requirements = info.device.get_memory_requirements({image_info});
+                    permut_image.memory_requirements = info.device.memory_requirements({image_info});
                     max_alignment_requirement = std::max(permut_image.memory_requirements.alignment, max_alignment_requirement);
                 }
             }
@@ -2326,7 +2338,7 @@ namespace daxa
                         .allocate_info = MemoryFlagBits::DEDICATED_MEMORY,
                         .name = "Dummy to figure mem requirements",
                     };
-                    permut_buffer.memory_requirements = info.device.get_memory_requirements({buffer_info});
+                    permut_buffer.memory_requirements = info.device.memory_requirements({buffer_info});
                     max_alignment_requirement = std::max(permut_buffer.memory_requirements.alignment, max_alignment_requirement);
                 }
             }
@@ -3221,7 +3233,7 @@ namespace daxa
                 {
                     if (info.device.is_id_valid(view))
                     {
-                        ImageId const parent = info.device.info_image_view(view).value().image;
+                        ImageId const parent = info.device.image_view_info(view).value().image;
                         bool const is_default_view = parent.default_view() == view;
                         if (!is_default_view)
                         {
@@ -3289,7 +3301,7 @@ namespace daxa
             for (u32 child_i = 0; child_i < get_actual_images(local_id, permutation).size(); ++child_i)
             {
                 auto const child_id = get_actual_images(local_id, permutation)[child_i];
-                auto const & child_info = info.device.info_image(child_id).value();
+                auto const & child_info = info.device.image_info(child_id).value();
                 fmt::format_to(std::back_inserter(out), "{}name: \"{}\", id: ({})\n", indent, child_info.name.view(), to_string(child_id));
             }
             print_separator_to(out, indent);
@@ -3322,7 +3334,7 @@ namespace daxa
                 using ChildIdT = std::decay_t<decltype(child_id)>;
                 if constexpr (std::is_same_v<ChildIdT, BufferId>)
                 {
-                    auto const & child_info = info.device.info_buffer(child_id).value();
+                    auto const & child_info = info.device.buffer_info(child_id).value();
                     fmt::format_to(std::back_inserter(out), "{}name: \"{}\", id: ({})\n", indent, child_info.name.view(), to_string(child_id));
                 }
                 if constexpr (std::is_same_v<ChildIdT, BlasId>)

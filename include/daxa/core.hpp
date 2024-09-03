@@ -14,7 +14,6 @@
 
 #if DAXA_VALIDATION
 #include <iostream>
-#include <cstdlib>
 #include <stdexcept>
 
 #define DAXA_GPU_ID_VALIDATION 1

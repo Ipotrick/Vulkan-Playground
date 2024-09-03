@@ -32,6 +32,12 @@ auto daxa_dvc_create_swapchain(daxa_Device device, daxa_SwapchainInfo const * in
         return result;
     }
 
+    if (info->queue_family >= DAXA_QUEUE_FAMILY_MAX_ENUM || device->queue_families[info->queue_family].queue_count == 0)
+    {
+        ret.full_cleanup();
+        return DAXA_RESULT_ERROR_INVALID_QUEUE_FAMILY;
+    }
+
     // Save supported present modes.
     u32 present_mode_count = {};
     auto vk_result = vkGetPhysicalDeviceSurfacePresentModesKHR(
@@ -97,7 +103,7 @@ auto daxa_dvc_create_swapchain(daxa_Device device, daxa_SwapchainInfo const * in
         return result;
     }
     // We have an acquire semaphore for each frame in flight.
-    for (u32 i = 0; i < ret.info.max_allowed_frames_in_flight; i++)
+    for (u32 i = 0; i < ret.info.max_allowed_frames_in_flight + 1; i++)
     {
         BinarySemaphore sema = {};
         daxa_BinarySemaphoreInfo const sema_info = {};
@@ -181,7 +187,7 @@ auto daxa_swp_acquire_next_image(daxa_Swapchain self, daxa_ImageId * out_image_i
             std::max<i64>(
                 0,
                 static_cast<i64>(self->cpu_frame_timeline) - static_cast<i64>(self->info.max_allowed_frames_in_flight))));
-    self->acquire_semaphore_index = (self->cpu_frame_timeline + 1) % self->info.max_allowed_frames_in_flight;
+    self->acquire_semaphore_index = (self->cpu_frame_timeline + 1) % (self->info.max_allowed_frames_in_flight + 1);
     BinarySemaphore & acquire_semaphore = self->acquire_semaphores[self->acquire_semaphore_index];
     auto result = vkAcquireNextImageKHR(
         self->device->vk_device,
@@ -249,22 +255,21 @@ auto daxa_swp_dec_refcnt(daxa_Swapchain self) -> u64
 
 auto daxa_ImplSwapchain::recreate() -> daxa_Result
 {
+    daxa_Result result = DAXA_RESULT_SUCCESS;
     // Check present mode:
     auto iter = std::find(this->supported_present_modes.begin(), this->supported_present_modes.end(), this->info.present_mode);
     if (iter == this->supported_present_modes.end())
     {
-        return DAXA_RESULT_DEVICE_SURFACE_UNSUPPORTED_PRESENT_MODE;
+        result = DAXA_RESULT_DEVICE_SURFACE_UNSUPPORTED_PRESENT_MODE;
     }
+    _DAXA_RETURN_IF_ERROR(result, result)
 
     VkSurfaceCapabilitiesKHR surface_capabilities;
-    auto vk_result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+    result = static_cast<daxa_Result>(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
         this->device->vk_physical_device,
         this->vk_surface,
-        &surface_capabilities);
-    if (vk_result != VK_SUCCESS)
-    {
-        return std::bit_cast<daxa_Result>(vk_result);
-    }
+        &surface_capabilities));
+    _DAXA_RETURN_IF_ERROR(result, result)
 
     surface_extent.width = surface_capabilities.currentExtent.width;
     surface_extent.height = surface_capabilities.currentExtent.height;
@@ -280,11 +285,8 @@ auto daxa_ImplSwapchain::recreate() -> daxa_Result
 
     // NOTE: this is a hack that allows us to ignore issues caused
     // by things that are just underspecified in the Vulkan spec.
-    auto result = daxa_dvc_wait_idle(this->device);
-    if (result != DAXA_RESULT_SUCCESS)
-    {
-        return result;
-    }
+    result = daxa_dvc_wait_idle(this->device);
+    _DAXA_RETURN_IF_ERROR(result, result)
 
     this->partial_cleanup();
 
@@ -303,7 +305,7 @@ auto daxa_ImplSwapchain::recreate() -> daxa_Result
         .imageUsage = usage.data,
         .imageSharingMode = VkSharingMode::VK_SHARING_MODE_EXCLUSIVE,
         .queueFamilyIndexCount = 1,
-        .pQueueFamilyIndices = &this->device->main_queue_family_index,
+        .pQueueFamilyIndices = &this->device->get_queue(DAXA_QUEUE_MAIN).vk_queue_family_index,
         .preTransform = static_cast<VkSurfaceTransformFlagBitsKHR>(info.present_operation),
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
         .presentMode = static_cast<VkPresentModeKHR>(info.present_mode),
@@ -311,34 +313,39 @@ auto daxa_ImplSwapchain::recreate() -> daxa_Result
         .oldSwapchain = old_swapchain,
     };
 
-    vk_result = vkCreateSwapchainKHR(
+    result = static_cast<daxa_Result>(vkCreateSwapchainKHR(
         this->device->vk_device,
         &swapchain_create_info,
         nullptr,
-        &this->vk_swapchain);
-    if (vk_result != VK_SUCCESS)
-    {
-        return std::bit_cast<daxa_Result>(vk_result);
-    }
+        &this->vk_swapchain));
+    _DAXA_RETURN_IF_ERROR(result, result)
 
-    if (old_swapchain != VK_NULL_HANDLE)
-    {
-        vkDestroySwapchainKHR(this->device->vk_device, old_swapchain, nullptr);
-    }
+    defer{
+        if (result != DAXA_RESULT_SUCCESS)
+        {
+            if (this->vk_swapchain)
+            {
+                vkDestroySwapchainKHR(this->device->vk_device, this->vk_swapchain, nullptr);
+            }
+            for (auto & image : this->images)
+            {
+                if (!image.is_empty())
+                {
+                    [[maybe_unused]] auto _ignore = daxa_dvc_destroy_image(this->device, static_cast<daxa_ImageId>(image));
+                }
+            }
+        }
+    };
 
     u32 image_count = 0;
     std::vector<VkImage> swapchain_images = {};
-    vk_result = vkGetSwapchainImagesKHR(this->device->vk_device, vk_swapchain, &image_count, nullptr);
-    if (vk_result != VK_SUCCESS)
-    {
-        return std::bit_cast<daxa_Result>(vk_result);
-    }
+    result = static_cast<daxa_Result>(vkGetSwapchainImagesKHR(this->device->vk_device, vk_swapchain, &image_count, nullptr));
+    _DAXA_RETURN_IF_ERROR(result, result)
+    
     swapchain_images.resize(image_count);
-    vk_result = vkGetSwapchainImagesKHR(this->device->vk_device, vk_swapchain, &image_count, swapchain_images.data());
-    if (vk_result != VK_SUCCESS)
-    {
-        return std::bit_cast<daxa_Result>(vk_result);
-    }
+    result = static_cast<daxa_Result>(vkGetSwapchainImagesKHR(this->device->vk_device, vk_swapchain, &image_count, swapchain_images.data()));
+    _DAXA_RETURN_IF_ERROR(result, result)
+    
     this->images.resize(image_count);
     for (u32 i = 0; i < images.size(); i++)
     {
@@ -348,13 +355,11 @@ auto daxa_ImplSwapchain::recreate() -> daxa_Result
             .usage = usage,
             .name = this->info_name.c_str(),
         };
-        auto result_pair = this->device->new_swapchain_image(
-            swapchain_images[i], vk_surface_format.format, i, usage, image_info);
-        if (result_pair.first != DAXA_RESULT_SUCCESS)
-        {
-            return result_pair.first;
-        }
-        this->images[i] = result_pair.second;
+        ImageId id = {};
+        auto result = this->device->new_swapchain_image(swapchain_images[i], vk_surface_format.format, i, usage, image_info, &id);
+        _DAXA_RETURN_IF_ERROR(result, result)
+        
+        this->images[i] = id;
     }
 
     if ((this->device->instance->info.flags & InstanceFlagBits::DEBUG_UTILS) != InstanceFlagBits::NONE && !this->info_name.empty())
@@ -368,6 +373,12 @@ auto daxa_ImplSwapchain::recreate() -> daxa_Result
         };
         this->device->vkSetDebugUtilsObjectNameEXT(this->device->vk_device, &swapchain_name_info);
     }
+
+    if (old_swapchain != VK_NULL_HANDLE)
+    {
+        vkDestroySwapchainKHR(this->device->vk_device, old_swapchain, nullptr);
+    }
+    
     return DAXA_RESULT_SUCCESS;
 }
 

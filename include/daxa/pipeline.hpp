@@ -1,5 +1,6 @@
 #pragma once
 
+#include <daxa/gpu_resources.hpp>
 #include <daxa/core.hpp>
 #include <daxa/types.hpp>
 
@@ -45,7 +46,6 @@ namespace daxa
 
     struct RayTracingShaderBindingTable
     {
-        BufferId buffer_id; // TODO: find a better way to store this?
         StridedDeviceAddressRegion raygen_region = {};
         StridedDeviceAddressRegion miss_region = {};
         StridedDeviceAddressRegion hit_region = {};
@@ -61,7 +61,6 @@ namespace daxa
         Span<ShaderInfo const> closest_hit_shaders = {};
         Span<ShaderInfo const> miss_hit_shaders = {};
         Span<RayTracingShaderGroupInfo const> shader_groups = {};
-        RayTracingShaderBindingTable shader_binding_table = {};
         u32 max_ray_recursion_depth;
         u32 push_constant_size = {};
         SmallString name = {};
@@ -83,6 +82,10 @@ namespace daxa
         /// * reference MUST NOT be read after the object is destroyed.
         /// @return reference to info of object.
         [[nodiscard]] auto info() const -> RayTracingPipelineInfo const &;
+
+        struct SbtPair { daxa::BufferId buffer; RayTracingShaderBindingTable table; };
+        [[nodiscard]] auto create_default_sbt() const -> SbtPair;
+        void get_shader_group_handles(void *out_blob) const;
 
       protected:
         template <typename T, typename H_T>

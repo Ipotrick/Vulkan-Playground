@@ -122,15 +122,15 @@ namespace daxa
         HANDLE_RES(daxa_dvc_get_vk_image_view(*reinterpret_cast<daxa_Device *>(&this->info.device), std::bit_cast<daxa_ImageViewId>(upscale_info.motion_vectors.default_view()), &velocity_vk_image_view));
         HANDLE_RES(daxa_dvc_get_vk_image_view(*reinterpret_cast<daxa_Device *>(&this->info.device), std::bit_cast<daxa_ImageViewId>(upscale_info.output.default_view()), &output_vk_image_view));
 
-        auto const & color_extent = this->info.device.info_image(upscale_info.color).value().size;
-        auto const & depth_extent = this->info.device.info_image(upscale_info.depth).value().size;
-        auto const & velocity_extent = this->info.device.info_image(upscale_info.motion_vectors).value().size;
-        auto const & output_extent = this->info.device.info_image(upscale_info.output).value().size;
+        auto const & color_extent = this->info.device.image_info(upscale_info.color).value().size;
+        auto const & depth_extent = this->info.device.image_info(upscale_info.depth).value().size;
+        auto const & velocity_extent = this->info.device.image_info(upscale_info.motion_vectors).value().size;
+        auto const & output_extent = this->info.device.image_info(upscale_info.output).value().size;
 
-        auto const color_format = static_cast<VkFormat>(this->info.device.info_image(upscale_info.color).value().format);
-        auto const depth_format = static_cast<VkFormat>(this->info.device.info_image(upscale_info.depth).value().format);
-        auto const velocity_format = static_cast<VkFormat>(this->info.device.info_image(upscale_info.motion_vectors).value().format);
-        auto const output_format = static_cast<VkFormat>(this->info.device.info_image(upscale_info.output).value().format);
+        auto const color_format = static_cast<VkFormat>(this->info.device.image_info(upscale_info.color).value().format);
+        auto const depth_format = static_cast<VkFormat>(this->info.device.image_info(upscale_info.depth).value().format);
+        auto const velocity_format = static_cast<VkFormat>(this->info.device.image_info(upscale_info.motion_vectors).value().format);
+        auto const output_format = static_cast<VkFormat>(this->info.device.image_info(upscale_info.output).value().format);
 
         wchar_t fsr_input_color[] = L"FSR2_InputColor";
         wchar_t fsr_input_depth[] = L"FSR2_InputDepth";

@@ -76,5 +76,5 @@ void entry_mandelbrot(uint3 pixel_i : SV_DispatchThreadID)
     }
     col *= 1.0 / float(SUBSAMPLES * SUBSAMPLES);
 
-    RWTexture2D<float>::get(p.image_id)[pixel_i.xy].xyz = col;
+    p.image_id.get()[pixel_i.xy] = float4(col, 1);
 }

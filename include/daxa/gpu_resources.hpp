@@ -2,8 +2,11 @@
 
 #include <daxa/types.hpp>
 
+#include <bit>
+
 namespace daxa
 {
+
     enum struct ImageViewType
     {
         REGULAR_1D = 0,
@@ -47,6 +50,13 @@ namespace daxa
         struct ImageViewId : public GPUResourceId
         {
             constexpr operator daxa_ImageViewId() const { return std::bit_cast<daxa_ImageViewId>(*this); }
+        };
+
+        // Shader only
+        struct ImageViewIndex
+        {
+            u32 value = {};
+            constexpr operator daxa_ImageViewIndex() const { return std::bit_cast<daxa_ImageViewIndex>(*this); }
         };
 
         template <ImageViewType VIEW_TYPE>
@@ -101,6 +111,12 @@ namespace daxa
         static inline constexpr ImageCreateFlags ALLOW_ALIAS = {0x00000400};
     };
 
+    enum struct SharingMode
+    {
+        EXCLUSIVE,
+        CONCURRENT,
+    };
+
     struct ImageInfo
     {
         ImageCreateFlags flags = ImageCreateFlagBits::NONE;
@@ -111,6 +127,7 @@ namespace daxa
         u32 array_layer_count = 1;
         u32 sample_count = 1;
         ImageUsageFlags usage = {};
+        SharingMode sharing_mode = SharingMode::EXCLUSIVE;
         // Ignored when allocating with a memory block.
         MemoryFlags allocate_info = {};
         SmallString name = {};
@@ -153,6 +170,7 @@ namespace daxa
     using GeometryFlags = Flags<GeometryFlagsProperties>;
     struct GeometryFlagBits
     {
+        static inline constexpr GeometryFlags NONE = {0};
         static inline constexpr GeometryFlags OPAQUE = {0x1 << 0};
         static inline constexpr GeometryFlags NO_DUPLICATE_ANY_HIT_INVOCATION = {0x1 << 1};
     };
@@ -198,7 +216,7 @@ namespace daxa
         static inline constexpr AccelerationStructureBuildFlags ALLOW_COMPACTION = {0x00000002};
         static inline constexpr AccelerationStructureBuildFlags PREFER_FAST_TRACE = {0x00000004};
         static inline constexpr AccelerationStructureBuildFlags PREFER_FAST_BUILD = {0x00000008};
-        static inline constexpr AccelerationStructureBuildFlags LOW_MEMORY =  {0x00000010};
+        static inline constexpr AccelerationStructureBuildFlags LOW_MEMORY = {0x00000010};
         static inline constexpr AccelerationStructureBuildFlags ALLOW_DATA_ACCESS = {0x00000800};
     };
 
@@ -236,4 +254,79 @@ namespace daxa
         u64 size = {};
         SmallString name = {};
     };
+
+    template <typename T, ImageViewType T_IMAGE_VIEW_TYPE>
+    struct TextureIndex
+    {
+        ImageViewIndex index = {};
+        constexpr static ImageViewType IMAGE_VIEW_TYPE = T_IMAGE_VIEW_TYPE;
+        constexpr static bool SHADER_INDEX32 = true;
+        TextureIndex() = default;
+        TextureIndex(daxa_ImageViewId c_id) : index{static_cast<u32>(std::bit_cast<ImageViewId>(c_id).index)} {}
+        TextureIndex(ImageViewId id) : index{static_cast<u32>(id.index)} {}
+    };
+    template <typename T, ImageViewType T_IMAGE_VIEW_TYPE>
+    struct TextureId
+    {
+        ImageViewId id = {};
+        constexpr static ImageViewType IMAGE_VIEW_TYPE = T_IMAGE_VIEW_TYPE;
+        constexpr static bool SHADER_INDEX32 = false;
+        TextureId() = default;
+        TextureId(daxa_ImageViewId c_id) : id{std::bit_cast<ImageViewId>(c_id)} {}
+        TextureId(ImageViewId id) : id{id} {}
+    };
+
+    template <typename T>
+    using RWTexture1DIndex = TextureIndex<T, ImageViewType::REGULAR_1D>;
+    template <typename T>
+    using RWTexture2DIndex = TextureIndex<T, ImageViewType::REGULAR_2D>;
+    template <typename T>
+    using RWTexture3DIndex = TextureIndex<T, ImageViewType::REGULAR_3D>;
+    template <typename T>
+    using RWTexture1DArrayIndex = TextureIndex<T, ImageViewType::REGULAR_1D_ARRAY>;
+    template <typename T>
+    using RWTexture2DArrayIndex = TextureIndex<T, ImageViewType::REGULAR_2D_ARRAY>;
+    template <typename T>
+    using Texture1DIndex = TextureIndex<T, ImageViewType::REGULAR_1D>;
+    template <typename T>
+    using Texture2DIndex = TextureIndex<T, ImageViewType::REGULAR_2D>;
+    template <typename T>
+    using Texture3DIndex = TextureIndex<T, ImageViewType::REGULAR_3D>;
+    template <typename T>
+    using Texture1DArrayIndex = TextureIndex<T, ImageViewType::REGULAR_1D_ARRAY>;
+    template <typename T>
+    using Texture2DArrayIndex = TextureIndex<T, ImageViewType::REGULAR_2D_ARRAY>;
+    template <typename T>
+    using TextureCubeIndex = TextureIndex<T, ImageViewType::CUBE>;
+    template <typename T>
+    using TextureCubeArrayIndex = TextureIndex<T, ImageViewType::CUBE_ARRAY>;
+    template <typename T>
+    using Texture2DMSIndex = TextureIndex<T, ImageViewType::REGULAR_2D>;
+
+    template <typename T>
+    using RWTexture1DId = TextureId<T, ImageViewType::REGULAR_1D>;
+    template <typename T>
+    using RWTexture2DId = TextureId<T, ImageViewType::REGULAR_2D>;
+    template <typename T>
+    using RWTexture3DId = TextureId<T, ImageViewType::REGULAR_3D>;
+    template <typename T>
+    using RWTexture1DArrayId = TextureId<T, ImageViewType::REGULAR_1D_ARRAY>;
+    template <typename T>
+    using RWTexture2DArrayId = TextureId<T, ImageViewType::REGULAR_2D_ARRAY>;
+    template <typename T>
+    using Texture1DId = TextureId<T, ImageViewType::REGULAR_1D>;
+    template <typename T>
+    using Texture2DId = TextureId<T, ImageViewType::REGULAR_2D>;
+    template <typename T>
+    using Texture3DId = TextureId<T, ImageViewType::REGULAR_3D>;
+    template <typename T>
+    using Texture1DArrayId = TextureId<T, ImageViewType::REGULAR_1D_ARRAY>;
+    template <typename T>
+    using Texture2DArrayId = TextureId<T, ImageViewType::REGULAR_2D_ARRAY>;
+    template <typename T>
+    using TextureCubeId = TextureId<T, ImageViewType::CUBE>;
+    template <typename T>
+    using TextureCubeArrayId = TextureId<T, ImageViewType::CUBE_ARRAY>;
+    template <typename T>
+    using Texture2DMSId = TextureId<T, ImageViewType::REGULAR_2D>;
 } // namespace daxa

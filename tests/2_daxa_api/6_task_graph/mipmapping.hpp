@@ -44,9 +44,7 @@ namespace tests
         struct App : AppWindow<App>
         {
             daxa::Instance daxa_ctx = daxa::create_instance({});
-            daxa::Device device = daxa_ctx.create_device({
-                .name = "device (mipmapping)",
-            });
+            daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({}, {}));
 
             daxa::Swapchain swapchain = device.create_swapchain({
                 .native_window = get_native_handle(),
@@ -239,7 +237,7 @@ namespace tests
                     .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_RANDOM,
                     .name = "staging_mipmapping_gpu_input_buffer",
                 });
-                MipmappingGpuInput * buffer_ptr = device.get_host_address_as<MipmappingGpuInput>(staging_buffer).value();
+                MipmappingGpuInput * buffer_ptr = device.buffer_host_address_as<MipmappingGpuInput>(staging_buffer).value();
                 *buffer_ptr = this->gpu_input;
                 this->gpu_input.p_mouse_x = this->gpu_input.mouse_x;
                 this->gpu_input.p_mouse_y = this->gpu_input.mouse_y;
@@ -253,11 +251,11 @@ namespace tests
             }
             void paint(daxa::CommandRecorder & recorder, daxa::ImageId render_target_id, daxa::BufferId input_buffer)
             {
-                auto render_target_size = device.info_image(render_target_id).value().size;
+                auto render_target_size = device.image_info(render_target_id).value().size;
                 recorder.set_pipeline(*compute_pipeline);
                 auto const push = MipmappingComputePushConstant{
                     .image = render_target_id.default_view(),
-                    .gpu_input = device.get_device_address(input_buffer).value(),
+                    .gpu_input = device.device_address(input_buffer).value(),
                     .frame_dim = {render_target_size.x, render_target_size.y},
                 };
                 recorder.push_constant(push);
@@ -265,14 +263,14 @@ namespace tests
             }
             void draw_ui(daxa::CommandRecorder & recorder, daxa::ImageId render_target_id)
             {
-                auto render_size = device.info_image(render_target_id).value().size;
+                auto render_size = device.image_info(render_target_id).value().size;
                 imgui_renderer.record_commands(ImGui::GetDrawData(), recorder, render_target_id, render_size.x, render_size.y);
             }
             void blit_image_to_swapchain(daxa::CommandRecorder & recorder, daxa::ImageId src_image_id, daxa::ImageId dst_image_id)
             {
-                auto const & src_info = device.info_image(src_image_id).value();
+                auto const & src_info = device.image_info(src_image_id).value();
                 auto src_size = src_info.size;
-                auto dst_size = device.info_image(dst_image_id).value().size;
+                auto dst_size = device.image_info(dst_image_id).value().size;
                 recorder.blit_image_to_image({
                     .src_image = src_image_id,
                     .src_image_layout = daxa::ImageLayout::TRANSFER_SRC_OPTIMAL,
@@ -363,7 +361,7 @@ namespace tests
                 });
                 paint(recorder, render_image, mipmapping_gpu_input_buffer);
                 {
-                    auto image_info = device.info_image(render_image).value();
+                    auto image_info = device.image_info(render_image).value();
                     std::array<i32, 3> mip_size = {static_cast<i32>(image_info.size.x), static_cast<i32>(image_info.size.y), static_cast<i32>(image_info.size.z)};
 
                     recorder.pipeline_barrier_image_transition({
@@ -508,7 +506,7 @@ namespace tests
                             .name = "mouse paint",
                         });
                         {
-                            auto image_info = device.info_image(render_image).value();
+                            auto image_info = device.image_info(render_image).value();
                             std::array<i32, 3> mip_size = {std::max<i32>(1, static_cast<i32>(image_info.size.x)), std::max<i32>(1, static_cast<i32>(image_info.size.y)), std::max<i32>(1, static_cast<i32>(image_info.size.z))};
                             for (u32 i = 0; i < image_info.mip_level_count - 1; ++i)
                             {

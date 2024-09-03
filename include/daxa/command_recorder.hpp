@@ -20,6 +20,7 @@ namespace daxa
 
     struct CommandRecorderInfo
     {
+        QueueFamily queue_family = {};
         SmallString name = {};
     };
 
@@ -139,6 +140,7 @@ namespace daxa
         uint32_t miss_shader_binding_table_offset = {};
         uint32_t miss_shader_binding_table_stride = {};
         uint32_t hit_shader_binding_table_offset = {};
+        RayTracingShaderBindingTable shader_binding_table;
     };
 
     struct TraceRaysIndirectInfo
@@ -148,6 +150,7 @@ namespace daxa
         uint32_t miss_shader_binding_table_offset = {};
         uint32_t miss_shader_binding_table_stride = {};
         uint32_t hit_shader_binding_table_offset = {};
+        RayTracingShaderBindingTable shader_binding_table;
     };
 
     struct DispatchInfo
@@ -333,12 +336,15 @@ namespace daxa
         void draw_mesh_tasks_indirect_count(DrawMeshTasksIndirectCountInfo const & info);
     };
 
-    // TODO: Add software command list for more robust uncoupled command recording.
     /**
-     * @brief   CommandRecorder is used to encode commands into a VkCommandBuffer.
+     * @brief   TransferCommandRecorder is used to encode commands into a VkCommandBuffer.
      *          In order to submit a command list one must complete it.
      *          Completing a command list does SIGNIFICANT driver cpu work,
      *          so do not always complete just before submitting.
+     * 
+     * TRANSFER:
+     * * can only be used to record "transfer commands"
+     * * can be created for any queue family
      *
      * THREADSAFETY:
      * * must be externally synchronized
@@ -352,19 +358,19 @@ namespace daxa
      * * using deferred destructions will make the completed command list not reusable,
      *   as resources can only be destroyed once
      */
-    struct DAXA_EXPORT_CXX CommandRecorder
+    struct DAXA_EXPORT_CXX TransferCommandRecorder
     {
-      private:
+      protected:
         daxa_CommandRecorder internal = {};
         friend struct RenderCommandRecorder;
 
       public:
-        CommandRecorder() = default;
-        ~CommandRecorder();
-        CommandRecorder(CommandRecorder const &) = delete;
-        CommandRecorder & operator=(CommandRecorder const &) = delete;
-        CommandRecorder(CommandRecorder &&);
-        CommandRecorder & operator=(CommandRecorder &&);
+        TransferCommandRecorder() = default;
+        ~TransferCommandRecorder();
+        TransferCommandRecorder(TransferCommandRecorder const &) = delete;
+        TransferCommandRecorder & operator=(TransferCommandRecorder const &) = delete;
+        TransferCommandRecorder(TransferCommandRecorder &&);
+        TransferCommandRecorder & operator=(TransferCommandRecorder &&);
 
         void copy_buffer_to_buffer(BufferCopyInfo const & info);
         void copy_buffer_to_image(BufferImageCopyInfo const & info);
@@ -373,7 +379,6 @@ namespace daxa
         void blit_image_to_image(ImageBlitInfo const & info);
         void clear_buffer(BufferClearInfo const & info);
         void clear_image(ImageClearInfo const & info);
-        void build_acceleration_structures(BuildAccelerationStructuresInfo const & info);
 
         /// @brief  Successive pipeline barrier calls are combined.
         ///         As soon as a non-pipeline barrier command is recorded, the currently recorded barriers are flushed with a vkCmdPipelineBarrier2 call.
@@ -387,20 +392,6 @@ namespace daxa
         void wait_events(std::span<EventWaitInfo const> const & infos);
         void wait_event(EventWaitInfo const & info);
         void reset_event(ResetEventInfo const & info);
-
-        void push_constant_vptr(PushConstantInfo const & info);
-        template <typename T>
-        void push_constant(T const & constant, u32 offset = 0)
-        {
-            push_constant_vptr({
-                .data = &constant,
-                .size = static_cast<u32>(sizeof(T)),
-                .offset = offset,
-            });
-        }
-        void set_pipeline(ComputePipeline const & pipeline);
-        void dispatch(DispatchInfo const & info);
-        void dispatch_indirect(DispatchIndirectInfo const & info);
 
         /// @brief  Destroys the buffer AFTER the gpu is finished executing the command list.
         ///         Zombifies object after submitting the commands.
@@ -423,28 +414,6 @@ namespace daxa
         /// @param id image sampler be destroyed after command list finishes.
         void destroy_sampler_deferred(SamplerId id);
 
-        /// @brief  Starts a renderpass scope akin to the dynamic rendering feature in vulkan.
-        ///         Between the begin and end renderpass commands, the renderpass persists and drawcalls can be recorded.
-        /// @param info parameters.
-        [[nodiscard]] auto begin_renderpass(RenderPassBeginInfo const & info) && -> RenderCommandRecorder;
-        // void set_pipeline(RasterPipeline const & pipeline);
-        // void set_viewport(ViewportInfo const & info);
-        // void set_scissor(Rect2D const & info);
-        // void set_depth_bias(DepthBiasInfo const & info);
-        // void set_index_buffer(SetIndexBufferInfo const & info);
-        // void draw(DrawInfo const & info);
-        // void draw_indexed(DrawIndexedInfo const & info);
-        // void draw_indirect(DrawIndirectInfo const & info);
-        // void draw_indirect_count(DrawIndirectCountInfo const & info);
-        // void draw_mesh_tasks(u32 x, u32 y, u32 z);
-        // void draw_mesh_tasks_indirect(DrawMeshTasksIndirectInfo const & info);
-        // void draw_mesh_tasks_indirect_count(DrawMeshTasksIndirectCountInfo const & info);
-
-        void set_pipeline(RayTracingPipeline const & pipeline);
-
-        void trace_rays(TraceRaysInfo const & info);
-        void trace_rays_indirect(TraceRaysIndirectInfo const & info);
-
         void write_timestamp(WriteTimestampInfo const & info);
         void reset_timestamps(ResetTimestampsInfo const & info);
 
@@ -457,5 +426,86 @@ namespace daxa
         /// * reference MUST NOT be read after the device is destroyed.
         /// @return reference to info of object.
         [[nodiscard]] auto info() const -> CommandRecorderInfo const &;
+    };
+
+    /**
+     * @brief   ComputeCommandRecorder is used to encode commands into a VkCommandBuffer.
+     *          In order to submit a command list one must complete it.
+     *          Completing a command list does SIGNIFICANT driver cpu work,
+     *          so do not always complete just before submitting.
+     * 
+     * COMPUTE:
+     * * can only be used to record "transfer commands" and "compute commands"
+     * * can only be created for compute and main queue family
+     *
+     * THREADSAFETY:
+     * * must be externally synchronized
+     * * can be passed between different threads
+     * * may only be accessed by one thread at a time
+     * WARNING:
+     * * creating a command list, it will LOCK resource lifetimes
+     * * calling collect_garbage will BLOCK until all resource lifetime locks have been unlocked
+     * * completing a command list will remove its lock on the resource lifetimes
+     * * most record commands can throw exceptions on invalid inputs such as invalid ids
+     * * using deferred destructions will make the completed command list not reusable,
+     *   as resources can only be destroyed once
+     */
+    struct DAXA_EXPORT_CXX ComputeCommandRecorder : TransferCommandRecorder
+    {
+        void push_constant_vptr(PushConstantInfo const & info);
+
+        template <typename T>
+        void push_constant(T const & constant, u32 offset = 0)
+        {
+            push_constant_vptr({
+                .data = &constant,
+                .size = static_cast<u32>(sizeof(T)),
+                .offset = offset,
+            });
+        }
+
+        void build_acceleration_structures(BuildAccelerationStructuresInfo const & info);
+
+        void set_pipeline(ComputePipeline const & pipeline);
+
+        void dispatch(DispatchInfo const & info);
+
+        void dispatch_indirect(DispatchIndirectInfo const & info);
+
+        void set_pipeline(RayTracingPipeline const & pipeline);
+
+        void trace_rays(TraceRaysInfo const & info);
+
+        void trace_rays_indirect(TraceRaysIndirectInfo const & info);
+    };
+
+    /**
+     * @brief   CommandRecorder is used to encode commands into a VkCommandBuffer.
+     *          In order to submit a command list one must complete it.
+     *          Completing a command list does SIGNIFICANT driver cpu work,
+     *          so do not always complete just before submitting.
+     * 
+     * GENERAL:
+     * * can only be created for the main queue.
+     * * can be used to record any commands.
+     *
+     * THREADSAFETY:
+     * * must be externally synchronized
+     * * can be passed between different threads
+     * * may only be accessed by one thread at a time
+     * WARNING:
+     * * creating a command list, it will LOCK resource lifetimes
+     * * calling collect_garbage will BLOCK until all resource lifetime locks have been unlocked
+     * * completing a command list will remove its lock on the resource lifetimes
+     * * most record commands can throw exceptions on invalid inputs such as invalid ids
+     * * using deferred destructions will make the completed command list not reusable,
+     *   as resources can only be destroyed once
+     */
+    struct DAXA_EXPORT_CXX CommandRecorder : ComputeCommandRecorder
+    {
+        /// @brief  Starts a renderpass scope akin to the dynamic rendering feature in vulkan.
+        ///         Between the begin and end renderpass commands, the renderpass persists and drawcalls can be recorded.
+        /// @param info parameters.
+        [[nodiscard]] auto begin_renderpass(RenderPassBeginInfo const & info) && -> RenderCommandRecorder;
     };
 } // namespace daxa

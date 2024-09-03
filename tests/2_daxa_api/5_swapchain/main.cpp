@@ -8,9 +8,7 @@ namespace tests
         struct App : AppWindow<App>
         {
             daxa::Instance daxa_ctx = daxa::create_instance({});
-            daxa::Device device = daxa_ctx.create_device({
-                .name = ("device (simple_creation)"),
-            });
+            daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({}, {}));
 
             daxa::Swapchain swapchain = device.create_swapchain({
                 .native_window = get_native_handle(),
@@ -35,9 +33,7 @@ namespace tests
         struct App : AppWindow<App>
         {
             daxa::Instance daxa_ctx = daxa::create_instance({});
-            daxa::Device device = daxa_ctx.create_device({
-                .name = ("device (clearcolor)"),
-            });
+            daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({},{}));
 
             daxa::Swapchain swapchain = device.create_swapchain({
                 .native_window = get_native_handle(),

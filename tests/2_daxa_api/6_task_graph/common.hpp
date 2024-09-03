@@ -20,7 +20,5 @@ using namespace daxa::types;
 struct AppContext
 {
     daxa::Instance daxa_ctx = daxa::create_instance({});
-    daxa::Device device = daxa_ctx.create_device({
-        .name = APPNAME_PREFIX("device"),
-    });
+    daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({}, {}));
 };

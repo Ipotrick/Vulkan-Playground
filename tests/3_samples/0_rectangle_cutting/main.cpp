@@ -25,9 +25,7 @@ enum
 struct App : AppWindow<App>
 {
     daxa::Instance daxa_ctx = daxa::create_instance({});
-    daxa::Device device = daxa_ctx.create_device({
-        .name = ("device"),
-    });
+    daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({},{}));
 
     daxa::Swapchain swapchain = device.create_swapchain({
         .native_window = get_native_handle(),
@@ -242,7 +240,7 @@ struct App : AppWindow<App>
         });
         recorder.destroy_buffer_deferred(vertex_staging_buffer);
 
-        auto * buffer_ptr = device.get_host_address_as<DrawVertex>(vertex_staging_buffer).value();
+        auto * buffer_ptr = device.buffer_host_address_as<DrawVertex>(vertex_staging_buffer).value();
         construct_scene(buffer_ptr);
 
         recorder.pipeline_barrier({
@@ -280,7 +278,7 @@ struct App : AppWindow<App>
         });
         render_recorder.set_pipeline(*raster_pipeline);
         render_recorder.push_constant(DrawPush{
-            .face_buffer = this->device.get_device_address(vertex_buffer).value(),
+            .face_buffer = this->device.device_address(vertex_buffer).value(),
         });
         render_recorder.draw({.vertex_count = vert_n});
         recorder = std::move(render_recorder).end_renderpass();

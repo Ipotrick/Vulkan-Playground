@@ -9,6 +9,9 @@
 #include <daxa/c/swapchain.h>
 #include <daxa/c/sync.h>
 
+#define DAXA_MAX_COMPUTE_QUEUE_COUNT 8u
+#define DAXA_MAX_TRANSFER_QUEUE_COUNT 2u
+
 typedef enum
 {
     DAXA_DEVICE_TYPE_OTHER = 0,
@@ -195,6 +198,81 @@ typedef struct
     daxa_Bool8 prefers_compact_primitive_output;
 } daxa_MeshShaderProperties;
 
+typedef enum
+{
+    DAXA_MISSING_REQUIRED_VK_FEATURE_NONE,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_IMAGE_CUBE_ARRAY,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_INDEPENDENT_BLEND,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_TESSELLATION_SHADER,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_MULTI_DRAW_INDIRECT,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_DEPTH_CLAMP,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_FILL_MODE_NON_SOLID,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_WIDE_LINES,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_SAMPLER_ANISOTROPY,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_FRAGMENT_STORES_AND_ATOMICS,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_SHADER_STORAGE_IMAGE_MULTISAMPLE,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_SHADER_STORAGE_IMAGE_READ_WITHOUT_FORMAT,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_SHADER_STORAGE_IMAGE_WRITE_WITHOUT_FORMAT,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_SHADER_INT64,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_VARIABLE_POINTERS_STORAGE_BUFFER,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_VARIABLE_POINTERS,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_BUFFER_DEVICE_ADDRESS,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_BUFFER_DEVICE_ADDRESS_CAPTURE_REPLAY,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_BUFFER_DEVICE_ADDRESS_MULTI_DEVICE,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_SHADER_SAMPLED_IMAGE_ARRAY_NON_UNIFORM_INDEXING,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_SHADER_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_SHADER_STORAGE_IMAGE_ARRAY_NON_UNIFORM_INDEXING,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_DESCRIPTOR_BINDING_SAMPLED_IMAGE_UPDATE_AFTER_BIND,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_DESCRIPTOR_BINDING_STORAGE_IMAGE_UPDATE_AFTER_BIND,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_DESCRIPTOR_BINDING_STORAGE_BUFFER_UPDATE_AFTER_BIND,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_DESCRIPTOR_BINDING_PARTIALLY_BOUND,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_RUNTIME_DESCRIPTOR_ARRAY,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_HOST_QUERY_RESET,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_DYNAMIC_RENDERING,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_SYNCHRONIZATION2,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_TIMELINE_SEMAPHORE,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_SUBGROUP_SIZE_CONTROL,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_COMPUTE_FULL_SUBGROUPS,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_SCALAR_BLOCK_LAYOUT,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_ACCELERATION_STRUCTURE_CAPTURE_REPLAY,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_VULKAN_MEMORY_MODEL,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_ROBUST_BUFFER_ACCESS2,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_ROBUST_IMAGE_ACCESS2,
+    DAXA_MISSING_REQUIRED_VK_FEATURE_MAX_ENUM
+} daxa_MissingRequiredVkFeature;
+
+typedef enum
+{
+    DAXA_EXPLICIT_FEATURE_FLAG_NONE = 0,
+    DAXA_EXPLICIT_FEATURE_FLAG_BUFFER_DEVICE_ADDRESS_CAPTURE_REPLAY = 0x1 << 0,
+    DAXA_EXPLICIT_FEATURE_FLAG_ACCELERATION_STRUCTURE_CAPTURE_REPLAY = 0x1 << 1,
+    DAXA_EXPLICIT_FEATURE_FLAG_VK_MEMORY_MODEL = 0x1 << 2,
+    DAXA_EXPLICIT_FEATURE_FLAG_ROBUSTNESS_2 = 0x1 << 3,
+} daxa_DeviceExplicitFeatureFlagBits;
+
+typedef daxa_DeviceExplicitFeatureFlagBits daxa_ExplicitFeatureFlags;
+
+typedef enum
+{
+    DAXA_IMPLICIT_FEATURE_FLAG_NONE = 0,
+    DAXA_IMPLICIT_FEATURE_FLAG_MESH_SHADER =  0x1 << 0,
+    DAXA_IMPLICIT_FEATURE_FLAG_BASIC_RAY_TRACING =  0x1 << 1,
+    DAXA_IMPLICIT_FEATURE_FLAG_RAY_TRACING_PIPELINE =  0x1 << 2,
+    DAXA_IMPLICIT_FEATURE_FLAG_RAY_TRACING_INVOCATION_REORDER =  0x1 << 3,
+    DAXA_IMPLICIT_FEATURE_FLAG_RAY_TRACING_POSITION_FETCH =  0x1 << 4,
+    DAXA_IMPLICIT_FEATURE_FLAG_CONSERVATIVE_RASTERIZATION =  0x1 << 5,
+    DAXA_IMPLICIT_FEATURE_FLAG_SHADER_ATOMIC_INT64 =  0x1 << 6,
+    DAXA_IMPLICIT_FEATURE_FLAG_IMAGE_ATOMIC64 =  0x1 << 7,
+    DAXA_IMPLICIT_FEATURE_FLAG_SHADER_FLOAT16 =  0x1 << 8,
+    DAXA_IMPLICIT_FEATURE_FLAG_SHADER_INT8 =  0x1 << 9,
+    DAXA_IMPLICIT_FEATURE_FLAG_DYNAMIC_STATE_3 =  0x1 << 10,
+    DAXA_IMPLICIT_FEATURE_FLAG_SHADER_ATOMIC_FLOAT =  0x1 << 11,
+    DAXA_IMPLICIT_FEATURE_FLAG_SWAPCHAIN =  0x1 << 12,
+} daxa_DeviceImplicitFeatureFlagBits;
+
+typedef daxa_DeviceImplicitFeatureFlagBits daxa_ImplicitFeatureFlags;
+
 typedef struct
 {
     uint32_t vulkan_api_version;
@@ -209,11 +287,18 @@ typedef struct
     daxa_Optional(daxa_RayTracingPipelineProperties) ray_tracing_pipeline_properties;
     daxa_Optional(daxa_AccelerationStructureProperties) acceleration_structure_properties;
     daxa_Optional(daxa_RayTracingInvocationReorderProperties) ray_tracing_invocation_reorder_properties;
+    daxa_u32 compute_queue_count;
+    daxa_u32 transfer_queue_count;
+    daxa_ImplicitFeatureFlags implicit_features;
+    daxa_ExplicitFeatureFlags explicit_features;
+    daxa_MissingRequiredVkFeature missing_required_feature;
 } daxa_DeviceProperties;
 
+/// DEPRECATED: use daxa_instance_create_device_2 and daxa_DeviceInfo2 instead!
 DAXA_EXPORT int32_t
 daxa_default_device_score(daxa_DeviceProperties const * properties);
 
+/// WARNING: DEPRECATED, use daxa_ImplicitFeatureFlags and daxa_ExplicitFeatureFlags instead!
 typedef enum
 {
     DAXA_DEVICE_FLAG_BUFFER_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT = 0x1 << 0,
@@ -231,8 +316,10 @@ typedef enum
     DAXA_DEVICE_FLAG_SHADER_ATOMIC_FLOAT = 0x1 << 12,
 } daxa_DeviceFlagBits;
 
+/// WARNING: DEPRECATED, use daxa_ImplicitFeatureFlags and daxa_ExplicitFeatureFlags instead!
 typedef uint32_t daxa_DeviceFlags;
 
+/// WARNING: DEPRECATED, use daxa_DeviceInfo2 instead!
 typedef struct
 {
     int32_t (*selector)(daxa_DeviceProperties const * properties);
@@ -244,6 +331,7 @@ typedef struct
     daxa_SmallString name;
 } daxa_DeviceInfo;
 
+/// WARNING: DEPRECATED, use daxa_DeviceInfo2 instead!
 static daxa_DeviceInfo const DAXA_DEFAULT_DEVICE_INFO = {
     .selector = &daxa_default_device_score,
     .flags = DAXA_DEVICE_FLAG_BUFFER_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT,
@@ -256,6 +344,46 @@ static daxa_DeviceInfo const DAXA_DEFAULT_DEVICE_INFO = {
 
 typedef struct
 {
+    daxa_u32 physical_device_index;                     // Index into list of devices returned from daxa_instance_list_devices_properties.
+    daxa_ExplicitFeatureFlags explicit_features;  // Explicit features must be manually enabled.
+    uint32_t max_allowed_images;
+    uint32_t max_allowed_buffers;
+    uint32_t max_allowed_samplers;
+    uint32_t max_allowed_acceleration_structures;
+    daxa_SmallString name;
+} daxa_DeviceInfo2;
+
+static daxa_DeviceInfo2 const DAXA_DEFAULT_DEVICE_INFO_2 = {
+    .physical_device_index = ~0u,
+    .explicit_features = DAXA_EXPLICIT_FEATURE_FLAG_BUFFER_DEVICE_ADDRESS_CAPTURE_REPLAY,
+    .max_allowed_images = 10000,
+    .max_allowed_buffers = 10000,
+    .max_allowed_samplers = 400,
+    .max_allowed_acceleration_structures = 10000,
+    .name = DAXA_ZERO_INIT,
+};
+
+typedef struct
+{
+    daxa_QueueFamily family;
+    daxa_u32 index;
+} daxa_Queue;
+
+static daxa_Queue const DAXA_QUEUE_MAIN = { DAXA_QUEUE_FAMILY_MAIN, 0 };
+static daxa_Queue const DAXA_QUEUE_COMPUTE_0 = { DAXA_QUEUE_FAMILY_COMPUTE, 0 };
+static daxa_Queue const DAXA_QUEUE_COMPUTE_1 = { DAXA_QUEUE_FAMILY_COMPUTE, 1 };
+static daxa_Queue const DAXA_QUEUE_COMPUTE_2 = { DAXA_QUEUE_FAMILY_COMPUTE, 2 };
+static daxa_Queue const DAXA_QUEUE_COMPUTE_3 = { DAXA_QUEUE_FAMILY_COMPUTE, 3 };
+static daxa_Queue const DAXA_QUEUE_COMPUTE_4 = { DAXA_QUEUE_FAMILY_COMPUTE, 4 };
+static daxa_Queue const DAXA_QUEUE_COMPUTE_5 = { DAXA_QUEUE_FAMILY_COMPUTE, 5 };
+static daxa_Queue const DAXA_QUEUE_COMPUTE_6 = { DAXA_QUEUE_FAMILY_COMPUTE, 6 };
+static daxa_Queue const DAXA_QUEUE_COMPUTE_7 = { DAXA_QUEUE_FAMILY_COMPUTE, 7 };
+static daxa_Queue const DAXA_QUEUE_TRANSFER_0 = { DAXA_QUEUE_FAMILY_TRANSFER, 0 };
+static daxa_Queue const DAXA_QUEUE_TRANSFER_1 = { DAXA_QUEUE_FAMILY_TRANSFER, 1 };
+
+typedef struct
+{
+    daxa_Queue queue;
     VkPipelineStageFlags wait_stages;
     daxa_ExecutableCommandList const * command_lists;
     uint64_t command_list_count;
@@ -276,6 +404,7 @@ typedef struct
     daxa_BinarySemaphore const * wait_binary_semaphores;
     uint64_t wait_binary_semaphore_count;
     daxa_Swapchain swapchain;
+    daxa_Queue queue;
 } daxa_PresentInfo;
 
 static daxa_PresentInfo const DAXA_DEFAULT_PRESENT_INFO = DAXA_ZERO_INIT;
@@ -435,12 +564,15 @@ daxa_dvc_create_event(daxa_Device device, daxa_EventInfo const * info, daxa_Even
 DAXA_EXPORT DAXA_NO_DISCARD daxa_Result
 daxa_dvc_create_timeline_query_pool(daxa_Device device, daxa_TimelineQueryPoolInfo const * info, daxa_TimelineQueryPool * out_timeline_query_pool);
 
-DAXA_EXPORT daxa_DeviceInfo const *
-daxa_dvc_info(daxa_Device device);
 DAXA_EXPORT VkDevice
 daxa_dvc_get_vk_device(daxa_Device device);
 DAXA_EXPORT VkPhysicalDevice
 daxa_dvc_get_vk_physical_device(daxa_Device device);
+
+DAXA_EXPORT DAXA_NO_DISCARD daxa_Result
+daxa_dvc_queue_wait_idle(daxa_Device device, daxa_Queue queue);
+DAXA_EXPORT DAXA_NO_DISCARD daxa_Result
+daxa_dvc_queue_count(daxa_Device device, daxa_QueueFamily queue_family, daxa_u32 * out_value);
 
 DAXA_EXPORT DAXA_NO_DISCARD daxa_Result
 daxa_dvc_wait_idle(daxa_Device device);
@@ -450,6 +582,9 @@ DAXA_EXPORT DAXA_NO_DISCARD daxa_Result
 daxa_dvc_present(daxa_Device device, daxa_PresentInfo const * info);
 DAXA_EXPORT DAXA_NO_DISCARD daxa_Result
 daxa_dvc_collect_garbage(daxa_Device device);
+
+DAXA_EXPORT daxa_DeviceInfo2 const *
+daxa_dvc_info(daxa_Device device);
 DAXA_EXPORT daxa_DeviceProperties const *
 daxa_dvc_properties(daxa_Device device);
 

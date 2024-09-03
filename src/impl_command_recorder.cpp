@@ -65,20 +65,10 @@ auto CommandPoolPool::get(daxa_Device device) -> VkCommandPool
             .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
             .pNext = nullptr,
             .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-            .queueFamilyIndex = device->main_queue_family_index,
+            .queueFamilyIndex = this->queue_family_index,
         };
 
         vkCreateCommandPool(device->vk_device, &vk_command_pool_create_info, nullptr, &pool);
-
-        // TODO(command recorder): alloc command buffers inside the complete and construction functions of CommandRecorder!
-        // VkCommandBufferAllocateInfo const vk_command_buffer_allocate_info{
-        //     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        //     .pNext = nullptr,
-        //     .commandPool = pool,
-        //     .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        //     .commandBufferCount = 1,
-        // };
-        // vkAllocateCommandBuffers(device->vk_device, &vk_command_buffer_allocate_info, &buffer);
     }
     else
     {
@@ -239,13 +229,10 @@ void remember_ids(daxa_CommandRecorder self, Args... args)
     (remember_ids(self, args), ...);
 }
 
-#define _DAXA_CHECK_IDS(...)                                  \
-    {                                                         \
-        auto _DAXA_CHECK_IDS_RESULT = check_ids(__VA_ARGS__); \
-        if (_DAXA_CHECK_IDS_RESULT != DAXA_RESULT_SUCCESS)    \
-        {                                                     \
-            return _DAXA_CHECK_IDS_RESULT;                    \
-        }                                                     \
+#define _DAXA_CHECK_IDS(...)                                                  \
+    {                                                                         \
+        auto _DAXA_CHECK_IDS_RESULT = check_ids(__VA_ARGS__);                 \
+        _DAXA_RETURN_IF_ERROR(_DAXA_CHECK_IDS_RESULT, _DAXA_CHECK_IDS_RESULT) \
     }
 
 #define _DAXA_REMEMBER_IDS(...) remember_ids(__VA_ARGS__);
@@ -390,10 +377,12 @@ auto daxa_cmd_blit_image_to_image(daxa_CommandRecorder self, daxa_ImageBlitInfo 
 
 auto daxa_cmd_build_acceleration_structures(daxa_CommandRecorder self, daxa_BuildAccelerationStucturesInfo const * info) -> daxa_Result
 {
-    if ((self->device->info.flags & DeviceFlagBits::RAY_TRACING) == DeviceFlagBits::NONE)
+    daxa_Result result = DAXA_RESULT_SUCCESS;
+    if ((self->device->properties.implicit_features & DAXA_IMPLICIT_FEATURE_FLAG_BASIC_RAY_TRACING) == 0)
     {
-        return DAXA_RESULT_INVALID_WITHOUT_ENABLING_RAY_TRACING;
+        result = DAXA_RESULT_INVALID_WITHOUT_ENABLING_RAY_TRACING;
     }
+    _DAXA_RETURN_IF_ERROR(result, result)
     daxa_cmd_flush_barriers(self);
     for (auto const & tb_info : std::span{info->tlas_build_infos, info->tlas_build_info_count})
     {
@@ -450,7 +439,7 @@ auto daxa_cmd_build_acceleration_structures(daxa_CommandRecorder self, daxa_Buil
         static_cast<u32>(vk_build_geometry_infos.size()),
         vk_build_geometry_infos.data(),
         vk_build_ranges_ptrs.data());
-    return DAXA_RESULT_SUCCESS;
+    return result;
 }
 
 auto daxa_cmd_clear_buffer(daxa_CommandRecorder self, daxa_BufferClearInfo const * info) -> daxa_Result
@@ -704,21 +693,21 @@ auto daxa_cmd_trace_rays(daxa_CommandRecorder self, daxa_TraceRaysInfo const * i
     {
         return DAXA_RESULT_NO_RAYTRACING_PIPELINE_BOUND;
     }
-    RayTracingShaderBindingTable const & binding_table = daxa::get<daxa_RayTracingPipeline>(self->current_pipeline)->info.shader_binding_table;
-    StridedDeviceAddressRegion raygen_handle = binding_table.raygen_region;
-    raygen_handle.address += binding_table.raygen_region.stride * info->raygen_handle_offset;
-    StridedDeviceAddressRegion miss_handle = binding_table.miss_region;
-    raygen_handle.address += binding_table.miss_region.stride * info->miss_handle_offset;
-    StridedDeviceAddressRegion hit_handle = binding_table.hit_region;
-    raygen_handle.address += binding_table.hit_region.stride * info->hit_handle_offset;
-    StridedDeviceAddressRegion call_handle = binding_table.callable_region;
-    raygen_handle.address += binding_table.callable_region.stride * info->callable_handle_offset;
+    auto const & binding_table = info->shader_binding_table;
+    auto raygen_handle = binding_table.raygen_region;
+    raygen_handle.deviceAddress += binding_table.raygen_region.stride * info->raygen_handle_offset;
+    auto miss_handle = binding_table.miss_region;
+    miss_handle.deviceAddress += binding_table.miss_region.stride * info->miss_handle_offset;
+    auto hit_handle = binding_table.hit_region;
+    hit_handle.deviceAddress += binding_table.hit_region.stride * info->hit_handle_offset;
+    auto call_handle = binding_table.callable_region;
+    call_handle.deviceAddress += binding_table.callable_region.stride * info->callable_handle_offset;
     self->device->vkCmdTraceRaysKHR(
         self->current_command_data.vk_cmd_buffer,
-        reinterpret_cast<VkStridedDeviceAddressRegionKHR *>(&raygen_handle),
-        reinterpret_cast<VkStridedDeviceAddressRegionKHR *>(&miss_handle),
-        reinterpret_cast<VkStridedDeviceAddressRegionKHR *>(&hit_handle),
-        reinterpret_cast<VkStridedDeviceAddressRegionKHR *>(&call_handle),
+        &raygen_handle,
+        &miss_handle,
+        &hit_handle,
+        &call_handle,
         info->width, info->height, info->depth);
     return DAXA_RESULT_SUCCESS;
 }
@@ -730,21 +719,21 @@ auto daxa_cmd_trace_rays_indirect(daxa_CommandRecorder self, daxa_TraceRaysIndir
     {
         return DAXA_RESULT_NO_RAYTRACING_PIPELINE_BOUND;
     }
-    RayTracingShaderBindingTable const & binding_table = daxa::get<daxa_RayTracingPipeline>(self->current_pipeline)->info.shader_binding_table;
-    StridedDeviceAddressRegion raygen_handle = binding_table.raygen_region;
-    raygen_handle.address += binding_table.raygen_region.stride * info->raygen_handle_offset;
-    StridedDeviceAddressRegion miss_handle = binding_table.miss_region;
-    raygen_handle.address += binding_table.miss_region.stride * info->miss_handle_offset;
-    StridedDeviceAddressRegion hit_handle = binding_table.hit_region;
-    raygen_handle.address += binding_table.hit_region.stride * info->hit_handle_offset;
-    StridedDeviceAddressRegion call_handle = binding_table.callable_region;
-    raygen_handle.address += binding_table.callable_region.stride * info->callable_handle_offset;
+    auto const & binding_table = info->shader_binding_table;
+    auto raygen_handle = binding_table.raygen_region;
+    raygen_handle.deviceAddress += binding_table.raygen_region.stride * info->raygen_handle_offset;
+    auto miss_handle = binding_table.miss_region;
+    miss_handle.deviceAddress += binding_table.miss_region.stride * info->miss_handle_offset;
+    auto hit_handle = binding_table.hit_region;
+    hit_handle.deviceAddress += binding_table.hit_region.stride * info->hit_handle_offset;
+    auto call_handle = binding_table.callable_region;
+    call_handle.deviceAddress += binding_table.callable_region.stride * info->callable_handle_offset;
     self->device->vkCmdTraceRaysIndirectKHR(
         self->current_command_data.vk_cmd_buffer,
-        reinterpret_cast<VkStridedDeviceAddressRegionKHR *>(&raygen_handle),
-        reinterpret_cast<VkStridedDeviceAddressRegionKHR *>(&miss_handle),
-        reinterpret_cast<VkStridedDeviceAddressRegionKHR *>(&hit_handle),
-        reinterpret_cast<VkStridedDeviceAddressRegionKHR *>(&call_handle),
+        &raygen_handle,
+        &miss_handle,
+        &hit_handle,
+        &call_handle,
         info->indirect_device_address);
     return DAXA_RESULT_SUCCESS;
 }
@@ -1007,7 +996,7 @@ auto daxa_cmd_draw_indirect_count(daxa_CommandRecorder self, daxa_DrawIndirectCo
 
 void daxa_cmd_draw_mesh_tasks(daxa_CommandRecorder self, uint32_t x, uint32_t y, uint32_t z)
 {
-    if ((self->device->info.flags & DeviceFlagBits::MESH_SHADER) != DeviceFlagBits::NONE)
+    if (self->device->properties.implicit_features & DAXA_IMPLICIT_FEATURE_FLAG_MESH_SHADER)
     {
         self->device->vkCmdDrawMeshTasksEXT(self->current_command_data.vk_cmd_buffer, x, y, z);
     }
@@ -1016,7 +1005,7 @@ void daxa_cmd_draw_mesh_tasks(daxa_CommandRecorder self, uint32_t x, uint32_t y,
 auto daxa_cmd_draw_mesh_tasks_indirect(daxa_CommandRecorder self, daxa_DrawMeshTasksIndirectInfo const * info) -> daxa_Result
 {
     DAXA_CHECK_AND_REMEMBER_IDS(self, info->indirect_buffer)
-    if ((self->device->info.flags & DeviceFlagBits::MESH_SHADER) != DeviceFlagBits::NONE)
+    if (self->device->properties.implicit_features & DAXA_IMPLICIT_FEATURE_FLAG_MESH_SHADER)
     {
         self->device->vkCmdDrawMeshTasksIndirectEXT(
             self->current_command_data.vk_cmd_buffer,
@@ -1033,7 +1022,7 @@ auto daxa_cmd_draw_mesh_tasks_indirect_count(
     daxa_DrawMeshTasksIndirectCountInfo const * info) -> daxa_Result
 {
     DAXA_CHECK_AND_REMEMBER_IDS(self, info->indirect_buffer, info->count_buffer)
-    if ((self->device->info.flags & DeviceFlagBits::MESH_SHADER) != DeviceFlagBits::NONE)
+    if (self->device->properties.implicit_features & DAXA_IMPLICIT_FEATURE_FLAG_MESH_SHADER)
     {
         self->device->vkCmdDrawMeshTasksIndirectCountEXT(
             self->current_command_data.vk_cmd_buffer,
@@ -1170,11 +1159,11 @@ void daxa_destroy_command_recorder(daxa_CommandRecorder self)
 
 auto daxa_dvc_create_command_recorder(daxa_Device device, daxa_CommandRecorderInfo const * info, daxa_CommandRecorder * out_cmd_list) -> daxa_Result
 {
-    VkCommandPool vk_cmd_pool = {};
+    VkCommandPool vk_cmd_pool = [&]()
     {
-        std::unique_lock const l{device->main_queue_command_pool_buffer_recycle_mtx};
-        vk_cmd_pool = device->buffer_pool_pool.get(device);
-    }
+        std::unique_lock lock{device->command_pool_pools[info->queue_family].mtx};
+        return device->command_pool_pools[info->queue_family].get(device);
+    }();
     auto ret = daxa_ImplCommandRecorder{};
     ret.device = device;
     ret.info = *info;
@@ -1182,10 +1171,8 @@ auto daxa_dvc_create_command_recorder(daxa_Device device, daxa_CommandRecorderIn
     auto result = ret.generate_new_current_command_data();
     if (result != DAXA_RESULT_SUCCESS)
     {
-        {
-            std::unique_lock const l{device->main_queue_command_pool_buffer_recycle_mtx};
-            device->buffer_pool_pool.put_back(vk_cmd_pool);
-        }
+        std::unique_lock lock{device->command_pool_pools[info->queue_family].mtx};
+        device->command_pool_pools[info->queue_family].put_back(vk_cmd_pool);
         return result;
     }
     if ((ret.device->instance->info.flags & InstanceFlagBits::DEBUG_UTILS) != InstanceFlagBits::NONE && ret.info.name.size != 0)
@@ -1282,11 +1269,11 @@ auto daxa_ImplCommandRecorder::generate_new_current_command_data() -> daxa_Resul
 void daxa_ImplCommandRecorder::zero_ref_callback(ImplHandle const * handle)
 {
     auto * self = rc_cast<daxa_CommandRecorder>(handle);
-    u64 const main_queue_cpu_timeline = self->device->main_queue_cpu_timeline.load(std::memory_order::relaxed);
-    std::unique_lock const lock{self->device->main_queue_zombies_mtx};
+    u64 const submit_timeline = self->device->global_submit_timeline.load(std::memory_order::relaxed);
+    std::unique_lock const lock{self->device->zombies_mtx};
     executable_cmd_list_execute_deferred_destructions(self->device, self->current_command_data);
-    self->device->main_queue_command_list_zombies.emplace_front(
-        main_queue_cpu_timeline,
+    self->device->command_list_zombies.emplace_front(
+        submit_timeline,
         CommandRecorderZombie{
             .vk_cmd_pool = self->vk_cmd_pool,
             .allocated_command_buffers = std::move(self->allocated_command_buffers),

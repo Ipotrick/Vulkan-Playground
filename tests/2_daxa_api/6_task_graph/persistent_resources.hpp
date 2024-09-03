@@ -20,9 +20,7 @@ namespace tests
         //      3) A    -> B - Expected - First execution of B syncs on SHADER_WRITE -> SHADER_READ
         //      4) B    -> B - Expected - Second execution of B has no sync
         daxa::Instance daxa_ctx = daxa::create_instance({});
-        daxa::Device device = daxa_ctx.create_device({
-            .name = "device",
-        });
+        daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({},{}));
         auto buffer = device.create_buffer({
             .size = 1,
             .name = "actual buffer",
@@ -93,9 +91,7 @@ namespace tests
         //      3) A    -> B - Expected - First execution of B transitions image from WRITE to READ
         //      4) B    -> B - Expected - Second execution of B has no transitions
         daxa::Instance daxa_ctx = daxa::create_instance({});
-        daxa::Device device = daxa_ctx.create_device({
-            .name = "device",
-        });
+        daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({},{}));
         // We need an actual image, as task graph will try to populate its image view cache.
         // It will error out when it detects that there are no runtime images for a task image when updating the view cache.
         auto image = device.create_image({

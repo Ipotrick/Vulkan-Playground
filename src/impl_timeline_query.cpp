@@ -87,10 +87,10 @@ auto daxa_timeline_query_pool_dec_refcnt(daxa_TimelineQueryPool self) -> u64
 void daxa_ImplTimelineQueryPool::zero_ref_callback(ImplHandle const * handle)
 {
     auto * self = rc_cast<daxa_TimelineQueryPool>(handle);
-    std::unique_lock const lock{self->device->main_queue_zombies_mtx};
-    u64 const main_queue_cpu_timeline = self->device->main_queue_cpu_timeline.load(std::memory_order::relaxed);
-    self->device->main_queue_timeline_query_pool_zombies.emplace_back(
-        main_queue_cpu_timeline,
+    std::unique_lock const lock{self->device->zombies_mtx};
+    u64 const submit_timeline = self->device->global_submit_timeline.load(std::memory_order::relaxed);
+    self->device->timeline_query_pool_zombies.emplace_back(
+        submit_timeline,
         TimelineQueryPoolZombie{
             .vk_timeline_query_pool = self->vk_timeline_query_pool,
         });

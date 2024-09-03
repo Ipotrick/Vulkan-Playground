@@ -4,19 +4,10 @@
 
 #include <daxa/gpu_resources.hpp>
 
+#include <atomic>
+
 namespace daxa
 {
-    static const inline VkBufferUsageFlags BUFFER_USE_FLAGS =
-        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-        VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
-        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
-        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
-        VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR;
-
     struct ImplBufferSlot
     {
         daxa_BufferInfo info = {};
@@ -136,7 +127,7 @@ namespace daxa
          * @brief   Creates a slot for a resource in the pool.
          *          Returned slots may be recycled but are guaranteed to have a unique index + version.
          *
-         * Must 
+         * Must
          * * mutable ptr to resource is only used in parallel
          *
          * @return The new resource slot and its id. Can fail if max resources is exceeded.
@@ -255,7 +246,14 @@ namespace daxa
         // The first size is 0 word, second is 1 word, all others are a power of two (maximum is MAX_PUSH_CONSTANT_BYTE_SIZE).
         std::array<VkPipelineLayout, PIPELINE_LAYOUT_COUNT> pipeline_layouts = {};
 
-        void initialize(u32 max_buffers, u32 max_images, u32 max_samplers, u32 max_acceleration_structures, VkDevice device, VkBuffer device_address_buffer, PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectNameEXT);
+        auto initialize(
+            u32 max_buffers, 
+            u32 max_images, 
+            u32 max_samplers, 
+            u32 max_acceleration_structures,
+            VkDevice device, 
+            VkBuffer device_address_buffer, 
+            PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectNameEXT) -> daxa_Result;
         void cleanup(VkDevice device);
     };
 

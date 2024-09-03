@@ -25,8 +25,8 @@ using Clock = std::chrono::high_resolution_clock;
         {
             ti.recorder.set_pipeline(*update_boids_pipeline);
             ti.recorder.push_constant(UpdateBoidsPushConstant{
-                .boids_buffer = ti.device.get_device_address(ti.get(AT.current).ids[0]).value(),
-                .old_boids_buffer = ti.device.get_device_address(ti.get(AT.previous).ids[0]).value(),
+                .boids_buffer = ti.device_address(AT.current).value(),
+                .old_boids_buffer = ti.device_address(AT.previous).value(),
             });
             ti.recorder.dispatch({(MAX_BOIDS + 63) / 64, 1, 1});
         }
@@ -40,9 +40,7 @@ struct Test
 struct App : AppWindow<App>
 {
     daxa::Instance daxa_ctx = daxa::create_instance({});
-    daxa::Device device = daxa_ctx.create_device({
-        .name = ("device"),
-    });
+    daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({},{}));
 
     daxa::Swapchain swapchain = device.create_swapchain({
         .native_window = get_native_handle(),
@@ -118,7 +116,7 @@ struct App : AppWindow<App>
         });
         recorder.destroy_buffer_deferred(upload_buffer_id);
 
-        auto * ptr = device.get_host_address_as<Boids>(upload_buffer_id).value();
+        auto * ptr = device.buffer_host_address_as<Boids>(upload_buffer_id).value();
 
         for (auto & boid : ptr->boids)
         {
@@ -192,7 +190,7 @@ struct App : AppWindow<App>
             });
             render_recorder.set_pipeline(*draw_pipeline);
             render_recorder.push_constant(DrawPushConstant{
-                .boids_buffer = ti.device.get_device_address(ti.get(boids).ids[0]).value(),
+                .boids_buffer = ti.device_address(boids).value(),
                 .axis_scaling = {
                     std::min(1.0f, static_cast<f32>(*this->size_y) / static_cast<f32>(*this->size_x)),
                     std::min(1.0f, static_cast<f32>(*this->size_x) / static_cast<f32>(*this->size_y)),

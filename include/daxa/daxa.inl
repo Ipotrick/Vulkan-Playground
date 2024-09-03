@@ -40,7 +40,7 @@
 /// @brief Buffer ptr types map to the buffer device address type in daxa.
 #define daxa_BufferPtr(x) daxa_DeviceAddress
 
-#elif defined(__cplusplus)
+#else
 #include <daxa/daxa.hpp>
 
 /// @brief Buffer ptr enable is ignored in c++.

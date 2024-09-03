@@ -11,9 +11,7 @@ static inline constexpr usize ELEMENT_COUNT = {17};
 auto main() -> int
 {
     daxa::Instance daxa_ctx = daxa::create_instance({});
-    daxa::Device device = daxa_ctx.create_device({
-        .name = "device",
-    });
+    daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({},{}));
     daxa::TransferMemoryPool tmem{daxa::TransferMemoryPoolInfo{
         .device = device,
         .capacity = 256,
@@ -22,7 +20,7 @@ auto main() -> int
     daxa::TimelineSemaphore gpu_timeline = device.create_timeline_semaphore({
         .name = "timeline semaphpore",
     });
-    usize cpu_timeline = 1;
+    usize global_submit_timeline = 1;
     daxa::BufferId result_buffer = device.create_buffer({
         .size = sizeof(u32) * ELEMENT_COUNT * ITERATION_COUNT,
         .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_RANDOM,
@@ -31,7 +29,7 @@ auto main() -> int
 
     for (u32 iteration = 0; iteration < ITERATION_COUNT; ++iteration)
     {
-        [[maybe_unused]] auto _timeout = gpu_timeline.wait_for_value(cpu_timeline - 1);
+        [[maybe_unused]] auto _timeout = gpu_timeline.wait_for_value(global_submit_timeline - 1);
         daxa::CommandRecorder cmd = device.create_command_recorder({});
         cmd.pipeline_barrier({
             .src_access = daxa::AccessConsts::TRANSFER_READ_WRITE | daxa::AccessConsts::HOST_WRITE,
@@ -60,14 +58,14 @@ auto main() -> int
         // This is nessecary for internal tracking.
 
         auto signals = std::array{
-            std::pair{gpu_timeline, cpu_timeline},
+            std::pair{gpu_timeline, global_submit_timeline},
             std::pair{tmem.timeline_semaphore(), tmem.timeline_value()},
         };
         device.submit_commands({
             .command_lists = std::array{cmd.complete_current_commands()},
             .signal_timeline_semaphores = signals,
         });
-        cpu_timeline += 1;
+        global_submit_timeline += 1;
     }
 
     daxa::CommandRecorder cmd = device.create_command_recorder({});
@@ -83,7 +81,7 @@ auto main() -> int
 
     device.wait_idle();
 
-    u32 const * elements = device.get_host_address_as<u32>(result_buffer).value();
+    u32 const * elements = device.buffer_host_address_as<u32>(result_buffer).value();
     for (u32 iteration = 0; iteration < ITERATION_COUNT; ++iteration)
     {
         for (u32 element = 0; element < ELEMENT_COUNT; ++element)

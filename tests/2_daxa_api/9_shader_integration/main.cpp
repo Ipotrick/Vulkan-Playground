@@ -64,9 +64,7 @@ namespace tests
         //  2) Use Compute dispatch read and write
         //  4) readback and validate
         daxa::Instance daxa_ctx = daxa::create_instance({});
-        daxa::Device device = daxa_ctx.create_device({
-            .name = "device",
-        });
+        daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({},{}));
         auto src_buffer = device.create_buffer({
             .size = sizeof(TestU64Alignment),
             .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_SEQUENTIAL_WRITE,
@@ -88,7 +86,7 @@ namespace tests
             .i6 = {61, 62, 63},
             .i7 = 7,
         };
-        *device.get_host_address_as<TestU64Alignment>(src_buffer).value() = test_values;
+        *device.buffer_host_address_as<TestU64Alignment>(src_buffer).value() = test_values;
 
         daxa::PipelineManager pipeline_manager = daxa::PipelineManager({
             .device = device,
@@ -155,7 +153,7 @@ namespace tests
 
         device.wait_idle();
 
-        [[maybe_unused]] TestU64Alignment readback_data = *device.get_host_address_as<TestU64Alignment>(dst_buffer).value();
+        [[maybe_unused]] TestU64Alignment readback_data = *device.buffer_host_address_as<TestU64Alignment>(dst_buffer).value();
 
         std::cout << "test values before: \n";
         print_Testu64Alignment(test_values);
@@ -176,9 +174,7 @@ namespace tests
         //  4) write handles to buffer.
         //  5) read and use handles in following compute shader.
         daxa::Instance daxa_ctx = daxa::create_instance({});
-        daxa::Device device = daxa_ctx.create_device({
-            .name = "device",
-        });
+        daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({},{}));
         auto sampler = device.create_sampler({.name = "sampler"});
 
         daxa::PipelineManager pipeline_manager = daxa::PipelineManager({
@@ -255,12 +251,12 @@ namespace tests
                 ti.recorder.set_pipeline(*bindless_access);
                 ti.recorder.push_constant(BindlessTestPush{
                     .handles = {
-                        .my_buffer = ti.device.get_device_address(ti.get(f32_buffer).ids[0]).value(),
+                        .my_buffer = ti.device_address(f32_buffer).value(),
                         .my_float_image = ti.get(f32_image).view_ids[0],
                         .my_uint_image = ti.get(u32_image).view_ids[0],
                         .my_sampler = sampler,
                     },
-                    .next_shader_input = ti.device.get_device_address(ti.get(handles_buffer).ids[0]).value(),
+                    .next_shader_input = ti.device_address(handles_buffer).value(),
                 });
                 ti.recorder.dispatch({1, 1, 1});
             },
@@ -276,7 +272,7 @@ namespace tests
             {
                 ti.recorder.set_pipeline(*bindless_access_followup);
                 ti.recorder.push_constant(BindlessTestFollowPush{
-                    .shader_input = ti.device.get_device_address(ti.get(handles_buffer).ids[0]).value(),
+                    .shader_input = ti.device_address(handles_buffer).value(),
                 });
                 ti.recorder.dispatch({1, 1, 1});
             },
