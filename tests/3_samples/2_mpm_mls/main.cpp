@@ -231,68 +231,6 @@ struct App : BaseApp<App>
     }();
     // clang-format on
 
-#if defined(DAXA_LEVEL_SET_FLAG)
-    // clang-format off
-    std::shared_ptr<daxa::ComputePipeline> level_set_collision_compute_pipeline = [this]() {
-        update_virtual_shader();
-        return pipeline_manager.add_compute_pipeline({
-#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
-            .shader_info = {
-                .source = daxa::ShaderFile{"compute.glsl"}, 
-                .compile_options = {
-                    .defines =  std::vector{daxa::ShaderDefine{"LEVEL_SET_COLLISION_COMPUTE_FLAG", "1"}},
-                }
-            },
-#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
-            .shader_info = {.source = daxa::ShaderFile{"compute.slang"}, .compile_options = {.entry_point = "entry_MPM_level_set_collision"}},
-#endif
-            .push_constant_size = sizeof(ComputePush),
-            .name = "level_set_collision_compute_pipeline",
-        }).value();
-    }();
-    // clang-format on
-    
-    // clang-format off
-    std::shared_ptr<daxa::ComputePipeline> level_set_add_plane_compute_pipeline = [this]() {
-        update_virtual_shader();
-        return pipeline_manager.add_compute_pipeline({
-#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
-            .shader_info = {
-                .source = daxa::ShaderFile{"compute.glsl"}, 
-                .compile_options = {
-                    .defines =  std::vector{daxa::ShaderDefine{"LEVEL_SET_ADD_PLANE_COMPUTE_FLAG", "1"}},
-                }
-            },
-#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
-            .shader_info = {.source = daxa::ShaderFile{"compute.slang"}, .compile_options = {.entry_point = "entry_MPM_level_set_add_plane"}},
-#endif
-            .push_constant_size = sizeof(ComputePush),
-            .name = "level_set_add_plane_compute_pipeline",
-        }).value();
-    }();
-    // clang-format on
-
-    // clang-format off
-    std::shared_ptr<daxa::ComputePipeline> update_rigid_bodies_compute_pipeline = [this]() {
-        update_virtual_shader();
-        return pipeline_manager.add_compute_pipeline({
-#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
-            .shader_info = {
-                .source = daxa::ShaderFile{"compute.glsl"}, 
-                .compile_options = {
-                    .defines =  std::vector{daxa::ShaderDefine{"UPDATE_RIGID_BODIES_COMPUTE_FLAG", "1"}},
-                }
-            },
-#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
-            .shader_info = {.source = daxa::ShaderFile{"compute.slang"}, .compile_options = {.entry_point = "entry_MPM_update_rigid_bodies"}},
-#endif // DAXA_SHADERLANG
-            .push_constant_size = sizeof(ComputePush),
-            .name = "update_rigid_bodies_compute_pipeline",
-        }).value();
-    }();
-    // clang-format on
-#endif // DAXA_LEVEL_SET_FLAG
-
     
 
 
@@ -684,17 +622,6 @@ struct App : BaseApp<App>
     });
     daxa::TaskBuffer task_rigid_grid_buffer{{.initial_buffers = {.buffers = std::array{rigid_grid_buffer}}, .name = "rigid_grid_buffer_task"}};
 
-#if defined(DAXA_LEVEL_SET_FLAG)
-    daxa::usize level_set_grid_size = GRID_SIZE * sizeof(NodeLevelSet);
-    daxa::BufferId level_set_grid_buffer = device.create_buffer(daxa::BufferInfo{
-        .size = level_set_grid_size,
-        .name = "level_set_grid_buffer",
-    });
-    daxa::TaskBuffer task_level_set_grid_buffer{{.initial_buffers = {.buffers = std::array{level_set_grid_buffer}}, .name = "level_set_grid_buffer_task"}};
-
-    daxa::BufferClearInfo level_set_clear = {level_set_grid_buffer, 0, level_set_grid_size, 0};
-#endif // DAXA_LEVEL_SET_FLAG
-
 #if defined(_DEBUG)
     daxa::BufferId staging_rigid_grid_buffer = device.create_buffer({
         .size = rigid_grid_size,
@@ -723,15 +650,6 @@ struct App : BaseApp<App>
         .name = "staging_aabb_buffer",
     });
     daxa::TaskBuffer task_staging_aabb_buffer{{.initial_buffers = {.buffers = std::array{_staging_aabb_buffer}}, .name = "staging_aabb_buffer_task"}};
-
-#if defined(DAXA_LEVEL_SET_FLAG)
-    daxa::BufferId staging_level_set_grid_buffer = device.create_buffer(daxa::BufferInfo{
-        .size = level_set_grid_size,
-        .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_SEQUENTIAL_WRITE,
-        .name = "staging_level_set_grid_buffer",
-    });
-    daxa::TaskBuffer task_staging_level_set_grid_buffer{{.initial_buffers = {.buffers = std::array{staging_level_set_grid_buffer}}, .name = "staging_level_set_grid_buffer_task"}};
-#endif // DAXA_LEVEL_SET_FLAG
 #endif // _DEBUG
     
     // daxa::BufferClearInfo clear_rigid_info = {rigid_grid_buffer, 0, rigid_grid_size, 0};
@@ -840,10 +758,6 @@ struct App : BaseApp<App>
         .name = "init_task_graph",
     });
 
-#if defined(DAXA_LEVEL_SET_FLAG)
-    daxa::TaskGraph _level_set_task_graph = record_level_set_task_graph();
-#endif // DAXA_LEVEL_SET_FLAG
-
     daxa::TaskGraph _input_task_graph = record_input_task_graph();
 
     daxa::TaskGraph _sim_task_graph = record_sim_task_graph();
@@ -875,14 +789,8 @@ struct App : BaseApp<App>
         device.destroy_buffer(_staging_particle_CDF_buffer);
         device.destroy_buffer(_staging_particles_buffer);
         device.destroy_buffer(_staging_aabb_buffer);
-#if defined(DAXA_LEVEL_SET_FLAG)
-        device.destroy_buffer(staging_level_set_grid_buffer);
-#endif // DAXA_LEVEL_SET_FLAG
 #endif // _DEBUG
         device.destroy_buffer(particle_CDF_buffer);
-#if defined(DAXA_LEVEL_SET_FLAG)
-        device.destroy_buffer(level_set_grid_buffer);
-#endif // DAXA_LEVEL_SET_FLAG
 #endif // DAXA_RIGID_BODY_FLAG
         device.destroy_buffer(grid_buffer);
         device.destroy_buffer(aabb_buffer);
@@ -1081,9 +989,6 @@ struct App : BaseApp<App>
         init_task_graph.use_persistent_buffer(task_rigid_body_index_buffer);
         init_task_graph.use_persistent_buffer(task_rigid_particles_buffer);
         init_task_graph.use_persistent_buffer(task_rigid_grid_buffer);
-#if defined(DAXA_LEVEL_SET_FLAG)
-        init_task_graph.use_persistent_buffer(task_level_set_grid_buffer);
-#endif // DAXA_LEVEL_SET_FLAG
 #endif
 
         init_task_graph.add_task({
@@ -1418,20 +1323,6 @@ struct App : BaseApp<App>
             },
             .name = ("Upload particles"),
         });
-#if defined(DAXA_LEVEL_SET_FLAG)
-        init_task_graph.add_task({
-            .attachments = {
-                daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_WRITE, task_level_set_grid_buffer),
-            },
-            .task = [this](daxa::TaskInterface ti)
-            {
-                daxa_f32 max_dist = MAX_DIST;
-                std::memcpy(&level_set_clear.clear_value, &max_dist, sizeof(u32));
-                ti.recorder.clear_buffer(level_set_clear);
-            },
-            .name = ("Upload level set grid"),
-        });
-#endif // DAXA_LEVEL_SET_FLAG
 
         init_task_graph.submit({});
         init_task_graph.complete({});
@@ -1439,59 +1330,6 @@ struct App : BaseApp<App>
 
         std::cout << "Particles uploaded: " << NUM_PARTICLES << std::endl;
     }
-
-    
-#if defined(DAXA_LEVEL_SET_FLAG)
-    daxa::TaskGraph record_level_set_task_graph() {
-        daxa::TaskGraph level_set_task_graph = daxa::TaskGraph({
-            .device = device,
-            .use_split_barriers = false,
-            .name = "level_set_task_graph",
-        });
-        level_set_task_graph.use_persistent_buffer(task_gpu_input_buffer);
-        level_set_task_graph.use_persistent_buffer(task_level_set_grid_buffer);
-        level_set_task_graph.add_task({
-            .attachments = {
-                daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_WRITE, task_gpu_input_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_level_set_grid_buffer),
-            },
-            .task = [this](daxa::TaskInterface ti)
-            {
-                ti.recorder.set_pipeline(*level_set_add_plane_compute_pipeline);
-                ti.recorder.push_constant(ComputePush{
-                    .image_id = render_image.default_view(),
-                    .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
-                    .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
-                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
-                    .tlas = tlas,
-                });
-                ti.recorder.dispatch({(gpu_input.grid_dim.x + MPM_GRID_COMPUTE_X - 1) / MPM_GRID_COMPUTE_X, (gpu_input.grid_dim.y + MPM_GRID_COMPUTE_Y - 1) / MPM_GRID_COMPUTE_Y, (gpu_input.grid_dim.z + MPM_GRID_COMPUTE_Z - 1) / MPM_GRID_COMPUTE_Z});
-            },
-            .name = ("Upload level set grid"),
-        });
-
-        level_set_task_graph.submit({});
-        level_set_task_graph.complete({});
-
-        return level_set_task_graph;
-    }
-
-    void upload_level_set_grid() {
-        _level_set_task_graph.execute({});
-        std::cout << "Level set grid uploaded" << std::endl;
-    }
-#endif // DAXA_LEVEL_SET_FLAG
 
 
     daxa::TaskGraph record_input_task_graph()
@@ -1512,9 +1350,6 @@ struct App : BaseApp<App>
         input_task_graph.use_persistent_buffer(task_rigid_body_index_buffer);
         input_task_graph.use_persistent_buffer(task_rigid_particles_buffer);
         input_task_graph.use_persistent_buffer(task_rigid_grid_buffer);
-#if defined(DAXA_LEVEL_SET_FLAG)
-        input_task_graph.use_persistent_buffer(task_level_set_grid_buffer);
-#endif // DAXA_LEVEL_SET_FLAG
 #endif // DAXA_RIGID_BODY_FLAG
         input_task_graph.use_persistent_buffer(task_grid_buffer);
         input_task_graph.use_persistent_buffer(task_camera_buffer);
@@ -1555,38 +1390,6 @@ struct App : BaseApp<App>
             },
             .name = ("Upload Input"),
         });
-#if defined(DAXA_LEVEL_SET_FLAG)
-        input_task_graph.add_task({
-            .attachments = {
-                daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_WRITE, task_gpu_input_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_level_set_grid_buffer),
-            },
-            .task = [this](daxa::TaskInterface ti)
-            {
-                ti.recorder.set_pipeline(*level_set_add_plane_compute_pipeline);
-                ti.recorder.push_constant(ComputePush{
-                    .image_id = render_image.default_view(),
-                    .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
-                    .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
-                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
-                    .tlas = tlas,
-                });
-                ti.recorder.dispatch({(gpu_input.grid_dim.x + MPM_GRID_COMPUTE_X - 1) / MPM_GRID_COMPUTE_X, (gpu_input.grid_dim.y + MPM_GRID_COMPUTE_Y - 1) / MPM_GRID_COMPUTE_Y, (gpu_input.grid_dim.z + MPM_GRID_COMPUTE_Z - 1) / MPM_GRID_COMPUTE_Z});
-            },
-            .name = ("Upload level set grid"),
-        });
-#endif // DAXA_LEVEL_SET_FLAG
 
         input_task_graph.submit({});
         input_task_graph.complete({});
@@ -1613,9 +1416,6 @@ struct App : BaseApp<App>
         sim_task_graph.use_persistent_buffer(task_rigid_particles_buffer);
         sim_task_graph.use_persistent_buffer(task_rigid_grid_buffer);
         sim_task_graph.use_persistent_buffer(task_particle_CDF_buffer);
-#if defined(DAXA_LEVEL_SET_FLAG)
-        sim_task_graph.use_persistent_buffer(task_level_set_grid_buffer);
-#endif // DAXA_LEVEL_SET_FLAG
 #endif // DAXA_RIGID_BODY_FLAG
         sim_task_graph.use_persistent_buffer(task_grid_buffer);
         sim_task_graph.use_persistent_buffer(task_aabb_buffer);
@@ -1647,9 +1447,6 @@ struct App : BaseApp<App>
                         .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                         .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
                         .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-#if defined(DAXA_LEVEL_SET_FLAG)
-                        .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
-#endif // DAXA_LEVEL_SET_FLAG
                         .cells = device.get_device_address(grid_buffer).value(),
                         .aabbs = device.get_device_address(aabb_buffer).value(),
                         .camera = device.get_device_address(camera_buffer).value(),
@@ -1686,9 +1483,6 @@ struct App : BaseApp<App>
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
                     .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-#if defined(DAXA_LEVEL_SET_FLAG)
-                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
-#endif // DAXA_LEVEL_SET_FLAG
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
                     .camera = device.get_device_address(camera_buffer).value(),
@@ -1699,88 +1493,6 @@ struct App : BaseApp<App>
             },
             .name = ("Check Boundaries (Compute)"),
         });
-#if defined(DAXA_LEVEL_SET_FLAG)
-        sim_task_graph.add_task({
-            .attachments = {
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particle_CDF_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_level_set_grid_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_camera_buffer),
-                daxa::inl_attachment(daxa::TaskImageAccess::COMPUTE_SHADER_STORAGE_WRITE_ONLY, task_render_image),
-            },
-            .task = [this](daxa::TaskInterface ti)
-            {
-                
-                ti.recorder.set_pipeline(*level_set_collision_compute_pipeline);
-                ti.recorder.push_constant(ComputePush{
-                    .image_id = render_image.default_view(),
-                    .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
-                    .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
-                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
-                    .tlas = tlas,
-                });
-                ti.recorder.dispatch({(gpu_input.r_p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
-            },
-            .name = ("Level Set Collision (Compute)"),
-        });
-        sim_task_graph.add_task({
-            .attachments = {
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particles_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_vertex_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_index_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_particles_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_particle_CDF_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_level_set_grid_buffer),
-                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_camera_buffer),
-                daxa::inl_attachment(daxa::TaskImageAccess::COMPUTE_SHADER_STORAGE_WRITE_ONLY, task_render_image),
-            },
-            .task = [this](daxa::TaskInterface ti)
-            {
-                
-                ti.recorder.set_pipeline(*update_rigid_bodies_compute_pipeline);
-                ti.recorder.push_constant(ComputePush{
-                    .image_id = render_image.default_view(),
-                    .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
-                    .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
-                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
-                    .tlas = tlas,
-                });
-                ti.recorder.dispatch({(gpu_input.rigid_body_count + MPM_CPIC_COMPUTE_X - 1) / MPM_CPIC_COMPUTE_X});
-            },
-            .name = ("Update Rigid Bodies (Compute)"),
-        });
-#endif // DAXA_LEVEL_SET_FLAG
 #if defined(DAXA_RIGID_BODY_FLAG)
         sim_task_graph.add_task({
             .attachments = {
@@ -1811,9 +1523,6 @@ struct App : BaseApp<App>
                         .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                         .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
                         .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-    #if defined(DAXA_LEVEL_SET_FLAG)
-                        .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
-    #endif // DAXA_LEVEL_SET_FLAG
                         .cells = device.get_device_address(grid_buffer).value(),
                         .aabbs = device.get_device_address(aabb_buffer).value(),
                         .camera = device.get_device_address(camera_buffer).value(),
@@ -1858,9 +1567,6 @@ struct App : BaseApp<App>
                         .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                         .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
                         .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-#if defined(DAXA_LEVEL_SET_FLAG)
-                        .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
-#endif // DAXA_LEVEL_SET_FLAG
 #endif // DAXA_RIGID_BODY_FLAG
                         .cells = device.get_device_address(grid_buffer).value(),
                         .aabbs = device.get_device_address(aabb_buffer).value(),
@@ -1905,9 +1611,6 @@ struct App : BaseApp<App>
                         .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                         .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
                         .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-#if defined(DAXA_LEVEL_SET_FLAG)
-                        .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
-#endif // DAXA_LEVEL_SET_FLAG
 #endif
                         .cells = device.get_device_address(grid_buffer).value(),
                         .aabbs = device.get_device_address(aabb_buffer).value(),
@@ -1952,9 +1655,6 @@ struct App : BaseApp<App>
                         .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                         .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
                         .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-#if defined(DAXA_LEVEL_SET_FLAG)
-                        .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
-#endif // DAXA_LEVEL_SET_FLAG
 #endif
                         .cells = device.get_device_address(grid_buffer).value(),
                         .aabbs = device.get_device_address(aabb_buffer).value(),
@@ -2000,9 +1700,6 @@ struct App : BaseApp<App>
                         .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                         .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
                         .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-#if defined(DAXA_LEVEL_SET_FLAG)
-                        .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
-#endif // DAXA_LEVEL_SET_FLAG
 #endif // DAXA_RIGID_BODY_FLAG
                         .cells = device.get_device_address(grid_buffer).value(),
                         .aabbs = device.get_device_address(aabb_buffer).value(),
@@ -2045,9 +1742,6 @@ struct App : BaseApp<App>
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
                     .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-#if defined(DAXA_LEVEL_SET_FLAG)
-                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
-#endif // DAXA_LEVEL_SET_FLAG
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
                     .camera = device.get_device_address(camera_buffer).value(),
@@ -2441,9 +2135,6 @@ struct App : BaseApp<App>
                     .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
                     .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
                     .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-#if defined(DAXA_LEVEL_SET_FLAG)
-                    .level_set_grid = device.get_device_address(level_set_grid_buffer).value(),
-#endif // DAXA_LEVEL_SET_FLAG
 #endif
                     .cells = device.get_device_address(grid_buffer).value(),
                     .aabbs = device.get_device_address(aabb_buffer).value(),
@@ -2493,9 +2184,6 @@ struct App : BaseApp<App>
         download_info_graph.use_persistent_buffer(task_staging_particle_CDF_buffer);
         download_info_graph.use_persistent_buffer(task_staging_particles_buffer);
         download_info_graph.use_persistent_buffer(task_staging_aabb_buffer);
-#if defined(DAXA_LEVEL_SET_FLAG)
-        download_info_graph.use_persistent_buffer(task_staging_level_set_grid_buffer);
-#endif // DAXA_LEVEL_SET_FLAG
 #endif
 
 #if defined(DAXA_RIGID_BODY_FLAG)
@@ -2507,9 +2195,6 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_staging_particle_CDF_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_staging_particles_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_staging_aabb_buffer),
-#if defined(DAXA_LEVEL_SET_FLAG)
-                daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_staging_level_set_grid_buffer),
-#endif // DAXA_LEVEL_SET_FLAG
             },
             .task = [this](daxa::TaskInterface ti)
             {
@@ -2533,13 +2218,6 @@ struct App : BaseApp<App>
                     .dst_buffer = _staging_aabb_buffer,
                     .size = aabb_size,
                 });
-#if defined(DAXA_LEVEL_SET_FLAG)
-                ti.recorder.copy_buffer_to_buffer({
-                    .src_buffer = level_set_grid_buffer,
-                    .dst_buffer = staging_level_set_grid_buffer,
-                    .size = level_set_grid_size,
-                });
-#endif // DAXA_LEVEL_SET_FLAG
             },
             .name = "Download Info Task",
         });
@@ -2606,32 +2284,6 @@ struct App : BaseApp<App>
 
         if(print_level_set_cells) {
             print_level_set_cells = false;
-
-#if defined(DAXA_LEVEL_SET_FLAG)
-            auto level_set_cells = device.get_host_address_as<NodeLevelSet>(staging_level_set_grid_buffer).value();
-            
-            std::cout << "Printing level set cells" << std::endl;
-
-            daxa_u32 level_set_cells_count = 0;
-
-            for(int i = 0; i < GRID_SIZE; i++) {
-                auto cell = level_set_cells[i];
-                auto x = i % GRID_DIM;
-                auto y = (i / GRID_DIM) % GRID_DIM;
-                auto z = i / (GRID_DIM * GRID_DIM);
-                daxa_f32 d = cell.distance;
-                if(d < MAX_DIST) {
-                    std::cout << "      Level Set Cell " << x << ", " << y << ", " << z << " distance " << d << std::endl;
-                    ++level_set_cells_count;
-                }
-            }
-
-            if(level_set_cells_count > 0) {
-                print_rigid_cells = true;
-            }
-
-            std::cout << "  Level set cells count: " << level_set_cells_count << std::endl << std::endl;
-#endif // DAXA_LEVEL_SET_FLAG
         }
 
 
@@ -2692,9 +2344,6 @@ auto main() -> int
 {
     App app = {};
     app.first_upload_task();
-#if defined(DAXA_LEVEL_SET_FLAG)
-    app.upload_level_set_grid();
-#endif
     app.gpu_status->flags = 0;
 #if defined(DAXA_RIGID_BODY_FLAG)
     app.gpu_status->flags |= RIGID_BODY_ADD_GRAVITY_FLAG;

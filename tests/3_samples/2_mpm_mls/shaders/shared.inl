@@ -20,10 +20,6 @@
 #endif // DAXA_RIGID_BODY_FLAG
 #endif // DAXA_SIMULATION_WATER_MPM_MLS
 
-#if defined(DAXA_RIGID_BODY_FLAG)
-// #define DAXA_LEVEL_SET_FLAG
-#endif // DAXA_RIGID_BODY_FLAG
-
 #define GRID_DIM 128
 #define GRID_SIZE (GRID_DIM * GRID_DIM * GRID_DIM)
 #define QUALITY 2
@@ -226,12 +222,6 @@ struct NodeCDF {
   daxa_u32 rigid_id;
   daxa_u32 rigid_particle_index;
 };
-
-#if defined(DAXA_LEVEL_SET_FLAG)
-struct NodeLevelSet {
-  daxa_f32 distance;
-};
-#endif // DAXA_LEVEL_SET_FLAG
 #endif // DAXA_RIGID_BODY_FLAG
 
 DAXA_DECL_BUFFER_PTR(GpuInput)
@@ -242,9 +232,6 @@ DAXA_DECL_BUFFER_PTR(RigidBody)
 DAXA_DECL_BUFFER_PTR(RigidParticle)
 DAXA_DECL_BUFFER_PTR(NodeCDF)
 DAXA_DECL_BUFFER_PTR(ParticleCDF)
-#if defined(DAXA_LEVEL_SET_FLAG)
-DAXA_DECL_BUFFER_PTR(NodeLevelSet)
-#endif // DAXA_LEVEL_SET_FLAG
 #endif // DAXA_RIGID_BODY_FLAG
 DAXA_DECL_BUFFER_PTR(Cell)
 DAXA_DECL_BUFFER_PTR(Camera)
@@ -264,9 +251,6 @@ struct ComputePush
     daxa_RWBufferPtr(RigidParticle) rigid_particles;
     daxa_RWBufferPtr(NodeCDF) rigid_cells;
     daxa_RWBufferPtr(ParticleCDF) rigid_particle_color;
-#if defined(DAXA_LEVEL_SET_FLAG)
-    daxa_BufferPtr(NodeLevelSet) level_set_grid;
-#endif // DAXA_LEVEL_SET_FLAG
 #endif // DAXA_RIGID_BODY_FLAG
     daxa_RWBufferPtr(Cell) cells;
     daxa_RWBufferPtr(Aabb) aabbs;
@@ -379,9 +363,6 @@ layout(buffer_reference, scalar) buffer VERTEX_BUFFER {vec3 vertices[]; }; // Ri
 layout(buffer_reference, scalar) buffer RIGID_PARTICLE_BUFFER {RigidParticle particles[]; }; // Rigid particle buffer
 layout(buffer_reference, scalar) buffer RIGID_CELL_BUFFER {NodeCDF cells[]; }; // Rigid cell buffer
 layout(buffer_reference, scalar) buffer RIGID_PARTICLE_STATUS_BUFFER {ParticleCDF particles[]; }; // Rigid  Particle color buffer
-#if defined(DAXA_LEVEL_SET_FLAG)
-layout(buffer_reference, scalar) buffer LEVEL_SET_NODE_BUFFER {NodeLevelSet nodes[]; }; // Rigid cell level set buffer
-#endif // DAXA_LEVEL_SET_FLAG
 #endif 
 
 daxa_i32
@@ -642,23 +623,6 @@ void set_rigid_particle_CDF_by_index(daxa_u32 particle_index, ParticleCDF color)
   RIGID_PARTICLE_STATUS_BUFFER rigid_particle_color_buffer = RIGID_PARTICLE_STATUS_BUFFER(p.rigid_particle_color);
   rigid_particle_color_buffer.particles[particle_index] = color;
 }
-
-#if defined(DAXA_LEVEL_SET_FLAG)
-NodeLevelSet level_set_get_node_by_index(daxa_u32 node_index) {
-  LEVEL_SET_NODE_BUFFER level_set_buffer = LEVEL_SET_NODE_BUFFER(p.level_set_grid);
-  return level_set_buffer.nodes[node_index];
-}
-
-daxa_f32 level_set_get_distance_by_index(daxa_u32 node_index) {
-  LEVEL_SET_NODE_BUFFER level_set_buffer = LEVEL_SET_NODE_BUFFER(p.level_set_grid);
-  return level_set_buffer.nodes[node_index].distance;
-}
-
-void level_set_node_set_distance_by_index(daxa_u32 node_index, daxa_f32 distance) {
-  LEVEL_SET_NODE_BUFFER level_set_buffer = LEVEL_SET_NODE_BUFFER(p.level_set_grid);
-  level_set_buffer.nodes[node_index].distance = distance;
-}
-#endif // DAXA_LEVEL_SET_FLAG
 
 #endif // DAXA_RIGID_BODY_FLAG
 
