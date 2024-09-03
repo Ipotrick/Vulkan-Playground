@@ -772,6 +772,7 @@ struct App : BaseApp<App>
     {
         device.wait_idle();
         device.collect_garbage();
+        device.destroy_buffer(sbt_pair.buffer);
         device.destroy_tlas(tlas);
         device.destroy_blas(blas);
         device.destroy_sampler(sampler);

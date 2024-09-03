@@ -37,7 +37,7 @@ namespace tests
             daxa::Swapchain swapchain = {};
             daxa::PipelineManager pipeline_manager = {};
             // std::shared_ptr<daxa::ComputePipeline> comp_pipeline = {};
-            std::shared_ptr<daxa::RayTracingPipeline> rt_pipeline = {};
+            std::shared_ptr<daxa::RayTracingPipeline> rt_pipeline = {};daxa::RayTracingPipeline::SbtPair sbt_pair = {}, second_sbt_pair = {};
             daxa::TlasId tlas = {};
             daxa::BlasId blas = {};
             daxa::BlasId proc_blas = {};
@@ -54,7 +54,7 @@ namespace tests
             bool atomic_float = false;
 
             daxa_u32 frame = 0;
-            daxa_u32 raygen_shader_binding_table_offset = 0;
+            bool primary_rays = true;
 
             Camera my_camera = {
                 .position = {0.0f, 0.0f, -1.0f},
@@ -76,6 +76,8 @@ namespace tests
             {
                 if (device.is_valid())
                 {
+                    device.destroy_buffer(sbt_pair.buffer);
+                    device.destroy_buffer(second_sbt_pair.buffer);
                     device.destroy_tlas(tlas);
                     device.destroy_blas(blas);
                     device.destroy_blas(proc_blas);
@@ -547,6 +549,17 @@ namespace tests
                     .name = "basic ray tracing pipeline",
                 };
                 rt_pipeline = pipeline_manager.add_ray_tracing_pipeline(ray_tracing_pipe_info).value();
+
+                sbt_pair = rt_pipeline->create_default_sbt();
+                second_sbt_pair = rt_pipeline->create_default_sbt();
+
+                // TODO: create a gentler way to manage shader groups and SBT
+                auto const get_host_address_result = device.buffer_host_address_as<uint8_t>(second_sbt_pair.buffer);
+                
+                std::unique_ptr<uint8_t[]> sbt_data = std::make_unique<uint8_t[]>(1024);
+                rt_pipeline->get_shader_group_handles(sbt_data.get());
+
+                memcpy(get_host_address_result.value(), sbt_data.get() + device.properties().ray_tracing_properties.value(). shader_group_handle_size, device.properties().ray_tracing_properties.value().shader_group_handle_size);
             }
 
             auto update() -> bool
@@ -669,7 +682,7 @@ namespace tests
                     .width = width,
                     .height = height,
                     .depth = 1,
-                    .raygen_shader_binding_table_offset = raygen_shader_binding_table_offset,
+                    .shader_binding_table = primary_rays ? sbt_pair.table : second_sbt_pair.table,
                 });
 
 #if ACTIVATE_ATOMIC_FLOAT == 1      
@@ -733,7 +746,7 @@ namespace tests
             void on_mouse_button(i32 /*unused*/, i32 /*unused*/) {}
             void on_key(i32 key, i32 action) {
                 if(key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
-                    raygen_shader_binding_table_offset = (raygen_shader_binding_table_offset + 1) % 2;
+                    primary_rays = !primary_rays;
                 }
             }
 

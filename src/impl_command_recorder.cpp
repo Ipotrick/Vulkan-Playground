@@ -695,7 +695,6 @@ auto daxa_cmd_trace_rays(daxa_CommandRecorder self, daxa_TraceRaysInfo const * i
     }
     auto const & binding_table = info->shader_binding_table;
     auto raygen_handle = binding_table.raygen_region;
-    raygen_handle.deviceAddress += binding_table.raygen_region.stride * info->raygen_handle_offset;
     auto miss_handle = binding_table.miss_region;
     miss_handle.deviceAddress += binding_table.miss_region.stride * info->miss_handle_offset;
     auto hit_handle = binding_table.hit_region;
@@ -721,7 +720,6 @@ auto daxa_cmd_trace_rays_indirect(daxa_CommandRecorder self, daxa_TraceRaysIndir
     }
     auto const & binding_table = info->shader_binding_table;
     auto raygen_handle = binding_table.raygen_region;
-    raygen_handle.deviceAddress += binding_table.raygen_region.stride * info->raygen_handle_offset;
     auto miss_handle = binding_table.miss_region;
     miss_handle.deviceAddress += binding_table.miss_region.stride * info->miss_handle_offset;
     auto hit_handle = binding_table.hit_region;

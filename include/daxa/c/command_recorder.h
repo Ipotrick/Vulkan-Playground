@@ -205,7 +205,6 @@ typedef struct
     uint32_t width;
     uint32_t height;
     uint32_t depth;
-    uint32_t raygen_handle_offset;
     uint32_t miss_handle_offset;
     uint32_t hit_handle_offset;
     uint32_t callable_handle_offset;
@@ -217,7 +216,6 @@ static daxa_TraceRaysInfo const DAXA_DEFAULT_TRACE_RAYS_INFO = DAXA_ZERO_INIT;
 typedef struct
 {
     uint64_t indirect_device_address;
-    uint32_t raygen_handle_offset;
     uint32_t miss_handle_offset;
     uint32_t hit_handle_offset;
     uint32_t callable_handle_offset;

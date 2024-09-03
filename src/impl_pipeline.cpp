@@ -766,13 +766,10 @@ auto daxa_ray_tracing_pipeline_create_default_sbt(daxa_RayTracingPipeline pipeli
     u64 offset = 0;
     // Iterator through the shader handles and store them in the SBT
     u8 * sbt_ptr_iterator = sbt_buffer_ptr;
-    // Raygen shaders load data
-    for (u32 c = 0; c < ray_count_number; c++)
-    {
-        std::memcpy(sbt_ptr_iterator, shader_handle_storage.data() + offset, group_handle_size);
-        sbt_ptr_iterator += raygen_region.stride;
-        offset += group_handle_size;
-    }
+    // Raygen shader load data (NOTE: there's only one raygen shader)
+    std::memcpy(sbt_ptr_iterator, shader_handle_storage.data() + offset, group_handle_size);
+    sbt_ptr_iterator += raygen_region.size;
+    offset += raygen_region.size;
 
     // Miss shaders (base ptr + raygen size)
     sbt_ptr_iterator = sbt_buffer_ptr + raygen_region.size;
@@ -781,7 +778,7 @@ auto daxa_ray_tracing_pipeline_create_default_sbt(daxa_RayTracingPipeline pipeli
     {
         std::memcpy(sbt_ptr_iterator, shader_handle_storage.data() + offset, group_handle_size);
         sbt_ptr_iterator += miss_region.stride;
-        offset += group_handle_size;
+        offset += miss_region.stride;
     }
 
     // Hit shaders (base ptr + raygen size + miss size)
@@ -792,7 +789,7 @@ auto daxa_ray_tracing_pipeline_create_default_sbt(daxa_RayTracingPipeline pipeli
 
         std::memcpy(sbt_ptr_iterator, shader_handle_storage.data() + offset, group_handle_size);
         sbt_ptr_iterator += hit_region.stride;
-        offset += group_handle_size;
+        offset += hit_region.stride;
     }
 
     // Callable shaders (base ptr + raygen size + miss size + hit size)
@@ -802,7 +799,7 @@ auto daxa_ray_tracing_pipeline_create_default_sbt(daxa_RayTracingPipeline pipeli
     {
         std::memcpy(sbt_ptr_iterator, shader_handle_storage.data() + offset, group_handle_size);
         sbt_ptr_iterator += callable_region.stride;
-        offset += group_handle_size;
+        offset += callable_region.stride;
     }
 
     return DAXA_RESULT_SUCCESS;
