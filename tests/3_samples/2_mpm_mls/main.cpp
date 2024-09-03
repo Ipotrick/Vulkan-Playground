@@ -118,7 +118,7 @@ struct App : BaseApp<App>
     daxa_u32 triangle_count = 0;
 
     const u32 cuboid_mins [MAX_RIGID_BODY_COUNT*3] = {
-        40, 25, 40,
+        100, 25, 40,
         70, 25, 70,
         40, 25, 100,
         0, 0, 0,

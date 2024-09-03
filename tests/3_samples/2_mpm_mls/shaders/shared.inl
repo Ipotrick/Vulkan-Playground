@@ -10,12 +10,14 @@
 
 #include "daxa/daxa.inl"
 
-#define DAXA_SIMULATION_WATER_MPM_MLS
+// #define DAXA_SIMULATION_WATER_MPM_MLS
 #if !defined(DAXA_SIMULATION_WATER_MPM_MLS)
-// #define DAXA_SIMULATION_MANY_MATERIALS
 #define DAXA_RIGID_BODY_FLAG
+// #define DAXA_SIMULATION_MANY_MATERIALS
+#if defined(DAXA_RIGID_BODY_FLAG)
 // WARN: rigid bodies don't collide with each other
-// #define DAXA_SIMULATION_MANY_RIGID_BODIES
+#define DAXA_SIMULATION_MANY_RIGID_BODIES
+#endif // DAXA_RIGID_BODY_FLAG
 #endif // DAXA_SIMULATION_WATER_MPM_MLS
 
 #if defined(DAXA_RIGID_BODY_FLAG)
@@ -27,8 +29,8 @@
 #define QUALITY 2
 #define SIM_LOOP_COUNT 30
 // #define NUM_PARTICLES 8192 * QUALITY * QUALITY * QUALITY
-#define NUM_PARTICLES 16384 * QUALITY * QUALITY * QUALITY
-// #define NUM_PARTICLES 32768 * QUALITY * QUALITY * QUALITY
+// #define NUM_PARTICLES 16384 * QUALITY * QUALITY * QUALITY
+#define NUM_PARTICLES 32768 * QUALITY * QUALITY * QUALITY
 // #define NUM_PARTICLES 65536 * QUALITY * QUALITY * QUALITY
 // #define NUM_PARTICLES 131072 * QUALITY * QUALITY * QUALITY
 // #define NUM_PARTICLES 262144 * QUALITY * QUALITY * QUALITY
@@ -304,6 +306,62 @@ const daxa_f32vec3 SNOW_LOW_SPEED_COLOR = daxa_f32vec3(0.5f, 0.5f, 0.6f);
 const daxa_f32vec3 JELLY_HIGH_SPEED_COLOR = daxa_f32vec3(1.0f, 0.5f, 0.5f);
 const daxa_f32vec3 JELLY_LOW_SPEED_COLOR = daxa_f32vec3(0.7f, 0.2f, 0.2f);
 
+
+
+void check_boundaries(inout daxa_f32vec3 pos, inout Particle particle, daxa_f32 wall_min, daxa_f32 wall_max) {
+  // Check boundaries
+  if (pos.x < wall_min)
+  {
+      pos.x = wall_min;
+      particle.v.x = -particle.v.x;
+  }
+  else if (pos.x > wall_max)
+  {
+      pos.x = wall_max;
+      particle.v.x = -particle.v.x;
+  }
+
+  if (pos.y < wall_min)
+  {
+      pos.y = wall_min;
+      particle.v.y = -particle.v.y;
+  }
+  else if (pos.y > wall_max)
+  {
+      pos.y = wall_max;
+      particle.v.y = -particle.v.y;
+  }
+
+  if (pos.z < wall_min)
+  {
+      pos.z = wall_min;
+      particle.v.z = -particle.v.z;
+  }
+  else if (pos.z > wall_max)
+  {
+      pos.z = wall_max;
+      particle.v.z = -particle.v.z;
+  }
+}
+
+
+void particle_apply_external_force(inout Particle particle, daxa_f32vec3 pos, daxa_f32 wall_min, daxa_f32 wall_max, daxa_f32vec3 mouse_target, daxa_f32 mouse_radius, daxa_u32 flags) {
+  // Repulsion force
+  if (((flags & MOUSE_TARGET_FLAG) == MOUSE_TARGET_FLAG) &&
+  ((flags & PARTICLE_FORCE_ENABLED_FLAG) == PARTICLE_FORCE_ENABLED_FLAG))
+  {
+      if (all(greaterThan(mouse_target, daxa_f32vec3(wall_min))) &&
+          all(lessThan(mouse_target, daxa_f32vec3(wall_max))))
+      {
+          daxa_f32vec3 dist = pos - mouse_target;
+          if (dot(dist, dist) < mouse_radius * mouse_radius)
+          {
+              daxa_f32vec3 force = normalize(dist) * 0.05f;
+              particle.v += force;
+          }
+      }
+  }
+}
 
 
 #if defined(GL_core_profile) // GLSL

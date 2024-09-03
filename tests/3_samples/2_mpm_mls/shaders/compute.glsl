@@ -658,6 +658,12 @@ void main()
   Particle particle = get_particle_by_index(pixel_i_x);
 
   Aabb aabb = get_aabb_by_index(pixel_i_x);
+  
+  daxa_f32vec3 center = (aabb.min + aabb.max) * 0.5f;
+  
+  if(any(lessThan(center, vec3(0))) || any(greaterThanEqual(center, vec3(1)))) {
+      return;
+  }
 
   daxa_f32vec3 w[3];
   daxa_f32vec3 fx;
@@ -715,15 +721,21 @@ void main()
   float p_mass = 1.0f;
 
   // fluid parameters
-  const float rest_density = 0.2f;
+  const float rest_density = 4.0f;
   const float dynamic_viscosity = 0.1f;
   // equation of state
-  const float eos_stiffness = 4.0f;
+  const float eos_stiffness = 25.0f;
   const float eos_power = 4;
 
   Particle particle = get_particle_by_index(pixel_i_x);
 
   Aabb aabb = get_aabb_by_index(pixel_i_x);
+  
+  daxa_f32vec3 center = (aabb.min + aabb.max) * 0.5f;
+  
+  if(any(lessThan(center, vec3(0))) || any(greaterThanEqual(center, vec3(1)))) {
+      return;
+  }
 
   daxa_f32vec3 w[3];
   daxa_f32vec3 fx;
@@ -959,6 +971,7 @@ void main()
   float inv_dx = deref(config).inv_dx;
   float dt = deref(config).dt;
   uint64_t frame_number = deref(config).frame_number;
+  float p_mass = 1.0f;
 
   Particle particle = get_particle_by_index(pixel_i_x);
   Aabb aabb = get_aabb_by_index(pixel_i_x);
@@ -1002,6 +1015,21 @@ void main()
 
   aabb.min += dt * particle.v;
   aabb.max += dt * particle.v;
+  
+  vec3 pos = (aabb.min + aabb.max) * 0.5f;
+  const float wall_min = 3 * dx;
+  const float wall_max = (float(deref(config).grid_dim.x) - 3) * dx;
+
+  check_boundaries(pos, particle, wall_min, wall_max);
+  
+  daxa_BufferPtr(GpuStatus) status = daxa_BufferPtr(GpuStatus)(daxa_id_to_address(p.status_buffer_id));
+
+  daxa_u32 flags = deref(status).flags;
+  daxa_f32 mouse_radius = deref(config).mouse_radius;
+  daxa_f32vec3 mouse_target = deref(status).mouse_target;
+
+  // Repulsion force
+  particle_apply_external_force(particle, pos, wall_min, wall_max, mouse_target, mouse_radius, flags);
 
   set_aabb_by_index(pixel_i_x, aabb);
 
@@ -1024,9 +1052,9 @@ void main()
   Particle particle = get_particle_by_index(pixel_i_x);
   Aabb aabb = get_aabb_by_index(pixel_i_x);
 
-  daxa_f32vec3 center = (aabb.min + aabb.max) * 0.5f;
+  vec3 pos_x = (aabb.min + aabb.max) * 0.5f;
   
-  if(any(lessThan(center, vec3(0))) || any(greaterThanEqual(center, vec3(1)))) {
+  if(any(lessThan(pos_x, vec3(0))) || any(greaterThanEqual(pos_x, vec3(1)))) {
       return;
   }
 
@@ -1054,8 +1082,6 @@ void main()
 
   uvec3 array_grid = uvec3(base_coord);
 
-  vec3 pos_x = (aabb.min + aabb.max) * 0.5f;
-
   for (uint i = 0; i < 3; ++i)
   {
       for (uint j = 0; j < 3; ++j)
@@ -1075,7 +1101,6 @@ void main()
               float weight = w[i].x * w[j].y * w[k].z;
 
               vec3 vel_value;
-
 #if defined(DAXA_RIGID_BODY_FLAG)
               
               vel_value = get_cell_by_index(index).v;
@@ -1134,59 +1159,18 @@ void main()
   aabb.min += dt * particle.v;
   aabb.max += dt * particle.v;
 
-  vec3 pos = (aabb.min + aabb.max) * 0.5f;
+  daxa_f32vec3 pos = (aabb.min + aabb.max) * 0.5f;
   const float wall_min = 3 * dx;
-  float wall_max = (float(deref(config).grid_dim.x) - 3) * dx;
+  const float wall_max = (float(deref(config).grid_dim.x) - 3) * dx;
 
-  // Check boundaries
-  if (pos.x < wall_min)
-  {
-      pos.x = wall_min;
-      particle.v.x = -particle.v.x;
-  }
-  else if (pos.x > wall_max)
-  {
-      pos.x = wall_max;
-      particle.v.x = -particle.v.x;
-  }
+  check_boundaries(pos, particle, wall_min, wall_max);
 
-  if (pos.y < wall_min)
-  {
-      pos.y = wall_min;
-      particle.v.y = -particle.v.y;
-  }
-  else if (pos.y > wall_max)
-  {
-      pos.y = wall_max;
-      particle.v.y = -particle.v.y;
-  }
-
-  if (pos.z < wall_min)
-  {
-      pos.z = wall_min;
-      particle.v.z = -particle.v.z;
-  }
-  else if (pos.z > wall_max)
-  {
-      pos.z = wall_max;
-      particle.v.z = -particle.v.z;
-  }
+  daxa_u32 flags = deref(status).flags;
+  daxa_f32 mouse_radius = deref(config).mouse_radius;
+  daxa_f32vec3 mouse_target = deref(status).mouse_target;
 
   // Repulsion force
-  if (((deref(status).flags & MOUSE_TARGET_FLAG) == MOUSE_TARGET_FLAG) &&
-  ((deref(status).flags & PARTICLE_FORCE_ENABLED_FLAG) == PARTICLE_FORCE_ENABLED_FLAG))
-  {
-      if (all(greaterThan(deref(status).mouse_target, vec3(wall_min))) &&
-          all(lessThan(deref(status).mouse_target, vec3(wall_max))))
-      {
-          vec3 dist = pos - deref(status).mouse_target;
-          if (dot(dist, dist) < deref(config).mouse_radius * deref(config).mouse_radius)
-          {
-              vec3 force = normalize(dist) * 0.05f;
-              particle.v += force;
-          }
-      }
-  }
+  particle_apply_external_force(particle, pos, wall_min, wall_max, mouse_target, mouse_radius, flags);
 
   float max_v = deref(config).max_velocity;
 
