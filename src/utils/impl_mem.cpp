@@ -16,8 +16,8 @@ namespace daxa
               .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_SEQUENTIAL_WRITE | (a_info.use_bar_memory ? daxa::MemoryFlagBits::DEDICATED_MEMORY : daxa::MemoryFlagBits::NONE),
               .name = this->m_info.name,
           })},
-          buffer_device_address{this->m_info.device.get_device_address(this->m_buffer).value()},
-          buffer_host_address{this->m_info.device.get_host_address(this->m_buffer).value()}
+          buffer_device_address{this->m_info.device.device_address(this->m_buffer).value()},
+          buffer_host_address{this->m_info.device.buffer_host_address(this->m_buffer).value()}
     {
     }
 

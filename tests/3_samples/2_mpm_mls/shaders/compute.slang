@@ -305,5 +305,6 @@ void entry_sphere_tracing(uint3 pixel_i : SV_DispatchThreadID)
         col = float3(0.3, 0.8, 1); // Sphere color
     }
 
-    RWTexture2D<float>::get(p.image_id)[pixel_i.xy].xyz = col;
+    RWTexture2D<float3> tex = daxa::storage_images[p.image_id.index()];
+    tex[pixel_i.xy] = col;
 }

@@ -10,7 +10,7 @@ struct GpuInput
 
 struct ComputePush
 {
-    daxa::ImageViewId image_id;
+    daxa::RWTexture2DId<daxa_f32vec4> image_id;
     daxa::BufferId input_buffer_id;
     daxa_BufferPtr(GpuInput) ptr;
     daxa_u32vec2 frame_dim;

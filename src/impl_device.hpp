@@ -8,8 +8,11 @@
 #include "impl_swapchain.hpp"
 #include "impl_gpu_resources.hpp"
 #include "impl_timeline_query.hpp"
+#include "impl_features.hpp"
 
 #include <daxa/c/device.h>
+
+#include <atomic>
 
 using namespace daxa;
 
@@ -19,13 +22,19 @@ struct SubmitZombie
     std::vector<daxa_TimelineSemaphore> timeline_semaphores = {};
 };
 
+static inline constexpr u64 MAX_PENDING_SUBMISSIONS_PER_QUEUE = 64;
+static inline constexpr u64 MAIN_QUEUE_INDEX = 0;
+static inline constexpr u64 FIRST_COMPUTE_QUEUE_IDX = 1;
+static inline constexpr u64 FIRST_TRANSFER_QUEUE_IDX = FIRST_COMPUTE_QUEUE_IDX + DAXA_MAX_COMPUTE_QUEUE_COUNT;
+
 struct daxa_ImplDevice final : public ImplHandle
 {
     // General data:
     daxa_Instance instance = {};
-    DeviceInfo info = {};
+    DeviceInfo2 info = {};
     VkPhysicalDevice vk_physical_device = {};
-    daxa_DeviceProperties physical_device_properties = {};
+    daxa_DeviceProperties properties = {};
+    PhysicalDeviceFeaturesStruct physical_device_features = {};
     VkDevice vk_device = {};
     VmaAllocator vma_allocator = {};
 
@@ -36,7 +45,6 @@ struct daxa_ImplDevice final : public ImplHandle
     PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectNameEXT = {};
     PFN_vkCmdBeginDebugUtilsLabelEXT vkCmdBeginDebugUtilsLabelEXT = {};
     PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabelEXT = {};
-    PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR = {};
 
     // Mesh shader:
     PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT = {};
@@ -73,41 +81,78 @@ struct daxa_ImplDevice final : public ImplHandle
     VmaAllocation vk_null_image_vma_allocation = {};
 
     // Command Buffer/Pool recycling:
-    std::mutex main_queue_command_pool_buffer_recycle_mtx = {};
-    CommandPoolPool buffer_pool_pool = {};
+    // Index with daxa_QueueFamily.
+    std::array<CommandPoolPool, 3> command_pool_pools = {};
 
     // Gpu Shader Resource Object table:
     GPUShaderResourceTable gpu_sro_table = {};
 
-    // Main queue:
-    VkQueue main_queue_vk_queue = {};
-    u32 main_queue_family_index = {};
-    // Timelines are used to track how far ahead the gpu is before the cpu.
-    // This difference between timelines is used to delay resource destruction.
-    // Resources are destroyed when the gpu timeline reaches the value of the cpu timeline at the destruction of the resource.
-    // This check is performed in collect_garbage, which is either manually called or automatically in submit, present or the device destruction.
-    std::atomic_uint64_t main_queue_cpu_timeline = {};
-    VkSemaphore vk_main_queue_gpu_timeline_semaphore = {};
-    // When a resources refcount reaches 0 it becomes a zombie. A zombie is `metadata required for destruction` + `cpu timeline value at the point in time of destruction`.
-    // collect_garbage checks if the gpu timeline reached the zombies timeline value and destroys the zombies.
-    // TODO: replace with lockless queues.
-    std::recursive_mutex main_queue_zombies_mtx = {};
-    std::deque<std::pair<u64, CommandRecorderZombie>> main_queue_command_list_zombies = {};
-    std::deque<std::pair<u64, BufferId>> main_queue_buffer_zombies = {};
-    std::deque<std::pair<u64, ImageId>> main_queue_image_zombies = {};
-    std::deque<std::pair<u64, ImageViewId>> main_queue_image_view_zombies = {};
-    std::deque<std::pair<u64, SamplerId>> main_queue_sampler_zombies = {};
-    std::deque<std::pair<u64, TlasId>> main_queue_tlas_zombies = {};
-    std::deque<std::pair<u64, BlasId>> main_queue_blas_zombies = {};
-    std::deque<std::pair<u64, SemaphoreZombie>> main_queue_semaphore_zombies = {};
-    std::deque<std::pair<u64, EventZombie>> main_queue_split_barrier_zombies = {};
-    std::deque<std::pair<u64, PipelineZombie>> main_queue_pipeline_zombies = {};
-    std::deque<std::pair<u64, TimelineQueryPoolZombie>> main_queue_timeline_query_pool_zombies = {};
-    std::deque<std::pair<u64, MemoryBlockZombie>> main_queue_memory_block_zombies = {};
+    // Every submit to any queue increments the global submit timeline
+    // Each queue stores a mapping between local submit index and global submit index for each of their in flight submits.
+    // When destroying a resource it becomes a zombie, the zombie remembers the current global timeline value.
+    // When collect garbage is called, the zombies timeline values are compared against submits running in all queues.
+    // If the zombies global submit index is smaller then global index of all submits currently in flight (on all queues), we can safely clean the resource up.
+    std::atomic_uint64_t global_submit_timeline = {};
+    std::recursive_mutex zombies_mtx = {};
+    std::deque<std::pair<u64, CommandRecorderZombie>> command_list_zombies = {};
+    std::deque<std::pair<u64, BufferId>> buffer_zombies = {};
+    std::deque<std::pair<u64, ImageId>> image_zombies = {};
+    std::deque<std::pair<u64, ImageViewId>> image_view_zombies = {};
+    std::deque<std::pair<u64, SamplerId>> sampler_zombies = {};
+    std::deque<std::pair<u64, TlasId>> tlas_zombies = {};
+    std::deque<std::pair<u64, BlasId>> blas_zombies = {};
+    std::deque<std::pair<u64, SemaphoreZombie>> semaphore_zombies = {};
+    std::deque<std::pair<u64, EventZombie>> split_barrier_zombies = {};
+    std::deque<std::pair<u64, PipelineZombie>> pipeline_zombies = {};
+    std::deque<std::pair<u64, TimelineQueryPoolZombie>> timeline_query_pool_zombies = {};
+    std::deque<std::pair<u64, MemoryBlockZombie>> memory_block_zombies = {};
+
+    // Queues
+    struct ImplQueue
+    {
+        // Constant after initialization:
+        daxa_QueueFamily family = {};
+        u32 queue_index = {};
+        u32 vk_queue_family_index = ~0u;
+        VkQueue vk_queue = {};
+        VkSemaphore gpu_queue_local_timeline = {};
+        // atomically synchronized:
+        std::atomic_uint64_t latest_pending_submit_timeline_value = {};
+
+        auto initialize(VkDevice vk_device, u32 queue_family_index, u32 queue_index) -> daxa_Result;
+        void cleanup(VkDevice device);
+        auto get_oldest_pending_submit(VkDevice vk_device, std::optional<u64> & out) -> daxa_Result;
+    };
+    std::array<ImplQueue, DAXA_MAX_COMPUTE_QUEUE_COUNT + DAXA_MAX_TRANSFER_QUEUE_COUNT + 1> queues = {
+        ImplQueue{DAXA_QUEUE_FAMILY_MAIN, 0},
+        ImplQueue{DAXA_QUEUE_FAMILY_COMPUTE, 0},
+        ImplQueue{DAXA_QUEUE_FAMILY_COMPUTE, 1},
+        ImplQueue{DAXA_QUEUE_FAMILY_COMPUTE, 2},
+        ImplQueue{DAXA_QUEUE_FAMILY_COMPUTE, 3},
+        ImplQueue{DAXA_QUEUE_FAMILY_COMPUTE, 4},
+        ImplQueue{DAXA_QUEUE_FAMILY_COMPUTE, 5},
+        ImplQueue{DAXA_QUEUE_FAMILY_COMPUTE, 6},
+        ImplQueue{DAXA_QUEUE_FAMILY_COMPUTE, 7},
+        ImplQueue{DAXA_QUEUE_FAMILY_TRANSFER, 0},
+        ImplQueue{DAXA_QUEUE_FAMILY_TRANSFER, 1},
+    };
+
+    auto get_queue(daxa_Queue queue) -> ImplQueue&;
+    auto valid_queue(daxa_Queue queue) -> bool;
+
+    struct ImplQueueFamily
+    {
+        u32 queue_count = {};
+        u32 vk_index = ~0u;
+    };
+    std::array<ImplQueueFamily, 3> queue_families = {};
+
+    std::array<u32,3> valid_vk_queue_families = {};
+    u32 valid_vk_queue_family_count = {};
 
     auto validate_image_slice(daxa_ImageMipArraySlice const & slice, daxa_ImageId id) -> daxa_ImageMipArraySlice;
     auto validate_image_slice(daxa_ImageMipArraySlice const & slice, daxa_ImageViewId id) -> daxa_ImageMipArraySlice;
-    auto new_swapchain_image(VkImage swapchain_image, VkFormat format, u32 index, ImageUsageFlags usage, ImageInfo const & image_info) -> std::pair<daxa_Result, ImageId>;
+    auto new_swapchain_image(VkImage swapchain_image, VkFormat format, u32 index, ImageUsageFlags usage, ImageInfo const & image_info, ImageId * out) -> daxa_Result;
 
     auto slot(daxa_BufferId id) const -> ImplBufferSlot const &;
     auto slot(daxa_ImageId id) const -> ImplImageSlot const &;
@@ -130,8 +175,7 @@ struct daxa_ImplDevice final : public ImplHandle
     void zombify_tlas(TlasId id);
     void zombify_blas(BlasId id);
 
-    // TODO: Give physical device in info so that this function can be removed.
-    // TODO: Better device selection.
+    static auto create_2(daxa_Instance instance, daxa_DeviceInfo2 const& info, ImplPhysicalDevice const & physical_device, daxa_DeviceProperties const & properties, daxa_Device device) -> daxa_Result;
     static auto create(daxa_Instance instance, daxa_DeviceInfo const & info, VkPhysicalDevice physical_device, daxa_Device device) -> daxa_Result;
     static void zero_ref_callback(ImplHandle const * handle);
 };

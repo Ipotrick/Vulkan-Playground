@@ -11,13 +11,9 @@
 
 #include <array>
 #include <string_view>
-#include <cstdint>
 #include <cstring>
-#include <iostream>
 #include <type_traits>
 #include <span>
-#include <memory>
-#include <vector>
 
 #include <daxa/core.hpp>
 #include <daxa/device.hpp>
@@ -287,12 +283,53 @@ namespace daxa
         MAX_ENUM = 0x7fffffff,
     };
 
+    struct TaskBufferAttachmentIndex
+    {
+        u32 value;
+    };
+
+    struct TaskBlasAttachmentIndex
+    {
+        u32 value;
+    };
+
+    struct TaskTlasAttachmentIndex
+    {
+        u32 value;
+    };
+
+    struct TaskImageAttachmentIndex
+    {
+        u32 value;
+    };
+
+    template <typename T>
+    concept TaskBufferIndexOrView = std::is_same_v<T, TaskBufferAttachmentIndex> || std::is_same_v<T, TaskBufferView>;
+    template <typename T>
+    concept TaskBlasIndexOrView = std::is_same_v<T, TaskBlasAttachmentIndex> || std::is_same_v<T, TaskBlasView>;
+    template <typename T>
+    concept TaskTlasIndexOrView = std::is_same_v<T, TaskTlasAttachmentIndex> || std::is_same_v<T, TaskTlasView>;
+    template <typename T>
+    concept TaskImageIndexOrView = std::is_same_v<T, TaskImageAttachmentIndex> || std::is_same_v<T, TaskImageView>;
+    template <typename T>
+    concept TaskIndexOrView = TaskBufferIndexOrView<T> || TaskBlasIndexOrView<T> || TaskTlasIndexOrView<T> || TaskImageIndexOrView<T>;
+    template <typename T>
+    concept TaskBufferBlasOrTlasIndexOrView = TaskBufferIndexOrView<T> || TaskBlasIndexOrView<T> || TaskTlasIndexOrView<T>;
+
+    template <typename T>
+    concept TaskAttachmentIndex =
+        std::is_same_v<T, TaskBufferAttachmentIndex> ||
+        std::is_same_v<T, TaskBlasAttachmentIndex> ||
+        std::is_same_v<T, TaskTlasAttachmentIndex> ||
+        std::is_same_v<T, TaskImageAttachmentIndex>;
+
     struct UndefinedAttachment
     {
     };
 
     struct TaskBufferAttachment
     {
+        using INDEX_TYPE = typename TaskBufferAttachmentIndex;
         char const * name = {};
         TaskBufferAccess access = {};
         u8 shader_array_size = {};
@@ -301,18 +338,22 @@ namespace daxa
 
     struct TaskBlasAttachment
     {
+        using INDEX_TYPE = typename TaskBlasAttachmentIndex;
         char const * name = {};
         TaskBlasAccess access = {};
     };
 
     struct TaskTlasAttachment
     {
+        using INDEX_TYPE = typename TaskTlasAttachmentIndex;
         char const * name = {};
         TaskTlasAccess access = {};
+        bool shader_as_address = {};
     };
 
     struct TaskImageAttachment
     {
+        using INDEX_TYPE = typename TaskImageAttachmentIndex;
         char const * name = {};
         TaskImageAccess access = {};
         ImageViewType view_type = ImageViewType::MAX_ENUM;
@@ -352,31 +393,6 @@ namespace daxa
         u8 shader_array_size = {};
         TaskHeadImageArrayType shader_array_type = {};
         TaskImageView view = {};
-    };
-
-    struct TaskBufferAttachmentIndex
-    {
-        u32 value;
-    };
-
-    struct TaskBlasAttachmentIndex
-    {
-        u32 value;
-    };
-
-    struct TaskTlasAttachmentIndex
-    {
-        u32 value;
-    };
-
-    struct TaskImageAttachmentIndex
-    {
-        u32 value;
-    };
-
-    template <typename T>
-    concept TaskAttachmentIndex = requires(T t) {
-        std::is_same_v<T, TaskBufferAttachmentIndex> || std::is_same_v<T, TaskImageAttachmentIndex>;
     };
 
     struct TaskAttachment
@@ -431,7 +447,7 @@ namespace daxa
             {
             case TaskAttachmentType::BUFFER: return value.buffer.shader_array_size * 8;
             case TaskAttachmentType::BLAS: return 0;
-            case TaskAttachmentType::TLAS: return 1;
+            case TaskAttachmentType::TLAS: return 8;
             case TaskAttachmentType::IMAGE: return value.image.shader_array_size * (value.image.shader_as_index ? 4 : 8);
             default: return 0;
             }
@@ -568,9 +584,9 @@ namespace daxa
         std::span<TaskAttachmentInfo const> attachment_infos = {};
         // optional:
         TransferMemoryPool * allocator = {};
-        std::span<std::byte> attachment_shader_blob = {};
+        std::span<std::byte const> attachment_shader_blob = {};
 
-        void assign_attachment_shader_blob(std::span<u8> arr) const
+        [[deprecated("Use AttachmentBlob(std::span<std::byte const>) constructor instead")]] void assign_attachment_shader_blob(std::span<std::byte> arr) const
         {
             std::memcpy(
                 arr.data(),
@@ -578,15 +594,32 @@ namespace daxa
                 attachment_shader_blob.size());
         }
 
-        TaskBufferAttachmentInfo const & get(TaskBufferAttachmentIndex index) const;
-        TaskBufferAttachmentInfo const & get(TaskBufferView view) const;
-        TaskBlasAttachmentInfo const & get(TaskBlasAttachmentIndex index) const;
-        TaskBlasAttachmentInfo const & get(TaskBlasView view) const;
-        TaskTlasAttachmentInfo const & get(TaskTlasAttachmentIndex index) const;
-        TaskTlasAttachmentInfo const & get(TaskTlasView view) const;
-        TaskImageAttachmentInfo const & get(TaskImageAttachmentIndex index) const;
-        TaskImageAttachmentInfo const & get(TaskImageView view) const;
-        TaskAttachmentInfo const & get(usize index) const;
+        auto get(TaskBufferAttachmentIndex index) const -> TaskBufferAttachmentInfo const &;
+        auto get(TaskBufferView view) const -> TaskBufferAttachmentInfo const &;
+        auto get(TaskBlasAttachmentIndex index) const -> TaskBlasAttachmentInfo const &;
+        auto get(TaskBlasView view) const -> TaskBlasAttachmentInfo const &;
+        auto get(TaskTlasAttachmentIndex index) const -> TaskTlasAttachmentInfo const &;
+        auto get(TaskTlasView view) const -> TaskTlasAttachmentInfo const &;
+        auto get(TaskImageAttachmentIndex index) const -> TaskImageAttachmentInfo const &;
+        auto get(TaskImageView view) const -> TaskImageAttachmentInfo const &;
+        auto get(usize index) const -> TaskAttachmentInfo const &;
+
+        auto info(TaskIndexOrView auto tresource, u32 array_index = 0)
+        {
+            return this->device.info(this->get(tresource).ids[array_index]);
+        }
+        auto image_view_info(TaskImageIndexOrView auto timage, u32 array_index = 0) -> Optional<ImageViewInfo>
+        {
+            return this->device.image_view_info(this->get(timage).view_ids[array_index]);
+        }
+        auto device_address(TaskBufferBlasOrTlasIndexOrView auto tresource, u32 array_index = 0) -> Optional<DeviceAddress>
+        {
+            return this->device.device_address(this->get(tresource).ids[array_index]);
+        }
+        auto buffer_host_address(TaskBufferIndexOrView auto tbuffer, u32 array_index = 0) -> Optional<std::byte *>
+        {
+            return this->device.buffer_host_address(this->get(tbuffer).ids[array_index]);
+        }
     };
 
     using TaskViewVariant = Variant<
@@ -597,26 +630,30 @@ namespace daxa
 
     inline namespace detail
     {
-        template <typename T>
-        constexpr auto calculate_attachment_shader_blob_size(std::span<T const> attachments) -> u32
+        struct AsbSizeAlignment
         {
-            u32 total = 0;
-            for (auto const & attach : attachments)
+            u32 size = {};
+            u32 alignment = {};
+        };
+        constexpr auto get_asb_size_and_alignment(auto const & attachment_array) -> AsbSizeAlignment
+        {
+            AsbSizeAlignment size_align = {};
+            auto align_up = [](auto value, auto align) -> u32
             {
-                auto attach_size = attach.shader_array_size();
-                auto const align = attach.shader_element_align();
-                // up-align
-                if (attach_size != 0)
-                {
-                    auto align_offset = total % align;
-                    if (align_offset != 0)
-                    {
-                        total += align - align_offset;
-                    }
-                }
-                total += attach_size;
+                if (value == 0 || align == 0)
+                    return 0;
+                return (value + align - 1u) / align * align;
+            };
+            for (auto const & attachment_decl : attachment_array)
+            {
+                if (attachment_decl.shader_array_size() == 0 || attachment_decl.shader_element_align() == 0)
+                    continue;
+                size_align.size = align_up(size_align.size, attachment_decl.shader_element_align());
+                size_align.alignment = std::max(size_align.alignment, attachment_decl.shader_element_align());
+                size_align.size += attachment_decl.shader_array_size();
             }
-            return total;
+            size_align.size = align_up(size_align.size, size_align.alignment);
+            return size_align;
         }
     } // namespace detail
 
@@ -626,7 +663,7 @@ namespace daxa
         /// TODO(pahrens): optimize:
         constexpr virtual auto attachment_shader_blob_size() const -> u32
         {
-            return detail::calculate_attachment_shader_blob_size(attachments());
+            return detail::get_asb_size_and_alignment(attachments()).size;
         };
         constexpr virtual auto attachments() -> std::span<TaskAttachmentInfo> = 0;
         constexpr virtual auto attachments() const -> std::span<TaskAttachmentInfo const> = 0;
@@ -690,42 +727,19 @@ namespace daxa
     struct PartialTask : IPartialTask
     {
         /// NOTE: Used to add attachments and declate named constant indices to the added attachment.
-        static auto add_attachment(TaskBufferAttachment const & attach) -> TaskBufferAttachmentIndex
+        template <TaskAttachmentIndex IndexT>
+        static auto add_attachment(IndexT const & attach) -> IndexT::INDEX_TYPE
         {
-            attachment_decl_array.at(cur_attach_index) = attach;
-            return TaskBufferAttachmentIndex{cur_attach_index++};
-        }
-        /// NOTE: Used to add attachments and declate named constant indices to the added attachment.
-        static auto add_attachment(TaskBlasAttachment const & attach) -> TaskBlasAttachmentIndex
-        {
-            attachment_decl_array.at(cur_attach_index) = attach;
-            return TaskBlasAttachmentIndex{cur_attach_index++};
-        }
-        /// NOTE: Used to add attachments and declate named constant indices to the added attachment.
-        static auto add_attachment(TaskTlasAttachment const & attach) -> TaskTlasAttachmentIndex
-        {
-            attachment_decl_array.at(cur_attach_index) = attach;
-            return TaskTlasAttachmentIndex{cur_attach_index++};
-        }
-        /// NOTE: Used to add attachments and declate named constant indices to the added attachment.
-        static auto add_attachment(TaskImageAttachment const & attach) -> TaskImageAttachmentIndex
-        {
-            attachment_decl_array.at(cur_attach_index) = attach;
-            return TaskImageAttachmentIndex{cur_attach_index++};
+            declared_attachments.at(cur_attach_index) = attach;
+            return {cur_attach_index++};
         }
         static auto name() -> std::string_view { return std::string_view{NAME.value, NAME.SIZE}; }
         static auto attachments() -> std::span<TaskAttachment const>
         {
-            return attachment_decl_array;
+            return declared_attachments;
         }
-
-        static auto attachment_shader_blob_size() -> u32
-        {
-            return detail::calculate_attachment_shader_blob_size(attachments());
-        };
-
         static constexpr inline usize ATTACH_COUNT = ATTACHMENT_COUNT;
-        static inline std::array<TaskAttachment, ATTACHMENT_COUNT> attachment_decl_array = {};
+        static inline std::array<TaskAttachment, ATTACHMENT_COUNT> declared_attachments = {};
         using AttachmentViews = daxa::AttachmentViews<ATTACHMENT_COUNT>;
 
       private:
@@ -775,158 +789,108 @@ namespace daxa
     ⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢈⡙⠓⠻⠶⠽⢮⣶⣥⣷⣭⣾⣥⣯⡵⠯⠼⠗⠛⠋⣉⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
     */
 
-    /// @brief Calculates size of a shader blob.
-    /// @param t task head attachment struct.
-    /// @return size of shader blob.
-    consteval auto get_asb_size(auto const & as) -> usize
-    {
-        u32 size = 0;
-        u32 total_align = 0;
-        auto align_up = [](auto value, auto align) -> u32
-        {
-            if (value == 0)
-                return 0;
-            if (align == 0)
-                return 0;
-            return (value + align - 1u) / align * align;
-        };
-        for (auto const & attachment_decl : as.attachment_decl_array)
-        {
-            if (attachment_decl.shader_array_size() == 0)
-                continue;
-            if (attachment_decl.shader_element_align() == 0)
-                return 0; // Error case!
-            size = align_up(size, attachment_decl.shader_element_align());
-            total_align = std::max(total_align, attachment_decl.shader_element_align());
-            size += attachment_decl.shader_array_size();
-        }
-        size = align_up(size, total_align);
-        return static_cast<usize>(size);
-    }
-
-    /// @brief Calculates alignment of a shader blob.
-    /// @param t task head attachment struct.
-    /// @return alignment of shader blob.
-    consteval auto get_asb_alignment(auto const & as) -> usize
-    {
-        u32 total_align = 0;
-        for (auto const & attachment_decl : as.attachment_decl_array)
-        {
-            if (attachment_decl.shader_array_size() == 0)
-                continue;
-            if (attachment_decl.shader_element_align() == 0)
-                return 0; // Error case!
-            total_align = std::max(total_align, attachment_decl.shader_element_align());
-        }
-        return static_cast<usize>(total_align);
-    }
-
-#define DAXA_DECL_TASK_HEAD_BEGIN(HEAD_NAME)                                         \
-    namespace HEAD_NAME                                                              \
-    {                                                                                \
-        static inline constexpr char NAME[] = #HEAD_NAME;                            \
-        template <daxa::usize ATTACHMENT_COUNT>                                      \
-        struct AttachmentsStruct                                                     \
-        {                                                                            \
-            daxa::u32 declared_attachment_count = {};                                \
-                                                                                     \
-            auto constexpr add_attachment(daxa::TaskBufferAttachment attachment)     \
-                -> daxa::TaskBufferAttachmentIndex                                   \
-            {                                                                        \
-                attachment_decl_array.at(declared_attachment_count) = attachment;    \
-                return daxa::TaskBufferAttachmentIndex{declared_attachment_count++}; \
-            }                                                                        \
-            auto constexpr add_attachment(daxa::TaskBlasAttachment attachment)       \
-                -> daxa::TaskBlasAttachmentIndex                                     \
-            {                                                                        \
-                attachment_decl_array.at(declared_attachment_count) = attachment;    \
-                return daxa::TaskBlasAttachmentIndex{declared_attachment_count++};   \
-            }                                                                        \
-            auto constexpr add_attachment(daxa::TaskTlasAttachment attachment)       \
-                -> daxa::TaskTlasAttachmentIndex                                     \
-            {                                                                        \
-                attachment_decl_array.at(declared_attachment_count) = attachment;    \
-                return daxa::TaskTlasAttachmentIndex{declared_attachment_count++};   \
-            }                                                                        \
-            auto constexpr add_attachment(daxa::TaskImageAttachment attachment)      \
-                -> daxa::TaskImageAttachmentIndex                                    \
-            {                                                                        \
-                attachment_decl_array.at(declared_attachment_count) = attachment;    \
-                return daxa::TaskImageAttachmentIndex{declared_attachment_count++};  \
-            }                                                                        \
-                                                                                     \
-            std::array<daxa::TaskAttachment, ATTACHMENT_COUNT> attachment_decl_array = {};
+#define DAXA_DECL_TASK_HEAD_BEGIN(HEAD_NAME)                                                    \
+    namespace HEAD_NAME                                                                         \
+    {                                                                                           \
+        static inline constexpr char NAME[] = #HEAD_NAME;                                       \
+        template <daxa::usize ATTACHMENT_COUNT>                                                 \
+        struct AttachmentsStruct                                                                \
+        {                                                                                       \
+            daxa::u32 declared_attachments_count = {};                                          \
+            std::array<daxa::TaskAttachment, ATTACHMENT_COUNT> declared_attachments = {}; \
+                                                                                                \
+            auto constexpr add_attachment(auto attachment) -> daxa::u32                         \
+            {                                                                                   \
+                declared_attachments.at(declared_attachments_count) = attachment;         \
+                return declared_attachments_count++;                                            \
+            }
 
 #define _DAXA_HELPER_TH_BUFFER(NAME, TASK_ACCESS, ...)     \
     daxa::TaskBufferAttachmentIndex const NAME =           \
-        add_attachment(daxa::TaskBufferAttachment{         \
+        {add_attachment(daxa::TaskBufferAttachment{        \
             .name = #NAME,                                 \
             .access = daxa::TaskBufferAccess::TASK_ACCESS, \
-            __VA_ARGS__});
+            __VA_ARGS__})};
 
 #define _DAXA_HELPER_TH_BLAS(NAME, TASK_ACCESS)          \
     daxa::TaskBlasAttachmentIndex const NAME =           \
-        add_attachment(daxa::TaskBlasAttachment{         \
+        {add_attachment(daxa::TaskBlasAttachment{        \
             .name = #NAME,                               \
             .access = daxa::TaskBlasAccess::TASK_ACCESS, \
-        });
+        })};
 
-#define _DAXA_HELPER_TH_TLAS(NAME, TASK_ACCESS)     \
+#define _DAXA_HELPER_TH_TLAS(NAME, TASK_ACCESS, ...)     \
     daxa::TaskTlasAttachmentIndex const NAME =           \
-        add_attachment(daxa::TaskTlasAttachment{         \
+        {add_attachment(daxa::TaskTlasAttachment{        \
             .name = #NAME,                               \
             .access = daxa::TaskTlasAccess::TASK_ACCESS, \
-        });
+            __VA_ARGS__})};
 
 #define _DAXA_HELPER_TH_IMAGE(NAME, TASK_ACCESS, ...)     \
     daxa::TaskImageAttachmentIndex const NAME =           \
-        add_attachment(daxa::TaskImageAttachment{         \
+        {add_attachment(daxa::TaskImageAttachment{        \
             .name = #NAME,                                \
             .access = daxa::TaskImageAccess::TASK_ACCESS, \
-            __VA_ARGS__});
+            __VA_ARGS__})};
 
-#define DAXA_DECL_TASK_HEAD_END                                                                                \
-    }                                                                                                          \
-    ;                                                                                                          \
-    static inline constexpr daxa::usize ATTACHMENT_COUNT = AttachmentsStruct<256>{}.declared_attachment_count; \
-    static inline constexpr auto ATTACHMENTS = AttachmentsStruct<ATTACHMENT_COUNT>{};                          \
-    static inline constexpr auto const & AT = ATTACHMENTS;                                                     \
-    struct alignas(daxa::get_asb_alignment(AT)) AttachmentShaderBlob                                           \
-    {                                                                                                          \
-        std::array<daxa::u8, daxa::get_asb_size(AT)> value = {};                                               \
-    };                                                                                                         \
-    struct Task : public daxa::IPartialTask                                                                    \
-    {                                                                                                          \
-        using AttachmentViews = daxa::AttachmentViews<ATTACHMENT_COUNT>;                                       \
-        static constexpr AttachmentsStruct<ATTACHMENT_COUNT> const & AT = ATTACHMENTS;                         \
-        static constexpr daxa::usize ATTACH_COUNT = ATTACHMENT_COUNT;                                          \
-        static auto name() -> std::string_view { return std::string_view{NAME}; }                              \
-        static auto attachments() -> std::span<daxa::TaskAttachment const>                                     \
-        {                                                                                                      \
-            return AT.attachment_decl_array;                                                                   \
-        }                                                                                                      \
-        static auto attachment_shader_blob_size() -> daxa::u32                                                 \
-        {                                                                                                      \
-            return sizeof(daxa::get_asb_size(AT));                                                             \
-        };                                                                                                     \
-    };                                                                                                         \
-    }                                                                                                          \
+#define DAXA_DECL_TASK_HEAD_END                                                                                      \
+    }                                                                                                                \
+    ;                                                                                                                \
+    static inline constexpr auto ATTACHMENT_COUNT = AttachmentsStruct<256>{}.declared_attachments_count;             \
+    static inline constexpr auto ATTACHMENTS = AttachmentsStruct<ATTACHMENT_COUNT>{};                                \
+    static inline constexpr auto const & AT = ATTACHMENTS;                                                           \
+    struct alignas(daxa::detail::get_asb_size_and_alignment(AT.declared_attachments).alignment) AttachmentShaderBlob \
+    {                                                                                                                \
+        std::array<std::byte, daxa::detail::get_asb_size_and_alignment(AT.declared_attachments).size> value = {};    \
+        AttachmentShaderBlob() = default;                                                                            \
+        AttachmentShaderBlob(std::span<std::byte const> data) { *this = data; }                                      \
+        auto operator=(std::span<std::byte const> data) -> AttachmentShaderBlob &                                    \
+        {                                                                                                            \
+            DAXA_DBG_ASSERT_TRUE_M(this->value.size() == data.size(), "Blob size missmatch!");                       \
+            for (daxa::u32 i = 0; i < data.size(); ++i)                                                              \
+                this->value[i] = data[i];                                                                            \
+            return *this;                                                                                            \
+        }                                                                                                            \
+    };                                                                                                               \
+    struct Task : public daxa::IPartialTask                                                                          \
+    {                                                                                                                \
+        using AttachmentViews = daxa::AttachmentViews<ATTACHMENT_COUNT>;                                             \
+        static constexpr AttachmentsStruct<ATTACHMENT_COUNT> const & AT = ATTACHMENTS;                               \
+        static constexpr daxa::usize ATTACH_COUNT = ATTACHMENT_COUNT;                                                \
+        static auto name() -> std::string_view { return std::string_view{NAME}; }                                    \
+        static auto attachments() -> std::span<daxa::TaskAttachment const>                                           \
+        {                                                                                                            \
+            return AT.declared_attachments;                                                                    \
+        }                                                                                                            \
+    };                                                                                                               \
+    }                                                                                                                \
     ;
 
 #define DAXA_TH_BLOB(HEAD_NAME, field_name) HEAD_NAME::AttachmentShaderBlob field_name;
 
 #define DAXA_TH_IMAGE(TASK_ACCESS, VIEW_TYPE, NAME) _DAXA_HELPER_TH_IMAGE(NAME, TASK_ACCESS, .view_type = daxa::ImageViewType::VIEW_TYPE, .shader_array_size = 0)
+
 #define DAXA_TH_IMAGE_ID(TASK_ACCESS, VIEW_TYPE, NAME) _DAXA_HELPER_TH_IMAGE(NAME, TASK_ACCESS, .view_type = daxa::ImageViewType::VIEW_TYPE, .shader_array_size = 1)
-#define DAXA_TH_IMAGE_INDEX(TASK_ACCESS, VIEW_TYPE, NAME) _DAXA_HELPER_TH_IMAGE(NAME, TASK_ACCESS, .view_type = daxa::ImageViewType::VIEW_TYPE, .shader_array_size = 1, .shader_as_index = true)
 #define DAXA_TH_IMAGE_ID_ARRAY(TASK_ACCESS, VIEW_TYPE, NAME, SIZE) _DAXA_HELPER_TH_IMAGE(NAME, TASK_ACCESS, .view_type = daxa::ImageViewType::VIEW_TYPE, .shader_array_size = SIZE)
 #define DAXA_TH_IMAGE_ID_MIP_ARRAY(TASK_ACCESS, VIEW_TYPE, NAME, SIZE) _DAXA_HELPER_TH_IMAGE(NAME, TASK_ACCESS, .view_type = daxa::ImageViewType::VIEW_TYPE, .shader_array_size = SIZE, .shader_array_type = daxa::TaskHeadImageArrayType::MIP_LEVELS)
+
+#define DAXA_TH_IMAGE_INDEX(TASK_ACCESS, VIEW_TYPE, NAME) _DAXA_HELPER_TH_IMAGE(NAME, TASK_ACCESS, .view_type = daxa::ImageViewType::VIEW_TYPE, .shader_array_size = 1, .shader_as_index = true)
+#define DAXA_TH_IMAGE_INDEX_ARRAY(TASK_ACCESS, VIEW_TYPE, NAME, SIZE) _DAXA_HELPER_TH_IMAGE(NAME, TASK_ACCESS, .view_type = daxa::ImageViewType::VIEW_TYPE, .shader_array_size = SIZE, .shader_as_index = true)
+#define DAXA_TH_IMAGE_INDEX_MIP_ARRAY(TASK_ACCESS, VIEW_TYPE, NAME, SIZE) _DAXA_HELPER_TH_IMAGE(NAME, TASK_ACCESS, .view_type = daxa::ImageViewType::VIEW_TYPE, .shader_array_size = SIZE, .shader_array_type = daxa::TaskHeadImageArrayType::MIP_LEVELS, .shader_as_index = true)
+
+#define DAXA_TH_IMAGE_TYPED(TASK_ACCESS, VIEW_TYPE, NAME) _DAXA_HELPER_TH_IMAGE(NAME, TASK_ACCESS, .view_type = VIEW_TYPE::IMAGE_VIEW_TYPE, .shader_array_size = 1, .shader_as_index = VIEW_TYPE::SHADER_INDEX32)
+#define DAXA_TH_IMAGE_TYPED_ARRAY(TASK_ACCESS, VIEW_TYPE, NAME, SIZE) _DAXA_HELPER_TH_IMAGE(NAME, TASK_ACCESS, .view_type = VIEW_TYPE::IMAGE_VIEW_TYPE, .shader_array_size = SIZE, .shader_as_index = VIEW_TYPE::SHADER_INDEX32)
+#define DAXA_TH_IMAGE_TYPED_MIP_ARRAY(TASK_ACCESS, VIEW_TYPE, NAME, SIZE) _DAXA_HELPER_TH_IMAGE(NAME, TASK_ACCESS, .view_type = VIEW_TYPE::IMAGE_VIEW_TYPE, .shader_array_size = SIZE, .shader_array_type = daxa::TaskHeadImageArrayType::MIP_LEVELS, .shader_as_index = VIEW_TYPE::SHADER_INDEX32)
+
 #define DAXA_TH_BUFFER(TASK_ACCESS, NAME) _DAXA_HELPER_TH_BUFFER(NAME, TASK_ACCESS, .shader_array_size = 0)
 #define DAXA_TH_BUFFER_ID(TASK_ACCESS, NAME) _DAXA_HELPER_TH_BUFFER(NAME, TASK_ACCESS, .shader_array_size = 1, .shader_as_address = false)
 #define DAXA_TH_BUFFER_PTR(TASK_ACCESS, PTR_TYPE, NAME) _DAXA_HELPER_TH_BUFFER(NAME, TASK_ACCESS, .shader_array_size = 1, .shader_as_address = true)
 #define DAXA_TH_BUFFER_ID_ARRAY(TASK_ACCESS, NAME, SIZE) _DAXA_HELPER_TH_BUFFER(NAME, TASK_ACCESS, .shader_array_size = SIZE, .shader_as_address = false)
 #define DAXA_TH_BUFFER_PTR_ARRAY(TASK_ACCESS, PTR_TYPE, NAME, SIZE) _DAXA_HELPER_TH_BUFFER(NAME, TASK_ACCESS, .shader_array_size = SIZE, .shader_as_address = false)
 #define DAXA_TH_BLAS(TASK_ACCESS, NAME) _DAXA_HELPER_TH_BLAS(NAME, TASK_ACCESS)
-#define DAXA_TH_TLAS_PTR(TASK_ACCESS, NAME) _DAXA_HELPER_TH_TLAS(NAME, TASK_ACCESS)
+#define DAXA_TH_TLAS(TASK_ACCESS, NAME) _DAXA_HELPER_TH_TLAS(NAME, TASK_ACCESS, .shader_array_size = 0)
+#define DAXA_TH_TLAS_PTR(TASK_ACCESS, NAME) _DAXA_HELPER_TH_TLAS(NAME, TASK_ACCESS, .shader_as_address = true)
+#define DAXA_TH_TLAS_ID(TASK_ACCESS, NAME) _DAXA_HELPER_TH_TLAS(NAME, TASK_ACCESS, .shader_as_address = false)
 
     template <typename BufFn, typename ImgFn>
     constexpr void for_each(std::span<TaskAttachmentInfo> attachments, BufFn && buf_fn, ImgFn && img_fn)
@@ -1189,6 +1153,7 @@ namespace daxa
         tlas.name = "inline attachment";
         tlas.access = access;
         tlas.view = view;
+        tlas.shader_as_address = false;
         TaskAttachmentInfo info = {};
         info.type = daxa::TaskAttachmentType::TLAS;
         info.value.tlas = tlas;

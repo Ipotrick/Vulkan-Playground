@@ -38,7 +38,7 @@ namespace tests
     {
         ti.recorder.set_pipeline(pipeline);
         ti.recorder.push_constant(TestBufferPush{
-            .test_buffer = ti.device.get_device_address(ti.get(buffer).ids[0]).value(),
+            .test_buffer = ti.device_address(buffer).value(),
             .size = size,
             .value = value,
         });
@@ -109,9 +109,7 @@ namespace tests
         //      Images B and C are aliased and the content is correct after execution of each of the tasks
 
         daxa::Instance daxa_ctx = daxa::create_instance({});
-        daxa::Device device = daxa_ctx.create_device({
-            .name = "device",
-        });
+        daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({},{}));
 
         daxa::PipelineManager pipeline_manager = daxa::PipelineManager{{
             .device = device,
@@ -248,9 +246,7 @@ namespace tests
         //      Images A and B are aliased - they both start at the same offset
 
         daxa::Instance daxa_ctx = daxa::create_instance({});
-        daxa::Device device = daxa_ctx.create_device({
-            .name = "device",
-        });
+        daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({},{}));
 
         daxa::PipelineManager pipeline_manager = daxa::PipelineManager{{
             .device = device,
@@ -403,9 +399,7 @@ namespace tests
         // 3. Test if their content stays intact over multiple aliased operations.
 
         daxa::Instance daxa_ctx = daxa::create_instance({});
-        daxa::Device device = daxa_ctx.create_device({
-            .name = "device",
-        });
+        daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({},{}));
 
         daxa::PipelineManager pipeline_manager = daxa::PipelineManager{{
             .device = device,

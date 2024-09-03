@@ -1,12 +1,13 @@
 #include <daxa/daxa.hpp>
 #include <iostream>
+#include <chrono>
 #include <fmt/format.h>
 #include "../../0_common/shared.hpp"
 
 struct App
 {
     daxa::Instance daxa_ctx = daxa::create_instance({.flags = daxa::InstanceFlagBits::DEBUG_UTILS});
-    daxa::Device device = daxa_ctx.create_device({});
+    daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({}, {}));
 };
 
 namespace tests
@@ -135,7 +136,7 @@ namespace tests
             .name = "timeline_query",
         });
 
-        auto & buffer_ptr = *app.device.get_host_address_as<ImageArray<SIZE_X, SIZE_Y, SIZE_Z>>(staging_upload_buffer).value();
+        auto & buffer_ptr = *app.device.buffer_host_address_as<ImageArray<SIZE_X, SIZE_Y, SIZE_Z>>(staging_upload_buffer).value();
 
         buffer_ptr = data;
 
@@ -261,7 +262,7 @@ namespace tests
             std::cout << "gpu execution took " << static_cast<f64>(query_results[2] - query_results[0]) / 1000000.0 << " ms" << std::endl;
         }
 
-        auto const & readback_data = *app.device.get_host_address_as<ImageArray<SIZE_X, SIZE_Y, SIZE_Z>>(staging_readback_buffer).value();
+        auto const & readback_data = *app.device.buffer_host_address_as<ImageArray<SIZE_X, SIZE_Y, SIZE_Z>>(staging_readback_buffer).value();
 
         std::cout << "Original data: " << std::endl;
         {
@@ -463,7 +464,7 @@ namespace tests
 
         constexpr daxa::u32 TEST_VALUE = 0xf0abf0ab;
 
-        *app.device.get_host_address_as<daxa::u32>(buf_a).value() = TEST_VALUE;
+        *app.device.buffer_host_address_as<daxa::u32>(buf_a).value() = TEST_VALUE;
 
         daxa::CommandRecorder cmdr = app.device.create_command_recorder({});
 
@@ -499,7 +500,7 @@ namespace tests
 
         app.device.wait_idle();
 
-        [[maybe_unused]] daxa::u32 readback_value = *app.device.get_host_address_as<daxa::u32>(buf_c).value();
+        [[maybe_unused]] daxa::u32 readback_value = *app.device.buffer_host_address_as<daxa::u32>(buf_c).value();
 
         DAXA_DBG_ASSERT_TRUE_M(readback_value == TEST_VALUE, "TEST VALUE DOES NOT MATCH READBACK VALUE");
 
@@ -514,14 +515,7 @@ namespace tests
             daxa::Device device;
             try
             {
-                device = app.daxa_ctx.create_device({
-                    .selector = [](daxa::DeviceProperties const & prop) -> i32
-                    {
-                        auto default_value = daxa::default_device_score(prop);
-                        return prop.ray_tracing_properties.has_value() ? default_value : -1;
-                    },
-                    .flags = daxa::DeviceFlagBits::RAY_TRACING,
-                });
+                device = app.daxa_ctx.create_device_2(app.daxa_ctx.choose_device(daxa::ImplicitFeatureFlagBits::BASIC_RAY_TRACING, {}));
             }
             catch (std::runtime_error error)
             {
@@ -540,7 +534,7 @@ namespace tests
                 .name = "vertex buffer",
             });
             defer { device.destroy_buffer(vertex_buffer); };
-            std::memcpy(device.get_host_address(vertex_buffer).value(), &vertices, sizeof(decltype(vertices)));
+            std::memcpy(device.buffer_host_address(vertex_buffer).value(), &vertices, sizeof(decltype(vertices)));
             auto indices = std::array{0, 1, 2};
             auto index_buffer = device.create_buffer({
                 .size = sizeof(decltype(indices)),
@@ -548,7 +542,7 @@ namespace tests
                 .name = "index buffer",
             });
             defer { device.destroy_buffer(index_buffer); };
-            std::memcpy(device.get_host_address(index_buffer).value(), &indices, sizeof(decltype(indices)));
+            std::memcpy(device.buffer_host_address(index_buffer).value(), &indices, sizeof(decltype(indices)));
             auto transform = daxa_f32mat3x4{
                 {1, 0, 0, 0},
                 {0, 1, 0, 0},
@@ -560,7 +554,7 @@ namespace tests
                 .name = "transform buffer",
             });
             defer { device.destroy_buffer(transform_buffer); };
-            std::memcpy(device.get_host_address(transform_buffer).value(), &transform, sizeof(daxa_f32mat3x4));
+            std::memcpy(device.buffer_host_address(transform_buffer).value(), &transform, sizeof(daxa_f32mat3x4));
             /// Write As description data:
             auto geometries = std::array{
                 daxa::BlasTriangleGeometryInfo{
@@ -580,7 +574,7 @@ namespace tests
                 .scratch_data = {}, // Ignored in get_acceleration_structure_build_sizes.
             };
             /// Query As sizes:
-            daxa::AccelerationStructureBuildSizesInfo build_size_info = device.get_blas_build_sizes(build_info);
+            daxa::AccelerationStructureBuildSizesInfo build_size_info = device.blas_build_sizes(build_info);
             /// Create Scratch buffer and As:
             auto scratch_buffer = device.create_buffer({
                 .size = build_size_info.build_scratch_size,
@@ -594,11 +588,11 @@ namespace tests
             defer { device.destroy_blas(blas); };
             /// Fill the remaining fields of the build info:
             auto & tri_geom = geometries[0];
-            tri_geom.vertex_data = device.get_device_address(vertex_buffer).value();
-            tri_geom.index_data = device.get_device_address(index_buffer).value();
-            tri_geom.transform_data = device.get_device_address(transform_buffer).value();
+            tri_geom.vertex_data = device.device_address(vertex_buffer).value();
+            tri_geom.index_data = device.device_address(index_buffer).value();
+            tri_geom.transform_data = device.device_address(transform_buffer).value();
             build_info.dst_blas = blas;
-            build_info.scratch_data = device.get_device_address(scratch_buffer).value();
+            build_info.scratch_data = device.device_address(scratch_buffer).value();
             /// Record build commands:
             auto exec_cmds = [&]()
             {

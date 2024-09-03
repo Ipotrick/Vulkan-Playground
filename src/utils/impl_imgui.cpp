@@ -27,6 +27,7 @@ struct Push
 
 #include <cstring>
 #include <utility>
+#include <algorithm>
 
 void set_imgui_style()
 {
@@ -160,9 +161,9 @@ namespace daxa
         ++frame_count;
         if ((draw_data != nullptr) && draw_data->TotalIdxCount > 0)
         {
-            auto vbuffer_current_size = info.device.info_buffer(vbuffer).value().size;
+            auto vbuffer_current_size = info.device.buffer_info(vbuffer).value().size;
             auto vbuffer_needed_size = static_cast<usize>(draw_data->TotalVtxCount) * sizeof(ImDrawVert);
-            auto ibuffer_current_size = info.device.info_buffer(ibuffer).value().size;
+            auto ibuffer_current_size = info.device.buffer_info(ibuffer).value().size;
             auto ibuffer_needed_size = static_cast<usize>(draw_data->TotalIdxCount) * sizeof(ImDrawIdx);
 
             if (vbuffer_needed_size > vbuffer_current_size)
@@ -185,7 +186,7 @@ namespace daxa
                 .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_RANDOM,
                 .name = std::string("dear ImGui vertex staging buffer ") + std::to_string(frame_count % IMGUI_RESOURCE_NAME_MAX_NUMBER),
             });
-            auto * vtx_dst = info.device.get_host_address_as<ImDrawVert>(staging_vbuffer).value();
+            auto * vtx_dst = info.device.buffer_host_address_as<ImDrawVert>(staging_vbuffer).value();
             for (i32 n = 0; n < draw_data->CmdListsCount; n++)
             {
                 ImDrawList const * draws = draw_data->CmdLists[n];
@@ -198,7 +199,7 @@ namespace daxa
                 .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_RANDOM,
                 .name = std::string("dear ImGui index staging buffer ") + std::to_string(frame_count % IMGUI_RESOURCE_NAME_MAX_NUMBER),
             });
-            auto * idx_dst = info.device.get_host_address_as<ImDrawIdx>(staging_ibuffer).value();
+            auto * idx_dst = info.device.buffer_host_address_as<ImDrawIdx>(staging_ibuffer).value();
             for (i32 n = 0; n < draw_data->CmdListsCount; n++)
             {
                 ImDrawList const * draws = draw_data->CmdLists[n];
@@ -245,8 +246,8 @@ namespace daxa
             ImVec2 const clip_scale = draw_data->FramebufferScale; // (1,1) unless using retina display which are often (2,2)
             i32 global_vtx_offset = 0;
             i32 global_idx_offset = 0;
-            push.vbuffer_ptr = this->info.device.get_device_address(vbuffer).value();
-            push.ibuffer_ptr = this->info.device.get_device_address(ibuffer).value();
+            push.vbuffer_ptr = this->info.device.device_address(vbuffer).value();
+            push.ibuffer_ptr = this->info.device.device_address(ibuffer).value();
 
             for (i32 n = 0; n < draw_data->CmdListsCount; n++)
             {
@@ -366,7 +367,7 @@ namespace daxa
             .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_RANDOM,
         });
 
-        u8 * staging_buffer_data = this->info.device.get_host_address_as<u8>(texture_staging_buffer).value();
+        u8 * staging_buffer_data = this->info.device.buffer_host_address_as<u8>(texture_staging_buffer).value();
         std::memcpy(staging_buffer_data, pixels, upload_size);
 
         auto recorder = this->info.device.create_command_recorder({.name = "dear ImGui Font Sheet Upload"});
@@ -526,7 +527,7 @@ void main()
 auto main() -> int
 {
     daxa::Instance daxa_ctx = daxa::create_instance({});
-    daxa::Device device = daxa_ctx.create_device({.name = "device"});
+    daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({}, daxa::DeviceInfo2{}))
 
     daxa::PipelineManager pipeline_manager = daxa::PipelineManager({
         .device = device,

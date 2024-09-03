@@ -34,10 +34,26 @@ namespace daxa
         }
     }
 
-    void GPUShaderResourceTable::initialize(u32 max_buffers, u32 max_images, u32 max_samplers, u32 max_acceleration_structures,
+    auto GPUShaderResourceTable::initialize(u32 max_buffers, u32 max_images, u32 max_samplers, u32 max_acceleration_structures,
                                             VkDevice device, VkBuffer device_address_buffer,
-                                            PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectNameEXT)
+                                            PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectNameEXT) -> daxa_Result
     {
+        daxa_Result result = DAXA_RESULT_SUCCESS;
+        defer
+        {
+            if (result != DAXA_RESULT_SUCCESS)
+            {
+                if (this->vk_descriptor_pool)
+                {
+                    vkDestroyDescriptorPool(device, this->vk_descriptor_pool, nullptr);
+                }
+                if (this->vk_descriptor_set_layout)
+                {
+                    vkDestroyDescriptorSetLayout(device, this->vk_descriptor_set_layout, nullptr);
+                }
+            }
+        };
+
         bool const ray_tracing_enabled = max_acceleration_structures != (~0u);
 
         buffer_slots.max_resources = max_buffers;
@@ -93,7 +109,9 @@ namespace daxa
             .pPoolSizes = pool_sizes.data(),
         };
 
-        vkCreateDescriptorPool(device, &vk_descriptor_pool_create_info, nullptr, &this->vk_descriptor_pool);
+        result = static_cast<daxa_Result>(vkCreateDescriptorPool(device, &vk_descriptor_pool_create_info, nullptr, &this->vk_descriptor_pool));
+        _DAXA_RETURN_IF_ERROR(result, result)
+
         if (vkSetDebugUtilsObjectNameEXT != nullptr)
         {
             auto const * descriptor_pool_name = "mega descriptor pool";
@@ -194,7 +212,9 @@ namespace daxa
             .pBindings = descriptor_set_layout_bindings.data(),
         };
 
-        vkCreateDescriptorSetLayout(device, &vk_descriptor_set_layout_create_info, nullptr, &this->vk_descriptor_set_layout);
+        result = static_cast<daxa_Result>(vkCreateDescriptorSetLayout(device, &vk_descriptor_set_layout_create_info, nullptr, &this->vk_descriptor_set_layout));
+        _DAXA_RETURN_IF_ERROR(result, result)
+
         if (vkSetDebugUtilsObjectNameEXT != nullptr)
         {
             auto const * name = "mega descriptor set layout";
@@ -216,7 +236,9 @@ namespace daxa
             .pSetLayouts = &this->vk_descriptor_set_layout,
         };
 
-        vkAllocateDescriptorSets(device, &vk_descriptor_set_allocate_info, &this->vk_descriptor_set);
+        result = static_cast<daxa_Result>(vkAllocateDescriptorSets(device, &vk_descriptor_set_allocate_info, &this->vk_descriptor_set));
+        _DAXA_RETURN_IF_ERROR(result, result)
+
         if (vkSetDebugUtilsObjectNameEXT != nullptr)
         {
             auto const * name = "mega descriptor set";
@@ -241,7 +263,9 @@ namespace daxa
             .pPushConstantRanges = nullptr,
         };
 
-        vkCreatePipelineLayout(device, &vk_pipeline_create_info, nullptr, pipeline_layouts.data());
+        result = static_cast<daxa_Result>(vkCreatePipelineLayout(device, &vk_pipeline_create_info, nullptr, pipeline_layouts.data()));
+        _DAXA_RETURN_IF_ERROR(result, result)
+
         if (vkSetDebugUtilsObjectNameEXT != nullptr)
         {
             auto const * name = "pipeline layout (push constant size 0)";
@@ -264,7 +288,9 @@ namespace daxa
             };
             vk_pipeline_create_info.pushConstantRangeCount = 1;
             vk_pipeline_create_info.pPushConstantRanges = &vk_push_constant_range;
-            vkCreatePipelineLayout(device, &vk_pipeline_create_info, nullptr, &pipeline_layouts.at(i));
+            result = static_cast<daxa_Result>(vkCreatePipelineLayout(device, &vk_pipeline_create_info, nullptr, &pipeline_layouts.at(i)));
+            _DAXA_RETURN_IF_ERROR(result, result)
+
             if (vkSetDebugUtilsObjectNameEXT != nullptr)
             {
                 auto name = fmt::format("pipeline layout (push constant size {})", i * 4);
@@ -299,6 +325,8 @@ namespace daxa
         };
 
         vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+
+        return result;
     }
 
     void GPUShaderResourceTable::cleanup(VkDevice device)

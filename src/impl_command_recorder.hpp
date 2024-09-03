@@ -31,10 +31,13 @@ struct CommandPoolPool
     void cleanup(daxa_Device device);
 
     std::vector<VkCommandPool> pools_and_buffers = {};
+    u32 queue_family_index = { ~0u };
+    std::mutex mtx = {};
 };
 
 struct CommandRecorderZombie
 {
+    daxa_QueueFamily queue_family = {};
     VkCommandPool vk_cmd_pool = {};
     std::vector<VkCommandBuffer> allocated_command_buffers = {};
 };

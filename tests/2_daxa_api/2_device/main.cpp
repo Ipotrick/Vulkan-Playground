@@ -7,29 +7,51 @@ namespace tests
 
     void simplest(daxa::Instance & instance)
     {
-        auto device = instance.create_device({});
+        auto device = instance.create_device_2(instance.choose_device({}, {}));
     }
     void device_selection(daxa::Instance & instance)
     {
         try
         {
-            // To select a device, you look at its properties and return a score.
-            // Daxa will choose the device you scored as the highest.
-            auto device = instance.create_device({
-                .selector = [](daxa::DeviceProperties const & device_props)
+            // When creating a device you have to fill out DeviceInfo2.
+            // Choose a name, resource limits, explicit features.
+            // After that is done, list the physical devices and choose one of them.
+
+            daxa::DeviceInfo2 device_info = {.name = "my device"};
+
+            std::span<daxa::DeviceProperties const> device_properties_list = instance.list_devices_properties();
+            for (u32 i = 0; i < device_properties_list.size(); ++i)
+            {
+                // The device properties contain all information needed to choose a device:
+                // limits, feature limits, queue count, explicit features, implicit features.
+                daxa::DeviceProperties const & properties = device_properties_list[i];
+
+                // The properties also include an enum declaring if a required feature is not present.
+                if (properties.missing_required_feature != daxa::MissingRequiredVkFeature::NONE)
                 {
-                    i32 score = 0;
-                    switch (device_props.device_type)
-                    {
-                    case daxa::DeviceType::DISCRETE_GPU: score += 10000; break;
-                    case daxa::DeviceType::VIRTUAL_GPU: score += 1000; break;
-                    case daxa::DeviceType::INTEGRATED_GPU: score += 100; break;
-                    default: break;
-                    }
-                    return score;
-                },
-                .name = "My device",
-            });
+                    continue;
+                }
+
+                // We can also check if the device has all the features we need:
+                // Explicit features are ones the have to be manually enabled, otherwise the remain disabled!
+                daxa::ExplicitFeatureFlags required_explicit_features = {};
+                // Implicit features are ones that always get enabled when present.
+                daxa::ImplicitFeatureFlags required_implicit_features = {};
+                if (!(properties.explicit_features & required_explicit_features) || !(properties.implicit_features & required_implicit_features))
+                {
+                    continue;
+                }
+                
+                device_info.physical_device_index = i;
+                break;
+            }
+            
+            // Note there are a number of other qualities one should check for to choose a device other then missing features!
+            // For this purpose daxa has an automatic device choose function: instance.choose_device() which takes required features and a device info to pick the first fit.
+            // auto device = instance.create_device_2(instance.choose_device({}/* required implicit features */, device_info));
+
+            // We will create the device manually here as an example:
+            auto device = instance.create_device_2(device_info);
 
             // once the device is created, you can query its properties, such
             // as its name and much more! These are the same properties we used
@@ -63,7 +85,7 @@ namespace tests
     {
         try
         {
-            auto device = instance.create_device({});
+            auto device = instance.create_device_2(instance.choose_device({}, {}));
             auto test_buffer = device.create_buffer(test_buffer_info);
             auto test_image = device.create_image(test_image_info);
             auto test_image_view = device.create_image_view({
@@ -89,9 +111,9 @@ namespace tests
     {
         try
         {
-            auto device = instance.create_device({});
-            auto test_buffer_mem_req = device.get_memory_requirements(test_buffer_info);
-            auto test_image_mem_req = device.get_memory_requirements(test_image_info);
+            auto device = instance.create_device_2(instance.choose_device({}, {}));
+            auto test_buffer_mem_req = device.memory_requirements(test_buffer_info);
+            auto test_image_mem_req = device.memory_requirements(test_image_info);
             auto pessimised_mem_req = daxa::MemoryRequirements{
                 .size = std::max(test_buffer_mem_req.size, test_image_mem_req.size),
                 .alignment = std::max(test_buffer_mem_req.alignment, test_image_mem_req.alignment),
@@ -124,14 +146,7 @@ namespace tests
             daxa::Device device;
             try
             {
-                device = instance.create_device({
-                    .selector = [](daxa::DeviceProperties const & prop) -> i32
-                    {
-                        auto default_value = daxa::default_device_score(prop);
-                        return prop.ray_tracing_properties.has_value() ? default_value : -1;
-                    },
-                    .flags = daxa::DeviceFlagBits::RAY_TRACING,
-                });
+                device = instance.create_device_2(instance.choose_device(daxa::ImplicitFeatureFlagBits::BASIC_RAY_TRACING, {}));
             }
             catch (std::runtime_error error)
             {

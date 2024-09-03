@@ -6,6 +6,9 @@
 
 #include <daxa/device.hpp>
 
+#include <filesystem>
+#include <functional>
+
 namespace daxa
 {
     struct ShaderFile

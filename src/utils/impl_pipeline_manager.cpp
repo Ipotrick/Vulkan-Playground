@@ -547,8 +547,11 @@ namespace daxa
                         shader_compile_info.compile_options.required_subgroup_size.has_value() ? 
                         Optional{shader_compile_info.compile_options.required_subgroup_size.value()} : 
                         daxa::None,
-                    .entry_point = {shader_compile_info.compile_options.entry_point.value()},
                 });
+                if (shader_compile_info.compile_options.entry_point.has_value() && (shader_compile_info.compile_options.language != ShaderLanguage::SLANG))
+                {
+                    final_shader_info->back().entry_point = {shader_compile_info.compile_options.entry_point.value()};
+                }
             }
         }
 
@@ -1048,6 +1051,14 @@ namespace daxa
                 return false;
             }
         }
+
+        for (RayTracingPipelineState const & raytracing_pipeline_state : this->ray_tracing_pipelines)
+        {
+            if (!raytracing_pipeline_state.pipeline_ptr->is_valid())
+            {
+                return false;
+            }
+        }
         return true;
     }
 
@@ -1322,7 +1333,7 @@ namespace daxa
             std::replace(name.begin(), name.end(), '/', '_');
             std::replace(name.begin(), name.end(), '\\', '_');
             std::replace(name.begin(), name.end(), ':', '_');
-            name = name + "." + std::string{stage_string(shader_stage)} + ".spv";
+            name = name + "." + std::string{stage_string(shader_stage)} + "." + shader_info.compile_options.entry_point.value() + ".spv";
             auto out_folder = shader_info.compile_options.write_out_shader_binary.value();
             std::filesystem::create_directories(out_folder);
             std::ofstream ofs(out_folder / name, std::ios_base::trunc | std::ios_base::binary);

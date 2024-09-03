@@ -63,25 +63,61 @@ auto main() -> int
     // We then just create a Daxa device by using the instance, and providing
     // the necessary parameters. This is where you'd select different features
     // and extensions that aren't necessarily present on all GPU's drivers.
-    // A user's computer may have multiple devices, so you can provide a selector
-    // function which just returns to daxa the rating level of each device listed,
-    // ultimately returning a handle to the device which was scored highest!
-    daxa::Device device = instance.create_device({
-        .selector = [](daxa::DeviceProperties const & device_props) -> daxa::i32
-        {
-            daxa::i32 score = 0;
-            switch (device_props.device_type)
-            {
-            case daxa::DeviceType::DISCRETE_GPU: score += 10000; break;
-            case daxa::DeviceType::VIRTUAL_GPU: score += 1000; break;
-            case daxa::DeviceType::INTEGRATED_GPU: score += 100; break;
-            default: break;
-            }
-            score += static_cast<daxa::i32>(device_props.limits.max_memory_allocation_count / 100000);
-            return score;
-        },
+    // A user's computer may have multiple devices, you need to choose a device.
+    // You either use the daxa build in daxa::Instance::choose_device function, or pick one yourself.
+    // In the following we show how you can pick a device yourself.
+
+    // The device info contains explicit data.
+    // These are settings of the choosen gpu, what resource limits, explicit features, name etc you want for the device.
+    daxa::DeviceInfo2 device_info = {
+        .max_allowed_buffers = 1024,
+        .explicit_features = {},
         .name = "my device",
-    });
+    };
+
+    // The instance allows us to iterate over ALL devices vulkan can find.
+    std::span<daxa::DeviceProperties const> device_properties_list = instance.list_devices_properties();
+    for (daxa::u32 i = 0; i < device_properties_list.size(); ++i)
+    {
+        // The device properties contain all information needed to choose a device:
+        // limits, feature limits, queue count, explicit features, implicit features.
+        daxa::DeviceProperties const & properties = device_properties_list[i];
+
+        // Not all devices are compatible with daxa!
+        // Daxa has a set of hard required features that may miss on a gpu.
+        // To be sure to pick a supported device, check the missing_required_feature enum:
+        if (properties.missing_required_feature != daxa::MissingRequiredVkFeature::NONE)
+        {
+            continue;
+        }
+
+        // We can also check if the device has all the features we need:
+        // Explicit features are ones the have to be manually enabled, otherwise the remain disabled!
+        // They are manually enabled because they usually have a performance impact or other potentially undesirable effects.
+        // We must check if the gpu supports the explicit features we want for the device.
+        daxa::ExplicitFeatureFlags required_explicit_features = device_info.explicit_features;
+        // These features pose no downsides, so they are always enabled when present.
+        // We must check if the gpu supports the implicit features we want for the device.
+        daxa::ImplicitFeatureFlags required_implicit_features = {};
+        if (!(properties.explicit_features & required_explicit_features) || !(properties.implicit_features & required_implicit_features))
+        {
+            continue;
+        }
+
+        // We can also check for resource limits and queue counts:
+        if (properties.limits.line_width_range == 0 || properties.compute_queue_count > 500)
+        {
+            continue;
+        }
+        
+        // If a device fulfills all our requirements, we pick it:
+        device_info.physical_device_index = i;
+        break;
+    }
+
+    auto device = instance.create_device_2(device_info);
+    // Alternatively we can let daxa choose a device for us if we only care about the explicit settings in the info and some implicit features:
+    // auto device = instance.create_device_2(instance.choose_device(required_implicit_features, device_info));
 
     // To be able to render to a window, Daxa requires the user to create a swapchain
     // for a system window. To create a Swapchain, Daxa needs a native window handle
@@ -139,7 +175,7 @@ auto main() -> int
         // Technically the default value for slice in barriers is simply a 2d image.
         // So in this case we would not need to mention it in the barriers at all!
         // But for demonstration we show how to get the full slice and pass it to the barriers here.
-        daxa::ImageMipArraySlice const swapchain_image_full_slice = device.info_image_view(swapchain_image.default_view()).value().slice;
+        daxa::ImageMipArraySlice const swapchain_image_full_slice = device.image_view_info(swapchain_image.default_view()).value().slice;
 
         daxa::CommandRecorder recorder = device.create_command_recorder({.name = "my command recorder"});
 

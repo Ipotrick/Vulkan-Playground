@@ -43,7 +43,7 @@ struct DrawTask : DrawTri::Task
     std::shared_ptr<daxa::RasterPipeline> pipeline = {};
     void callback(daxa::TaskInterface ti)
     {
-        daxa::ImageInfo color_img_info = ti.device.info_image(ti.get(AT.render_target).ids[0]).value();
+        daxa::ImageInfo color_img_info = ti.info(AT.render_target).value();
         auto const size_x = color_img_info.size.x;
         auto const size_y = color_img_info.size.y;
         auto render_recorder = std::move(ti.recorder).begin_renderpass({
@@ -90,10 +90,7 @@ auto main() -> int
 
     daxa::Instance instance = daxa::create_instance({});
 
-    daxa::Device device = instance.create_device({
-        .flags = daxa::DeviceFlags2{.mesh_shader_bit = 1},
-        .name = "my device",
-    });
+    daxa::Device device = instance.create_device_2(instance.choose_device(daxa::ImplicitFeatureFlagBits::MESH_SHADER, {}));
 
     daxa::Swapchain swapchain = device.create_swapchain({
         .native_window = native_window_handle,

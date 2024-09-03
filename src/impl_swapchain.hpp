@@ -12,6 +12,7 @@
 ///
 /// IMPORTANT INFORMATION REGARDING SEMAPHORES IN WSI:
 /// binary semaphore in acquire MUST be un-signaled when recording actions ON THE CPU!
+/// Because of this, we need frames_in_flight+1 semaphores for the acquire
 ///
 /// We need two binary semaphores here:
 /// The acquire semaphore and the present semaphore.
@@ -30,6 +31,9 @@
 /// This means the acquire semaphores are not tied to the number of swapchain images like present semaphores but to the number of frames in flight!!
 ///
 /// To limit the frames in flight we employ a timeline semaphore that must be signaled in a submission that uses or after one that uses the swapchain image.
+///
+/// WARNING: The swapchain only works on the main queue! It is directly tied to it.
+///
 /// TODO: investigate if wsi is improved enough to use zombies for swapchain.
 struct daxa_ImplSwapchain final : ImplHandle
 {

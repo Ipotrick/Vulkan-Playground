@@ -111,8 +111,7 @@ void daxa_as_build_info_to_vk(
     std::vector<VkAccelerationStructureBuildGeometryInfoKHR> & vk_build_geometry_infos,
     std::vector<VkAccelerationStructureGeometryKHR> & vk_geometry_infos,
     std::vector<u32> & primitive_counts,
-    std::vector<u32 const *> & primitive_counts_ptrs
-);
+    std::vector<u32 const *> & primitive_counts_ptrs);
 
 // --- End Helpers ---
 
@@ -154,12 +153,34 @@ struct daxa_ImplMemoryBlock final : ImplHandle
     static void zero_ref_callback(ImplHandle const * handle);
 };
 
-// Sorry Gabe, not sorry! -Patrick :)
 #ifndef defer
-struct defer_dummy {};
-template <class F> struct deferrer { F f; ~deferrer() { f(); } };
-template <class F> deferrer<F> operator*(defer_dummy, F f) { return {f}; }
+struct defer_dummy
+{
+};
+template <class F>
+struct deferrer
+{
+    F f;
+    ~deferrer() { f(); }
+};
+template <class F>
+deferrer<F> operator*(defer_dummy, F f) { return {f}; }
 #define DEFER_(LINE) zz_defer##LINE
 #define DEFER(LINE) DEFER_(LINE)
-#define defer auto DEFER(__LINE__) = defer_dummy{} *[&]()
+#define defer auto DEFER(__LINE__) = defer_dummy{} * [&]()
 #endif // defer
+
+#if defined(_MSC_VER)
+#define _DAXA_DEBUG_BREAK __debugbreak();
+#else
+#define _DAXA_DEBUG_BREAK
+#endif
+
+#define _DAXA_RETURN_IF_ERROR(V, RET) \
+    if (V != DAXA_RESULT_SUCCESS)     \
+    {                                 \
+        _DAXA_DEBUG_BREAK             \
+        return RET;                   \
+    }
+
+#define _DAXA_DEFER_ON_ERROR(V)

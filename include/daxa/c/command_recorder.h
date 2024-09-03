@@ -6,6 +6,14 @@
 #include <daxa/c/gpu_resources.h>
 #include <daxa/c/pipeline.h>
 
+/// TODO: investigate software command recording
+///   Might allow us some optimizations
+///   Allows for easier verification
+///   Allows for more predictable performance (move all vk recording ops to tight place in code)
+
+/// WARNING:
+///   Checks for command types against queue family only performed in c++ api!!
+
 typedef struct
 {
     void const * data;
@@ -15,8 +23,11 @@ typedef struct
 
 typedef struct
 {
+    daxa_QueueFamily queue_family;
     daxa_SmallString name;
 } daxa_CommandRecorderInfo;
+
+static daxa_CommandRecorderInfo const DAXA_DEFAULT_COMMAND_RECORDER_INFO = DAXA_ZERO_INIT;
 
 typedef struct
 {
@@ -198,9 +209,10 @@ typedef struct
     uint32_t miss_handle_offset;
     uint32_t hit_handle_offset;
     uint32_t callable_handle_offset;
+    daxa_RayTracingShaderBindingTable shader_binding_table;
 } daxa_TraceRaysInfo;
 
-static daxa_TraceRaysInfo const DAXA_DEFAULT_TRACE_RAYS_INFO = {0, 0, 0, 0, 0, 0, 0};
+static daxa_TraceRaysInfo const DAXA_DEFAULT_TRACE_RAYS_INFO = DAXA_ZERO_INIT;
 
 typedef struct
 {
@@ -209,6 +221,7 @@ typedef struct
     uint32_t miss_handle_offset;
     uint32_t hit_handle_offset;
     uint32_t callable_handle_offset;
+    daxa_RayTracingShaderBindingTable shader_binding_table;
 } daxa_TraceRaysIndirectInfo;
 
 static daxa_TraceRaysIndirectInfo const DAXA_DEFAULT_TRACE_RAYS_INDIRECT_INFO = DAXA_ZERO_INIT;

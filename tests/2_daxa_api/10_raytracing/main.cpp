@@ -91,19 +91,13 @@ namespace tests
 #if ACTIVATE_ATOMIC_FLOAT
                 atomic_float = true;
 #endif            
-                try {
-                    auto flags = daxa::DeviceFlagBits::RAY_TRACING | (atomic_float ? daxa::DeviceFlagBits::SHADER_ATOMIC_FLOAT : daxa::DeviceFlagBits::NONE);
-                    device = daxa_ctx.create_device({
-                        // Device flags make daxa automatically filter devices that do not have the required capabilities.
-                        .flags = flags,
-                    });
-                } catch (std::runtime_error const &err) {
-                    std::cout << "Device creation error: " << err.what() << std::endl;
-                    device = daxa_ctx.create_device({
-                        // Device flags make daxa automatically filter devices that do not have the required capabilities.
-                        .flags = daxa::DeviceFlagBits::RAY_TRACING,
-                    });
-                }
+                device = [&]()
+                {
+                    daxa::DeviceInfo2 info = {};
+                    daxa::ImplicitFeatureFlags required_implicit_features = daxa::ImplicitFeatureFlagBits::BASIC_RAY_TRACING | (atomic_float ? daxa::ImplicitFeatureFlagBits::SHADER_ATOMIC_FLOAT : daxa::ImplicitFeatureFlagBits::NONE);
+                    info = daxa_ctx.choose_device(required_implicit_features, info);
+                    return daxa_ctx.create_device_2(info);
+                }();
 
                 bool ray_tracing_supported = device.properties().ray_tracing_properties.has_value();
                 auto invocation_reorder_mode = device.properties().invocation_reorder_properties.has_value() ? device.properties().invocation_reorder_properties.value().invocation_reorder_mode : 0;
@@ -166,8 +160,8 @@ namespace tests
                     .name = "vertex buffer",
                 });
                 defer { device.destroy_buffer(vertex_buffer); };
-                // *device.get_host_address_as<decltype(vertices)>(vertex_buffer).value() = vertices;
-                std::memcpy(device.get_host_address_as<daxa_f32vec3>(vertex_buffer).value(), vertices.data(), sizeof(daxa_f32vec3) * vertices.size());
+                // *device.buffer_host_address_as<decltype(vertices)>(vertex_buffer).value() = vertices;
+                std::memcpy(device.buffer_host_address_as<daxa_f32vec3>(vertex_buffer).value(), vertices.data(), sizeof(daxa_f32vec3) * vertices.size());
 
                 /// Indices:
                 auto indices = std::array{0, 1, 2};
@@ -177,8 +171,8 @@ namespace tests
                     .name = "index buffer",
                 });
                 defer { device.destroy_buffer(index_buffer); };
-                // *device.get_host_address_as<decltype(indices)>(index_buffer).value() = indices;
-                std::memcpy(device.get_host_address_as<daxa_u32>(index_buffer).value(), indices.data(), sizeof(daxa_u32) * indices.size());
+                // *device.buffer_host_address_as<decltype(indices)>(index_buffer).value() = indices;
+                std::memcpy(device.buffer_host_address_as<daxa_u32>(index_buffer).value(), indices.data(), sizeof(daxa_u32) * indices.size());
                 /// Transforms:
                 auto transform_buffer = device.create_buffer({
                     .size = sizeof(daxa_f32mat3x4),
@@ -186,7 +180,7 @@ namespace tests
                     .name = "transform buffer",
                 });
                 defer { device.destroy_buffer(transform_buffer); };
-                *device.get_host_address_as<daxa_f32mat3x4>(transform_buffer).value() = daxa_f32mat3x4{
+                *device.buffer_host_address_as<daxa_f32mat3x4>(transform_buffer).value() = daxa_f32mat3x4{
                     {1, 0, 0, 0},
                     {0, 1, 0, 0},
                     {0, 0, 1, 0},
@@ -198,12 +192,12 @@ namespace tests
                 auto geometries = std::array{
                     daxa::BlasTriangleGeometryInfo{
                         .vertex_format = daxa::Format::R32G32B32_SFLOAT, // Is also default
-                        .vertex_data = device.get_device_address(vertex_buffer).value(),                               // Ignored in get_acceleration_structure_build_sizes.    // Is also default
+                        .vertex_data = device.device_address(vertex_buffer).value(),                               // Ignored in get_acceleration_structure_build_sizes.    // Is also default
                         .vertex_stride = sizeof(daxa_f32vec3),           // Is also default
                         .max_vertex = static_cast<u32>(vertices.size() - 1),
                         .index_type = daxa::IndexType::uint32, // Is also default
-                        .index_data = device.get_device_address(index_buffer).value(),                      // Ignored in get_acceleration_structure_build_sizes. // Is also default
-                        .transform_data = device.get_device_address(transform_buffer).value(),                  // Ignored in get_acceleration_structure_build_sizes. // Is also default
+                        .index_data = device.device_address(index_buffer).value(),                      // Ignored in get_acceleration_structure_build_sizes. // Is also default
+                        .transform_data = device.device_address(transform_buffer).value(),                  // Ignored in get_acceleration_structure_build_sizes. // Is also default
                         .count = static_cast<daxa_u32>(indices.size() / 3),
                         .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
                     }};
@@ -214,7 +208,7 @@ namespace tests
                     .geometries = geometries,
                     .scratch_data = {}, // Ignored in get_acceleration_structure_build_sizes.   // Is also default
                 };
-                daxa::AccelerationStructureBuildSizesInfo build_size_info = device.get_blas_build_sizes(blas_build_info);
+                daxa::AccelerationStructureBuildSizesInfo build_size_info = device.blas_build_sizes(blas_build_info);
 
                 daxa_u64 scratch_alignment_size = get_aligned(build_size_info.build_scratch_size, acceleration_structure_scratch_offset_alignment);
 
@@ -224,7 +218,7 @@ namespace tests
                     std::cout << "blas_scratch_buffer_offset > blas_scratch_buffer_size" << std::endl;
                     abort();
                 }
-                blas_build_info.scratch_data = device.get_device_address(blas_scratch_buffer.get_state().buffers[0]).value() + blas_scratch_buffer_offset;
+                blas_build_info.scratch_data = device.device_address(blas_scratch_buffer.get_state().buffers[0]).value() + blas_scratch_buffer_offset;
                 blas_scratch_buffer_offset += scratch_alignment_size;
 
                 daxa_u64 build_aligment_size = get_aligned(build_size_info.acceleration_structure_size, ACCELERATION_STRUCTURE_BUILD_OFFSET_ALIGMENT);
@@ -263,17 +257,17 @@ namespace tests
                     .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_RANDOM,
                     .name = "aabb buffer",
                 });
-                *device.get_host_address_as<decltype(min_max)>(aabb_buffer).value() = min_max;
+                *device.buffer_host_address_as<decltype(min_max)>(aabb_buffer).value() = min_max;
                 /// Procedural Geometry Info:
                 auto proc_geometries = std::array{
                     daxa::BlasAabbGeometryInfo{
-                        .data = device.get_device_address(aabb_buffer).value(),
+                        .data = device.device_address(aabb_buffer).value(),
                         .stride = sizeof(daxa_f32mat3x2),
                         .count = 1,
                         .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
                     },
                     daxa::BlasAabbGeometryInfo{
-                        .data = device.get_device_address(aabb_buffer).value() + sizeof(daxa_f32mat3x2),
+                        .data = device.device_address(aabb_buffer).value() + sizeof(daxa_f32mat3x2),
                         .stride = sizeof(daxa_f32mat3x2),
                         .count = 1,
                         .flags = daxa::GeometryFlagBits::NO_DUPLICATE_ANY_HIT_INVOCATION, // Is also default
@@ -285,7 +279,7 @@ namespace tests
                     .geometries = proc_geometries,
                     .scratch_data = {}, // Ignored in get_acceleration_structure_build_sizes.   // Is also default
                 };
-                daxa::AccelerationStructureBuildSizesInfo proc_build_size_info = device.get_blas_build_sizes(proc_blas_build_info);
+                daxa::AccelerationStructureBuildSizesInfo proc_build_size_info = device.blas_build_sizes(proc_blas_build_info);
                 
                 scratch_alignment_size = get_aligned(proc_build_size_info.build_scratch_size, acceleration_structure_scratch_offset_alignment);
                 if ((blas_scratch_buffer_offset + scratch_alignment_size) > blas_scratch_buffer_size)
@@ -293,7 +287,7 @@ namespace tests
                     std::cout << "blas_scratch_buffer_offset > blas_scratch_buffer_size" << std::endl;
                     abort();
                 }
-                proc_blas_build_info.scratch_data = device.get_device_address(blas_scratch_buffer.get_state().buffers[0]).value() + blas_scratch_buffer_offset;
+                proc_blas_build_info.scratch_data = device.device_address(blas_scratch_buffer.get_state().buffers[0]).value() + blas_scratch_buffer_offset;
                 blas_scratch_buffer_offset += scratch_alignment_size;
 
                 
@@ -338,7 +332,7 @@ namespace tests
                         .mask = 0xFF,
                         .instance_shader_binding_table_record_offset = 0,
                         .flags = {}, // Is also default
-                        .blas_device_address = device.get_device_address(proc_blas).value(),
+                        .blas_device_address = device.device_address(proc_blas).value(),
                     },
                     daxa_BlasInstanceData{
                         .transform = {
@@ -351,11 +345,11 @@ namespace tests
                         .mask = 0xFF,
                         .instance_shader_binding_table_record_offset = 1,
                         .flags = DAXA_GEOMETRY_INSTANCE_FORCE_OPAQUE, // Is also default
-                        .blas_device_address = device.get_device_address(blas).value(),
+                        .blas_device_address = device.device_address(blas).value(),
                     }};
 
 
-                std::memcpy(device.get_host_address_as<daxa_BlasInstanceData>(blas_instances_buffer).value(),
+                std::memcpy(device.buffer_host_address_as<daxa_BlasInstanceData>(blas_instances_buffer).value(),
                             blas_instance_array.data(),
                             blas_instance_array.size() * sizeof(daxa_BlasInstanceData));
 
@@ -373,7 +367,7 @@ namespace tests
                     .instances = blas_instances,
                     .scratch_data = {}, // Ignored in get_acceleration_structure_build_sizes.
                 };
-                daxa::AccelerationStructureBuildSizesInfo tlas_build_sizes = device.get_tlas_build_sizes(tlas_build_info);
+                daxa::AccelerationStructureBuildSizesInfo tlas_build_sizes = device.tlas_build_sizes(tlas_build_info);
                 /// Create Tlas:
                 this->tlas = device.create_tlas({
                     .size = tlas_build_sizes.acceleration_structure_size,
@@ -387,8 +381,8 @@ namespace tests
                 defer { device.destroy_buffer(tlas_scratch_buffer); };
                 /// Update build info:
                 tlas_build_info.dst_tlas = tlas;
-                tlas_build_info.scratch_data = device.get_device_address(tlas_scratch_buffer).value();
-                blas_instances[0].data = device.get_device_address(blas_instances_buffer).value();
+                tlas_build_info.scratch_data = device.device_address(tlas_scratch_buffer).value();
+                blas_instances[0].data = device.device_address(blas_instances_buffer).value();
                 
                 /// Record build commands:
                 auto exec_cmds = [&]()
@@ -610,8 +604,8 @@ namespace tests
                 {
                     return;
                 }
-                daxa::u32 width = device.info_image(swapchain_image).value().size.x;
-                daxa::u32 height = device.info_image(swapchain_image).value().size.y;
+                daxa::u32 width = device.image_info(swapchain_image).value().size.x;
+                daxa::u32 height = device.image_info(swapchain_image).value().size.y;
 
                 my_camera.width = width;
                 my_camera.height = height;
@@ -635,7 +629,7 @@ namespace tests
                 });
                 defer { device.destroy_buffer(cam_staging_buffer); };
 
-                auto * buffer_ptr = device.get_host_address_as<uint8_t>(cam_staging_buffer).value();
+                auto * buffer_ptr = device.buffer_host_address_as<uint8_t>(cam_staging_buffer).value();
                 std::memcpy(buffer_ptr, &camera_view, cam_buffer_size);
 
                 auto recorder = device.create_command_recorder({
@@ -667,8 +661,8 @@ namespace tests
                     .size = {width, height},
                     .tlas = tlas,
                     .swapchain = swapchain_image.default_view(),
-                    .camera_buffer = this->device.get_device_address(cam_buffer).value(),
-                    .aabb_buffer = this->device.get_device_address(aabb_buffer).value(),
+                    .camera_buffer = this->device.device_address(cam_buffer).value(),
+                    .aabb_buffer = this->device.device_address(aabb_buffer).value(),
                 });
 
                 recorder.trace_rays({

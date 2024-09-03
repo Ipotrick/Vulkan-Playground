@@ -5,7 +5,11 @@
 
 #if defined(__cplusplus)
 #define DAXA_EXPORT extern "C" DAXA_CMAKE_EXPORT
+#if defined(__linux__)
+#define DAXA_EXPORT_CXX
+#else
 #define DAXA_EXPORT_CXX DAXA_CMAKE_EXPORT
+#endif
 #define DAXA_ZERO_INIT {}
 #else
 #define DAXA_EXPORT DAXA_CMAKE_EXPORT

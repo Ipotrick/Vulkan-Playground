@@ -85,37 +85,32 @@ struct App : BaseApp<App>
 
     void record_tasks(daxa::TaskGraph & new_task_graph)
     {
-        using namespace daxa::task_resource_uses;
         new_task_graph.use_persistent_image(task_render_image);
 
         new_task_graph.add_task({
-            .uses = {
-                ImageComputeShaderStorageWriteOnly<>{task_render_image},
-            },
+            .attachments = {daxa::inl_attachment(daxa::TaskImageAccess::COMPUTE_SHADER_STORAGE_WRITE_ONLY, task_render_image)},
             .task = [this](daxa::TaskInterface ti)
             {
-                auto & recorder = ti.get_recorder();
-                recorder.set_pipeline(*compute_pipeline);
-                recorder.push_constant(ComputePush{
+                ti.recorder.set_pipeline(*compute_pipeline);
+                ti.recorder.push_constant(ComputePush{
                     .image = render_image.default_view(),
                     .frame_dim = {size_x, size_y},
                 });
-                recorder.dispatch({(size_x + 7) / 8, (size_y + 7) / 8});
+                ti.recorder.dispatch({(size_x + 7) / 8, (size_y + 7) / 8});
             },
             .name = APPNAME_PREFIX("Draw (Compute)"),
         });
         new_task_graph.add_task({
-            .uses = {
-                ImageTransferRead<>{task_render_image},
-                ImageTransferWrite<>{task_swapchain_image},
+            .attachments = {
+                {daxa::inl_attachment(daxa::TaskImageAccess::TRANSFER_READ, task_render_image)},
+                {daxa::inl_attachment(daxa::TaskImageAccess::TRANSFER_WRITE, task_swapchain_image)},
             },
             .task = [this](daxa::TaskInterface ti)
             {
-                auto & recorder = ti.get_recorder();
-                recorder.blit_image_to_image({
-                    .src_image = ti.uses[task_render_image].image(),
+                ti.recorder.blit_image_to_image({
+                    .src_image = ti.get(task_render_image).ids[0],
                     .src_image_layout = daxa::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                    .dst_image = ti.uses[task_swapchain_image].image(),
+                    .dst_image = ti.get(task_swapchain_image).ids[0],
                     .dst_image_layout = daxa::ImageLayout::TRANSFER_DST_OPTIMAL,
                     .src_offsets = {{{0, 0, 0}, {static_cast<i32>(size_x), static_cast<i32>(size_y), 1}}},
                     .dst_offsets = {{{0, 0, 0}, {static_cast<i32>(size_x), static_cast<i32>(size_y), 1}}},

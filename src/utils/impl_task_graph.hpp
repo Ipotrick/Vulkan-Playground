@@ -2,7 +2,8 @@
 
 #include "../impl_core.hpp"
 
-#include <stack>
+#include <variant>
+#include <sstream>
 #include <daxa/utils/task_graph.hpp>
 
 #define DAXA_TASK_GRAPH_MAX_CONDITIONALS 31

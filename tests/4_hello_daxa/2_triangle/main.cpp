@@ -86,7 +86,7 @@ void upload_vertces_data_task(daxa::TaskGraph & tg, daxa::TaskBufferView vertice
 
             // We then get the memory mapped pointer of the staging buffer, and
             // write the data directly to it.
-            auto * buffer_ptr = ti.device.get_host_address_as<std::array<MyVertex, 3>>(staging_buffer_id).value();
+            auto * buffer_ptr = ti.device.buffer_host_address_as<std::array<MyVertex, 3>>(staging_buffer_id).value();
             *buffer_ptr = data;
 
             // For every attachment, the task graph generates metadata.
@@ -158,7 +158,7 @@ struct DrawToSwapchainTask : DrawToSwapchainH::Task
         // the ti can give you all the info you need about every attachment via index:
         daxa::TaskImageAttachmentInfo const & image_attach_info = ti.get(AT.color_target);
 
-        daxa::ImageInfo image_info = ti.device.info_image(image_attach_info.ids[0]).value();
+        daxa::ImageInfo image_info = ti.device.image_info(image_attach_info.ids[0]).value();
 
         // When starting a render pass via a rasterization pipeline, daxa "eats" a generic command recorder
         // and turns it into a RenderCommandRecorder.
@@ -181,9 +181,9 @@ struct DrawToSwapchainTask : DrawToSwapchainH::Task
         // Very importantly, task graph packs up our attachment shader data into a byte blob.
         // We need to pass this blob to our shader somehow.
         // The typical way to do this is to assign the blob to the push constant.
-        MyPushConstant push = {};
-        ti.assign_attachment_shader_blob(push.attachments.value);
-        render_recorder.push_constant(push);
+        render_recorder.push_constant(MyPushConstant {
+            .attachments = ti.attachment_shader_blob,
+        });
         // and issue the draw call with the desired number of vertices.
         render_recorder.draw({.vertex_count = 3});
 
@@ -218,22 +218,8 @@ auto main() -> int
 
     daxa::Instance instance = daxa::create_instance({});
 
-    daxa::Device device = instance.create_device({
-        .selector = [](daxa::DeviceProperties const & device_props) -> daxa::i32
-        {
-            daxa::i32 score = 0;
-            switch (device_props.device_type)
-            {
-            case daxa::DeviceType::DISCRETE_GPU: score += 10000; break;
-            case daxa::DeviceType::VIRTUAL_GPU: score += 1000; break;
-            case daxa::DeviceType::INTEGRATED_GPU: score += 100; break;
-            default: break;
-            }
-            score += static_cast<daxa::i32>(device_props.limits.max_memory_allocation_count / 100000);
-            return score;
-        },
-        .name = "my device",
-    });
+    // Let instance auto select a device
+    daxa::Device device = instance.create_device_2(instance.choose_device({}, {}));
 
     daxa::Swapchain swapchain = device.create_swapchain({
         .native_window = native_window_handle,

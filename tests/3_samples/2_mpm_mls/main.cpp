@@ -360,7 +360,7 @@ struct App : BaseApp<App>
         .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_SEQUENTIAL_WRITE,
         .name = "gpu_status_buffer",
     });
-    GpuStatus* gpu_status = device.get_host_address_as<GpuStatus>(gpu_status_buffer).value();
+    GpuStatus* gpu_status = device.buffer_host_address_as<GpuStatus>(gpu_status_buffer).value();
     daxa::TaskBuffer task_gpu_status_buffer{{.initial_buffers = {.buffers = std::array{gpu_status_buffer}}, .name = "status_buffer"}};
 
 
@@ -405,7 +405,7 @@ struct App : BaseApp<App>
     daxa::TlasBuildInfo tlas_build_info = {};
     std::array<daxa::BlasAabbGeometryInfo, 1> geometry = {
         daxa::BlasAabbGeometryInfo{
-            .data = device.get_device_address(aabb_buffer).value(),
+            .data = device.device_address(aabb_buffer).value(),
             .stride = sizeof(daxa_f32mat3x2),
             .count = NUM_PARTICLES,
             .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
@@ -413,7 +413,7 @@ struct App : BaseApp<App>
     // create blas instances info
     std::array<daxa::TlasInstanceInfo, 1> blas_instances = std::array{
             daxa::TlasInstanceInfo{
-                .data = device.get_device_address(blas_instances_buffer).value(),
+                .data = device.device_address(blas_instances_buffer).value(),
                 .count = 1,
                 .is_data_array_of_pointers = false,      // Buffer contains flat array of instances, not an array of pointers to instances.
                 .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
@@ -507,7 +507,7 @@ struct App : BaseApp<App>
         // NOTE: Vulkan has inverted y axis in NDC
         camera.inv_proj.y.y *= -1;
         
-        device.get_host_address_as<Camera>(camera_buffer).value()[0] = camera;
+        device.buffer_host_address_as<Camera>(camera_buffer).value()[0] = camera;
 
         build_accel_structs();
         loop_task_graph.execute({});
@@ -576,7 +576,7 @@ struct App : BaseApp<App>
                     .name = ("staging_particles_buffer"),
                 });
                 ti.recorder.destroy_buffer_deferred(staging_particles_buffer);
-                auto * particles_ptr = device.get_host_address_as<Particle>(staging_particles_buffer).value();
+                auto * particles_ptr = device.buffer_host_address_as<Particle>(staging_particles_buffer).value();
 
                 auto staging_aabb_buffer = device.create_buffer({
                     .size = aabb_size,
@@ -584,7 +584,7 @@ struct App : BaseApp<App>
                     .name = ("staging_particles_buffer"),
                 });
                 ti.recorder.destroy_buffer_deferred(staging_aabb_buffer);
-                auto * aabb_ptr = device.get_host_address_as<Aabb>(staging_aabb_buffer).value();
+                auto * aabb_ptr = device.buffer_host_address_as<Aabb>(staging_aabb_buffer).value();
 
                 srand(static_cast<unsigned int>(std::time(NULL)));
 
@@ -726,7 +726,7 @@ struct App : BaseApp<App>
                     .name = ("staging_gpu_input_buffer"),
                 });
                 ti.recorder.destroy_buffer_deferred(staging_gpu_input_buffer);
-                auto * buffer_ptr = device.get_host_address_as<GpuInput>(staging_gpu_input_buffer).value();
+                auto * buffer_ptr = device.buffer_host_address_as<GpuInput>(staging_gpu_input_buffer).value();
                 *buffer_ptr = gpu_input;
                 ti.recorder.copy_buffer_to_buffer({
                     .src_buffer = staging_gpu_input_buffer,
@@ -742,7 +742,7 @@ struct App : BaseApp<App>
 
                 // ti.recorder.destroy_buffer_deferred(staging_gpu_status_buffer);
 
-                // auto * status_ptr = device.get_host_address_as<GpuStatus>(staging_gpu_status_buffer).value();
+                // auto * status_ptr = device.buffer_host_address_as<GpuStatus>(staging_gpu_status_buffer).value();
 
                 // *status_ptr = {
                 //     .flags = gpu_flags,
@@ -804,12 +804,12 @@ struct App : BaseApp<App>
                 ti.recorder.push_constant(ComputePush{
                     .image_id = render_image.default_view(),
                     .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                    .input_ptr = device.device_address(gpu_input_buffer).value(),
                     .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
+                    .particles = device.device_address(particles_buffer).value(),
+                    .cells = device.device_address(grid_buffer).value(),
+                    .aabbs = device.device_address(aabb_buffer).value(),
+                    .camera = device.device_address(camera_buffer).value(),
                     .tlas = tlas,
                 });
                 ti.recorder.dispatch({(gpu_input.p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
@@ -831,12 +831,12 @@ struct App : BaseApp<App>
                 ti.recorder.push_constant(ComputePush{
                     .image_id = render_image.default_view(),
                     .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                    .input_ptr = device.device_address(gpu_input_buffer).value(),
                     .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
+                    .particles = device.device_address(particles_buffer).value(),
+                    .cells = device.device_address(grid_buffer).value(),
+                    .aabbs = device.device_address(aabb_buffer).value(),
+                    .camera = device.device_address(camera_buffer).value(),
                     .tlas = tlas,
                 });
                 ti.recorder.dispatch({(gpu_input.p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
@@ -859,12 +859,12 @@ struct App : BaseApp<App>
                 ti.recorder.push_constant(ComputePush{
                     .image_id = render_image.default_view(),
                     .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                    .input_ptr = device.device_address(gpu_input_buffer).value(),
                     .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
+                    .particles = device.device_address(particles_buffer).value(),
+                    .cells = device.device_address(grid_buffer).value(),
+                    .aabbs = device.device_address(aabb_buffer).value(),
+                    .camera = device.device_address(camera_buffer).value(),
                     .tlas = tlas,
                 });
                 ti.recorder.dispatch({(gpu_input.grid_dim.x + MPM_GRID_COMPUTE_X - 1) / MPM_GRID_COMPUTE_X, (gpu_input.grid_dim.y + MPM_GRID_COMPUTE_X - 1) / MPM_GRID_COMPUTE_Y, (gpu_input.grid_dim.z + MPM_GRID_COMPUTE_Z - 1) / MPM_GRID_COMPUTE_Z});
@@ -887,12 +887,12 @@ struct App : BaseApp<App>
                 ti.recorder.push_constant(ComputePush{
                     .image_id = render_image.default_view(),
                     .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                    .input_ptr = device.device_address(gpu_input_buffer).value(),
                     .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
+                    .particles = device.device_address(particles_buffer).value(),
+                    .cells = device.device_address(grid_buffer).value(),
+                    .aabbs = device.device_address(aabb_buffer).value(),
+                    .camera = device.device_address(camera_buffer).value(),
                     .tlas = tlas,
                 });
                 ti.recorder.dispatch({(gpu_input.p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
@@ -931,7 +931,7 @@ struct App : BaseApp<App>
             .geometries = geometry,
             .scratch_data = {}, // Ignored in get_acceleration_structure_build_sizes.   // Is also default
         };
-        blas_build_sizes = device.get_blas_build_sizes(blas_build_info);
+        blas_build_sizes = device.blas_build_sizes(blas_build_info);
 
         blas = device.create_blas({
             .size = blas_build_sizes.acceleration_structure_size,
@@ -962,11 +962,11 @@ struct App : BaseApp<App>
                 .mask = 0xFF,
                 .instance_shader_binding_table_record_offset = 0,
                 .flags = {}, // Is also default
-                .blas_device_address = device.get_device_address(blas).value(),
+                .blas_device_address = device.device_address(blas).value(),
             }};
 
         // copy blas instances to buffer
-        std::memcpy(device.get_host_address_as<daxa_BlasInstanceData>(blas_instances_buffer).value(),
+        std::memcpy(device.buffer_host_address_as<daxa_BlasInstanceData>(blas_instances_buffer).value(),
                     blas_instance_array.data(),
                     blas_instance_array.size() * sizeof(daxa_BlasInstanceData));
 
@@ -979,7 +979,7 @@ struct App : BaseApp<App>
         };
 
         // tlas build info
-        tlas_build_sizes = device.get_tlas_build_sizes(tlas_build_info);
+        tlas_build_sizes = device.tlas_build_sizes(tlas_build_info);
 
         // tlas struct
         tlas = device.create_tlas({
@@ -1006,7 +1006,7 @@ struct App : BaseApp<App>
                 // add to deferred destruction
                 ti.recorder.destroy_buffer_deferred(blas_scratch_buffer);
                 // attach scratch buffer to task
-                blas_build_info.scratch_data = device.get_device_address(blas_scratch_buffer).value();
+                blas_build_info.scratch_data = device.device_address(blas_scratch_buffer).value();
                 // build blas
                 ti.recorder.build_acceleration_structures({
                     .blas_build_infos = std::array{blas_build_info},
@@ -1028,7 +1028,7 @@ struct App : BaseApp<App>
                 // add to deferred destruction
                 ti.recorder.destroy_buffer_deferred(tlas_scratch_buffer);
                 // attach scratch buffer to task
-                tlas_build_info.scratch_data = device.get_device_address(tlas_scratch_buffer).value();
+                tlas_build_info.scratch_data = device.device_address(tlas_scratch_buffer).value();
                 // build tlas
                 ti.recorder.build_acceleration_structures({
                     .tlas_build_infos = std::array{tlas_build_info},
@@ -1067,12 +1067,12 @@ struct App : BaseApp<App>
         //         ti.recorder.push_constant(ComputePush{
         //             .image_id = render_image.default_view(),
         //             .input_buffer_id = gpu_input_buffer,
-        //             .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+        //             .input_ptr = device.device_address(gpu_input_buffer).value(),
                     // .status_buffer_id = gpu_status_buffer,
-        //             .particles = device.get_device_address(particles_buffer).value(),
-        //             .cells = device.get_device_address(grid_buffer).value(),
-        //             .aabbs = device.get_device_address(aabb_buffer).value(),
-        //             .camera = device.get_device_address(camera_buffer).value(),
+        //             .particles = device.device_address(particles_buffer).value(),
+        //             .cells = device.device_address(grid_buffer).value(),
+        //             .aabbs = device.device_address(aabb_buffer).value(),
+        //             .camera = device.device_address(camera_buffer).value(),
         //             .tlas = tlas,
         //         });
         //         ti.recorder.dispatch({(size_x + MPM_SHADING_COMPUTE_X - 1) / MPM_SHADING_COMPUTE_X, (size_y + MPM_SHADING_COMPUTE_Y - 1) / MPM_SHADING_COMPUTE_Y});
@@ -1095,12 +1095,12 @@ struct App : BaseApp<App>
                 ti.recorder.push_constant(ComputePush{
                     .image_id = render_image.default_view(),
                     .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                    .input_ptr = device.device_address(gpu_input_buffer).value(),
                     .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
+                    .particles = device.device_address(particles_buffer).value(),
+                    .cells = device.device_address(grid_buffer).value(),
+                    .aabbs = device.device_address(aabb_buffer).value(),
+                    .camera = device.device_address(camera_buffer).value(),
                     .tlas = tlas,
                 });
                 ti.recorder.trace_rays({

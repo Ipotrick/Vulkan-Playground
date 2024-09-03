@@ -56,7 +56,11 @@ If you prefer to interact in Discord over GitHub issues, Daxa has a [Discord ser
 - a full C API may be used to create API wrappers for other languages
 - extensive low-overhead validation checks
 - integrates most commonly used Vulkan extensions
-- integration of modern API features, such as `BufferDeviceAddress`, `MeshShaders`, `RayTracing`, `DescriptorIndexing`, `DynamicRendering`
+- support for buffer device addresses
+- always mapped buffers
+- mesh shaders, in core as well as pipeline manager
+- raytracing, in core, pipeline manager AND rendergraph
+- async compute/ async transfer/ multi-queue support
 - ergonomic explicit synchronization (optional, you can also use the render-graph instead)
 - stores queriable metadata for all objects, similar to dx11
 - simplified, semi-managed resource lifetimes

@@ -213,9 +213,9 @@ auto daxa_event_dec_refcnt(daxa_Event self) -> u64
 void daxa_ImplBinarySemaphore::zero_ref_callback(ImplHandle const * handle)
 {
     auto * self = rc_cast<daxa_BinarySemaphore>(handle);
-    std::unique_lock const lock{self->device->main_queue_zombies_mtx};
-    u64 const main_queue_cpu_timeline = self->device->main_queue_cpu_timeline.load(std::memory_order::relaxed);
-    self->device->main_queue_semaphore_zombies.emplace_back(
+    std::unique_lock const lock{self->device->zombies_mtx};
+    u64 const main_queue_cpu_timeline = self->device->global_submit_timeline.load(std::memory_order::relaxed);
+    self->device->semaphore_zombies.emplace_back(
         main_queue_cpu_timeline,
         SemaphoreZombie{
             .vk_semaphore = self->vk_semaphore,
@@ -230,9 +230,9 @@ void daxa_ImplTimelineSemaphore::zero_ref_callback(ImplHandle const * handle)
 {
     _DAXA_TEST_PRINT("daxa_ImplTimelineSemaphore::zero_ref_callback\n");
     auto * self = rc_cast<daxa_TimelineSemaphore>(handle);
-    std::unique_lock const lock{self->device->main_queue_zombies_mtx};
-    u64 const main_queue_cpu_timeline = self->device->main_queue_cpu_timeline.load(std::memory_order::relaxed);
-    self->device->main_queue_semaphore_zombies.emplace_back(
+    std::unique_lock const lock{self->device->zombies_mtx};
+    u64 const main_queue_cpu_timeline = self->device->global_submit_timeline.load(std::memory_order::relaxed);
+    self->device->semaphore_zombies.emplace_back(
         main_queue_cpu_timeline,
         SemaphoreZombie{
             .vk_semaphore = self->vk_semaphore,
@@ -246,9 +246,9 @@ void daxa_ImplTimelineSemaphore::zero_ref_callback(ImplHandle const * handle)
 void daxa_ImplEvent::zero_ref_callback(ImplHandle const * handle)
 {
     auto * self = rc_cast<daxa_Event>(handle);
-    std::unique_lock const lock{self->device->main_queue_zombies_mtx};
-    u64 const main_queue_cpu_timeline = self->device->main_queue_cpu_timeline.load(std::memory_order::relaxed);
-    self->device->main_queue_split_barrier_zombies.emplace_back(
+    std::unique_lock const lock{self->device->zombies_mtx};
+    u64 const main_queue_cpu_timeline = self->device->global_submit_timeline.load(std::memory_order::relaxed);
+    self->device->split_barrier_zombies.emplace_back(
         main_queue_cpu_timeline,
         EventZombie{
             .vk_event = self->vk_event,

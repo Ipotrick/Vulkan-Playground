@@ -53,6 +53,13 @@ typedef struct
 DAXA_EXPORT daxa_RayTracingPipelineInfo const *
 daxa_ray_tracing_pipeline_info(daxa_RayTracingPipeline ray_tracing_pipeline);
 
+DAXA_EXPORT daxa_Result
+daxa_ray_tracing_pipeline_create_default_sbt(daxa_RayTracingPipeline pipeline, daxa_RayTracingShaderBindingTable * out_sbt, daxa_BufferId * out_buffer);
+
+// out_blob must be the size of the group_count * raytracing_properties.shaderGroupHandleSize
+DAXA_EXPORT daxa_Result
+daxa_ray_tracing_pipeline_get_shader_group_handles(daxa_RayTracingPipeline pipeline, void *out_blob);
+
 DAXA_EXPORT uint64_t
 daxa_ray_tracing_pipeline_inc_refcnt(daxa_RayTracingPipeline pipeline);
 DAXA_EXPORT uint64_t
