@@ -126,7 +126,7 @@ DAXA_CREATE_TEST(
     LIBS glfw
 )
 DAXA_CREATE_TEST(
-    FOLDER 3_samples 2_mpm_mls
+    FOLDER 3_samples 2_mls_mpm_cpic
     LIBS glfw
 )
 DAXA_CREATE_TEST(
