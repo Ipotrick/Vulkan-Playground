@@ -520,6 +520,8 @@ struct App : BaseApp<App>
     }();
     // clang-format on
 
+    daxa::RayTracingPipeline::SbtPair sbt_pair = rt_pipeline->create_default_sbt();
+
     daxa::BufferId gpu_input_buffer = device.create_buffer(daxa::BufferInfo{
         .size = sizeof(GpuInput),
         .name = "gpu_input_buffer",
@@ -552,7 +554,7 @@ struct App : BaseApp<App>
         .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_SEQUENTIAL_WRITE,
         .name = "gpu_status_buffer",
     });
-    GpuStatus* gpu_status = device.get_host_address_as<GpuStatus>(gpu_status_buffer).value();
+    GpuStatus* gpu_status = device.buffer_host_address_as<GpuStatus>(gpu_status_buffer).value();
     daxa::TaskBuffer task_gpu_status_buffer{{.initial_buffers = {.buffers = std::array{gpu_status_buffer}}, .name = "status_buffer"}};
 
 
@@ -689,7 +691,7 @@ struct App : BaseApp<App>
     std::array<std::array<daxa::BlasAabbGeometryInfo, 1>, 1 + NUM_RIGID_BOX_COUNT> aabb_geometries = {{
         {{
             daxa::BlasAabbGeometryInfo{
-                .data = device.get_device_address(aabb_buffer).value(),
+                .data = device.device_address(aabb_buffer).value(),
                 .stride = sizeof(daxa_f32mat3x2),
                 .count = TOTAL_AABB_COUNT,
                 .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
@@ -697,7 +699,7 @@ struct App : BaseApp<App>
         }},
         {{
             daxa::BlasAabbGeometryInfo{
-                .data = device.get_device_address(rigid_particles_buffer).value(),
+                .data = device.device_address(rigid_particles_buffer).value(),
                 .stride = sizeof(RigidParticle),
                 .count = NUM_RIGID_PARTICLES,
                 .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
@@ -708,8 +710,8 @@ struct App : BaseApp<App>
     std::array<std::array<daxa::BlasTriangleGeometryInfo, 1>, NUM_RIGID_BOX_COUNT> rigid_body_geometries = {{
         {{
             daxa::BlasTriangleGeometryInfo{
-                .vertex_data = device.get_device_address(rigid_body_vertex_buffer).value(),
-                .index_data = device.get_device_address(rigid_body_index_buffer).value(),
+                .vertex_data = device.device_address(rigid_body_vertex_buffer).value(),
+                .index_data = device.device_address(rigid_body_index_buffer).value(),
                 .count = BOX_TRIANGLE_COUNT,
                 .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
             }
@@ -719,7 +721,7 @@ struct App : BaseApp<App>
     std::array<std::array<daxa::BlasAabbGeometryInfo, 1>, 1> aabb_geometries = {{
         {{
             daxa::BlasAabbGeometryInfo{
-                .data = device.get_device_address(aabb_buffer).value(),
+                .data = device.device_address(aabb_buffer).value(),
                 .stride = sizeof(daxa_f32mat3x2),
                 .count = TOTAL_AABB_COUNT,
                 .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
@@ -730,7 +732,7 @@ struct App : BaseApp<App>
 #endif 
     std::array<daxa::TlasInstanceInfo, 1> blas_instances = std::array{
             daxa::TlasInstanceInfo{
-                .data = device.get_device_address(blas_instances_buffer).value(),
+                .data = device.device_address(blas_instances_buffer).value(),
 #if defined(DAXA_RIGID_BODY_FLAG)
                 .count = 1 + NUM_RIGID_BOX_COUNT * 2,
 #else
@@ -848,7 +850,7 @@ struct App : BaseApp<App>
         // NOTE: Vulkan has inverted y axis in NDC
         camera.inv_proj.y.y *= -1;
         
-        device.get_host_address_as<Camera>(camera_buffer).value()[0] = camera;
+        device.buffer_host_address_as<Camera>(camera_buffer).value()[0] = camera;
 
         build_accel_structs();
         loop_task_graph.execute({});
@@ -1011,7 +1013,7 @@ struct App : BaseApp<App>
                     .name = ("staging_particles_buffer"),
                 });
                 ti.recorder.destroy_buffer_deferred(staging_particles_buffer);
-                auto * particles_ptr = device.get_host_address_as<Particle>(staging_particles_buffer).value();
+                auto * particles_ptr = device.buffer_host_address_as<Particle>(staging_particles_buffer).value();
 
                 auto staging_aabb_buffer = device.create_buffer({
                     .size = aabb_size,
@@ -1019,10 +1021,10 @@ struct App : BaseApp<App>
                     .name = ("staging_particles_buffer"),
                 });
                 ti.recorder.destroy_buffer_deferred(staging_aabb_buffer);
-                auto * aabb_ptr = device.get_host_address_as<Aabb>(staging_aabb_buffer).value();
+                auto * aabb_ptr = device.buffer_host_address_as<Aabb>(staging_aabb_buffer).value();
 
 #if defined(DAXA_RIGID_BODY_FLAG)
-                auto * rigid_body_ptr = device.get_host_address_as<RigidBody>(rigid_body_buffer).value();
+                auto * rigid_body_ptr = device.buffer_host_address_as<RigidBody>(rigid_body_buffer).value();
 
                 auto staging_rigid_body_vertex_buffer = device.create_buffer({
                     .size = rigid_body_vertex_size,
@@ -1030,7 +1032,7 @@ struct App : BaseApp<App>
                     .name = ("staging_rigid_body_vertex_buffer"),
                 });
                 ti.recorder.destroy_buffer_deferred(staging_rigid_body_vertex_buffer);
-                auto * rigid_body_vertex_ptr = device.get_host_address_as<daxa_f32vec3>(staging_rigid_body_vertex_buffer).value();
+                auto * rigid_body_vertex_ptr = device.buffer_host_address_as<daxa_f32vec3>(staging_rigid_body_vertex_buffer).value();
 
                 auto staging_rigid_body_index_buffer = device.create_buffer({
                     .size = rigid_body_index_size,
@@ -1038,7 +1040,7 @@ struct App : BaseApp<App>
                     .name = ("staging_rigid_body_index_buffer"),
                 });
                 ti.recorder.destroy_buffer_deferred(staging_rigid_body_index_buffer);
-                auto * rigid_body_index_ptr = device.get_host_address_as<daxa_u32>(staging_rigid_body_index_buffer).value();
+                auto * rigid_body_index_ptr = device.buffer_host_address_as<daxa_u32>(staging_rigid_body_index_buffer).value();
 
                 auto staging_rigid_particles_buffer = device.create_buffer({
                     .size = rigid_particles_size,
@@ -1046,7 +1048,7 @@ struct App : BaseApp<App>
                     .name = ("staging_rigid_particles_buffer"),
                 });
                 ti.recorder.destroy_buffer_deferred(staging_rigid_particles_buffer);
-                auto * rigid_particles_ptr = device.get_host_address_as<RigidParticle>(staging_rigid_particles_buffer).value();
+                auto * rigid_particles_ptr = device.buffer_host_address_as<RigidParticle>(staging_rigid_particles_buffer).value();
 #endif
 
                 srand(static_cast<unsigned int>(std::time(NULL)));
@@ -1380,7 +1382,7 @@ struct App : BaseApp<App>
                     .name = ("staging_gpu_input_buffer"),
                 });
                 ti.recorder.destroy_buffer_deferred(staging_gpu_input_buffer);
-                auto * buffer_ptr = device.get_host_address_as<GpuInput>(staging_gpu_input_buffer).value();
+                auto * buffer_ptr = device.buffer_host_address_as<GpuInput>(staging_gpu_input_buffer).value();
                 *buffer_ptr = gpu_input;
                 ti.recorder.copy_buffer_to_buffer({
                     .src_buffer = staging_gpu_input_buffer,
@@ -1438,18 +1440,18 @@ struct App : BaseApp<App>
                     ti.recorder.push_constant(ComputePush{
                         .image_id = render_image.default_view(),
                         .input_buffer_id = gpu_input_buffer,
-                        .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
                         .status_buffer_id = gpu_status_buffer,
-                        .particles = device.get_device_address(particles_buffer).value(),
-                        .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                        .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                        .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                        .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                        .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                        .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-                        .cells = device.get_device_address(grid_buffer).value(),
-                        .aabbs = device.get_device_address(aabb_buffer).value(),
-                        .camera = device.get_device_address(camera_buffer).value(),
+                        .particles = device.device_address(particles_buffer).value(),
+                        .rigid_bodies = device.device_address(rigid_body_buffer).value(),
+                        .indices = device.device_address(rigid_body_index_buffer).value(),
+                        .vertices = device.device_address(rigid_body_vertex_buffer).value(),
+                        .rigid_particles = device.device_address(rigid_particles_buffer).value(),
+                        .rigid_cells = device.device_address(rigid_grid_buffer).value(),
+                        .rigid_particle_color = device.device_address(particle_CDF_buffer).value(),
+                        .cells = device.device_address(grid_buffer).value(),
+                        .aabbs = device.device_address(aabb_buffer).value(),
+                        .camera = device.device_address(camera_buffer).value(),
                         .tlas = tlas,
                     });
                     ti.recorder.dispatch({(gpu_input.grid_dim.x + MPM_GRID_COMPUTE_X - 1) / MPM_GRID_COMPUTE_X, (gpu_input.grid_dim.y + MPM_GRID_COMPUTE_Y - 1) / MPM_GRID_COMPUTE_Y, (gpu_input.grid_dim.z + MPM_GRID_COMPUTE_Z - 1) / MPM_GRID_COMPUTE_Z});
@@ -1474,18 +1476,18 @@ struct App : BaseApp<App>
                 ti.recorder.push_constant(ComputePush{
                     .image_id = render_image.default_view(),
                     .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                    .input_ptr = device.device_address(gpu_input_buffer).value(),
                     .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
-                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
+                    .particles = device.device_address(particles_buffer).value(),
+                    .rigid_bodies = device.device_address(rigid_body_buffer).value(),
+                    .indices = device.device_address(rigid_body_index_buffer).value(),
+                    .vertices = device.device_address(rigid_body_vertex_buffer).value(),
+                    .rigid_particles = device.device_address(rigid_particles_buffer).value(),
+                    .rigid_cells = device.device_address(rigid_grid_buffer).value(),
+                    .rigid_particle_color = device.device_address(particle_CDF_buffer).value(),
+                    .cells = device.device_address(grid_buffer).value(),
+                    .aabbs = device.device_address(aabb_buffer).value(),
+                    .camera = device.device_address(camera_buffer).value(),
                     .tlas = tlas,
                 });
                 ti.recorder.dispatch({(gpu_input.rigid_body_count + MPM_CPIC_COMPUTE_X - 1) / MPM_CPIC_COMPUTE_X});
@@ -1514,18 +1516,18 @@ struct App : BaseApp<App>
                     ti.recorder.push_constant(ComputePush{
                         .image_id = render_image.default_view(),
                         .input_buffer_id = gpu_input_buffer,
-                        .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
                         .status_buffer_id = gpu_status_buffer,
-                        .particles = device.get_device_address(particles_buffer).value(),
-                        .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                        .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                        .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                        .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                        .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                        .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-                        .cells = device.get_device_address(grid_buffer).value(),
-                        .aabbs = device.get_device_address(aabb_buffer).value(),
-                        .camera = device.get_device_address(camera_buffer).value(),
+                        .particles = device.device_address(particles_buffer).value(),
+                        .rigid_bodies = device.device_address(rigid_body_buffer).value(),
+                        .indices = device.device_address(rigid_body_index_buffer).value(),
+                        .vertices = device.device_address(rigid_body_vertex_buffer).value(),
+                        .rigid_particles = device.device_address(rigid_particles_buffer).value(),
+                        .rigid_cells = device.device_address(rigid_grid_buffer).value(),
+                        .rigid_particle_color = device.device_address(particle_CDF_buffer).value(),
+                        .cells = device.device_address(grid_buffer).value(),
+                        .aabbs = device.device_address(aabb_buffer).value(),
+                        .camera = device.device_address(camera_buffer).value(),
                         .tlas = tlas,
                     });
                     ti.recorder.dispatch({(gpu_input.r_p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
@@ -1557,20 +1559,20 @@ struct App : BaseApp<App>
                     ti.recorder.push_constant(ComputePush{
                         .image_id = render_image.default_view(),
                         .input_buffer_id = gpu_input_buffer,
-                        .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
                         .status_buffer_id = gpu_status_buffer,
-                        .particles = device.get_device_address(particles_buffer).value(),
+                        .particles = device.device_address(particles_buffer).value(),
 #if defined(DAXA_RIGID_BODY_FLAG)
-                        .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                        .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                        .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                        .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                        .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                        .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                        .rigid_bodies = device.device_address(rigid_body_buffer).value(),
+                        .indices = device.device_address(rigid_body_index_buffer).value(),
+                        .vertices = device.device_address(rigid_body_vertex_buffer).value(),
+                        .rigid_particles = device.device_address(rigid_particles_buffer).value(),
+                        .rigid_cells = device.device_address(rigid_grid_buffer).value(),
+                        .rigid_particle_color = device.device_address(particle_CDF_buffer).value(),
 #endif // DAXA_RIGID_BODY_FLAG
-                        .cells = device.get_device_address(grid_buffer).value(),
-                        .aabbs = device.get_device_address(aabb_buffer).value(),
-                        .camera = device.get_device_address(camera_buffer).value(),
+                        .cells = device.device_address(grid_buffer).value(),
+                        .aabbs = device.device_address(aabb_buffer).value(),
+                        .camera = device.device_address(camera_buffer).value(),
                         .tlas = tlas,
                     });
                     ti.recorder.dispatch({(gpu_input.p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
@@ -1601,20 +1603,20 @@ struct App : BaseApp<App>
                     ti.recorder.push_constant(ComputePush{
                         .image_id = render_image.default_view(),
                         .input_buffer_id = gpu_input_buffer,
-                        .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
                         .status_buffer_id = gpu_status_buffer,
-                        .particles = device.get_device_address(particles_buffer).value(),
+                        .particles = device.device_address(particles_buffer).value(),
 #if defined(DAXA_RIGID_BODY_FLAG)
-                        .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                        .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                        .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                        .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                        .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                        .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                        .rigid_bodies = device.device_address(rigid_body_buffer).value(),
+                        .indices = device.device_address(rigid_body_index_buffer).value(),
+                        .vertices = device.device_address(rigid_body_vertex_buffer).value(),
+                        .rigid_particles = device.device_address(rigid_particles_buffer).value(),
+                        .rigid_cells = device.device_address(rigid_grid_buffer).value(),
+                        .rigid_particle_color = device.device_address(particle_CDF_buffer).value(),
 #endif
-                        .cells = device.get_device_address(grid_buffer).value(),
-                        .aabbs = device.get_device_address(aabb_buffer).value(),
-                        .camera = device.get_device_address(camera_buffer).value(),
+                        .cells = device.device_address(grid_buffer).value(),
+                        .aabbs = device.device_address(aabb_buffer).value(),
+                        .camera = device.device_address(camera_buffer).value(),
                         .tlas = tlas,
                     });
                     ti.recorder.dispatch({(gpu_input.p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
@@ -1645,20 +1647,20 @@ struct App : BaseApp<App>
                     ti.recorder.push_constant(ComputePush{
                         .image_id = render_image.default_view(),
                         .input_buffer_id = gpu_input_buffer,
-                        .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
                         .status_buffer_id = gpu_status_buffer,
-                        .particles = device.get_device_address(particles_buffer).value(),
+                        .particles = device.device_address(particles_buffer).value(),
 #if defined(DAXA_RIGID_BODY_FLAG)
-                        .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                        .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                        .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                        .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                        .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                        .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                        .rigid_bodies = device.device_address(rigid_body_buffer).value(),
+                        .indices = device.device_address(rigid_body_index_buffer).value(),
+                        .vertices = device.device_address(rigid_body_vertex_buffer).value(),
+                        .rigid_particles = device.device_address(rigid_particles_buffer).value(),
+                        .rigid_cells = device.device_address(rigid_grid_buffer).value(),
+                        .rigid_particle_color = device.device_address(particle_CDF_buffer).value(),
 #endif
-                        .cells = device.get_device_address(grid_buffer).value(),
-                        .aabbs = device.get_device_address(aabb_buffer).value(),
-                        .camera = device.get_device_address(camera_buffer).value(),
+                        .cells = device.device_address(grid_buffer).value(),
+                        .aabbs = device.device_address(aabb_buffer).value(),
+                        .camera = device.device_address(camera_buffer).value(),
                         .tlas = tlas,
                     });
                     ti.recorder.dispatch({(gpu_input.grid_dim.x + MPM_GRID_COMPUTE_X - 1) / MPM_GRID_COMPUTE_X, (gpu_input.grid_dim.y + MPM_GRID_COMPUTE_Y - 1) / MPM_GRID_COMPUTE_Y, (gpu_input.grid_dim.z + MPM_GRID_COMPUTE_Z - 1) / MPM_GRID_COMPUTE_Z});
@@ -1690,20 +1692,20 @@ struct App : BaseApp<App>
                     ti.recorder.push_constant(ComputePush{
                         .image_id = render_image.default_view(),
                         .input_buffer_id = gpu_input_buffer,
-                        .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
                         .status_buffer_id = gpu_status_buffer,
-                        .particles = device.get_device_address(particles_buffer).value(),
+                        .particles = device.device_address(particles_buffer).value(),
 #if defined(DAXA_RIGID_BODY_FLAG)
-                        .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                        .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                        .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                        .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                        .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                        .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                        .rigid_bodies = device.device_address(rigid_body_buffer).value(),
+                        .indices = device.device_address(rigid_body_index_buffer).value(),
+                        .vertices = device.device_address(rigid_body_vertex_buffer).value(),
+                        .rigid_particles = device.device_address(rigid_particles_buffer).value(),
+                        .rigid_cells = device.device_address(rigid_grid_buffer).value(),
+                        .rigid_particle_color = device.device_address(particle_CDF_buffer).value(),
 #endif // DAXA_RIGID_BODY_FLAG
-                        .cells = device.get_device_address(grid_buffer).value(),
-                        .aabbs = device.get_device_address(aabb_buffer).value(),
-                        .camera = device.get_device_address(camera_buffer).value(),
+                        .cells = device.device_address(grid_buffer).value(),
+                        .aabbs = device.device_address(aabb_buffer).value(),
+                        .camera = device.device_address(camera_buffer).value(),
                         .tlas = tlas,
                     });
                     ti.recorder.dispatch({(gpu_input.p_count + MPM_P2G_COMPUTE_X - 1) / MPM_P2G_COMPUTE_X});
@@ -1733,18 +1735,18 @@ struct App : BaseApp<App>
                 ti.recorder.push_constant(ComputePush{
                     .image_id = render_image.default_view(),
                     .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                    .input_ptr = device.device_address(gpu_input_buffer).value(),
                     .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
-                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
+                    .particles = device.device_address(particles_buffer).value(),
+                    .rigid_bodies = device.device_address(rigid_body_buffer).value(),
+                    .indices = device.device_address(rigid_body_index_buffer).value(),
+                    .vertices = device.device_address(rigid_body_vertex_buffer).value(),
+                    .rigid_particles = device.device_address(rigid_particles_buffer).value(),
+                    .rigid_cells = device.device_address(rigid_grid_buffer).value(),
+                    .rigid_particle_color = device.device_address(particle_CDF_buffer).value(),
+                    .cells = device.device_address(grid_buffer).value(),
+                    .aabbs = device.device_address(aabb_buffer).value(),
+                    .camera = device.device_address(camera_buffer).value(),
                     .tlas = tlas,
                 });
                 ti.recorder.dispatch({(gpu_input.rigid_body_count + MPM_CPIC_COMPUTE_X - 1) / MPM_CPIC_COMPUTE_X});
@@ -1799,7 +1801,7 @@ struct App : BaseApp<App>
             .geometries = aabb_geometries[0],
             .scratch_data = {}, // Ignored in get_acceleration_structure_build_sizes.   // Is also default
         };
-        blas_build_sizes = device.get_blas_build_sizes(blas_build_info);
+        blas_build_sizes = device.blas_build_sizes(blas_build_info);
 
         blas = device.create_blas({
             .size = blas_build_sizes.acceleration_structure_size,
@@ -1814,7 +1816,7 @@ struct App : BaseApp<App>
             .geometries = aabb_geometries[1],
             .scratch_data = {}, // Ignored in get_acceleration_structure_build_sizes.   // Is also default
         };
-        blas_CDF_cell_build_sizes = device.get_blas_build_sizes(blas_CDF_cell_build_info);
+        blas_CDF_cell_build_sizes = device.blas_build_sizes(blas_CDF_cell_build_info);
 
         blas_CDF_cell = device.create_blas({
             .size = blas_CDF_cell_build_sizes.acceleration_structure_size,
@@ -1833,7 +1835,7 @@ struct App : BaseApp<App>
             .geometries = rigid_body_geometries[0],
             .scratch_data = {}, // Ignored in get_acceleration_structure_build_sizes.   // Is also default
         };
-        rigid_blas_build_sizes = device.get_blas_build_sizes(blas_build_info_rigid);
+        rigid_blas_build_sizes = device.blas_build_sizes(blas_build_info_rigid);
 
         rigid_blas = device.create_blas({
             .size = rigid_blas_build_sizes.acceleration_structure_size,
@@ -1859,7 +1861,7 @@ struct App : BaseApp<App>
 
 
 #if defined(DAXA_RIGID_BODY_FLAG)
-        auto * rigid_body_ptr = device.get_host_address_as<RigidBody>(rigid_body_buffer).value();
+        auto * rigid_body_ptr = device.buffer_host_address_as<RigidBody>(rigid_body_buffer).value();
         // define blas instances
         // define blas instances
         auto blas_instance_array = std::array{
@@ -1873,7 +1875,7 @@ struct App : BaseApp<App>
                 .mask = 0xFF,
                 .instance_shader_binding_table_record_offset = 0,
                 .flags = {},
-                .blas_device_address = device.get_device_address(blas).value(),
+                .blas_device_address = device.device_address(blas).value(),
             },
 #if defined(DAXA_SIMULATION_MANY_RIGID_BODIES)  
             daxa_BlasInstanceData{
@@ -1884,7 +1886,7 @@ struct App : BaseApp<App>
                 .mask = 0xFF,
                 .instance_shader_binding_table_record_offset = 0,
                 .flags = {},
-                .blas_device_address = device.get_device_address(blas_CDF_cell).value(),
+                .blas_device_address = device.device_address(blas_CDF_cell).value(),
             },
             daxa_BlasInstanceData{
                 .transform = {
@@ -1894,7 +1896,7 @@ struct App : BaseApp<App>
                 .mask = 0xFF,
                 .instance_shader_binding_table_record_offset = 0,
                 .flags = {},
-                .blas_device_address = device.get_device_address(blas_CDF_cell).value(),
+                .blas_device_address = device.device_address(blas_CDF_cell).value(),
             },
             daxa_BlasInstanceData{
                 .transform = {
@@ -1904,7 +1906,7 @@ struct App : BaseApp<App>
                 .mask = 0xFF,
                 .instance_shader_binding_table_record_offset = 0,
                 .flags = {},
-                .blas_device_address = device.get_device_address(blas_CDF_cell).value(),
+                .blas_device_address = device.device_address(blas_CDF_cell).value(),
             },
             daxa_BlasInstanceData{
                 .transform = {
@@ -1914,7 +1916,7 @@ struct App : BaseApp<App>
                 .mask = 0xFF,
                 .instance_shader_binding_table_record_offset = 1,
                 .flags = {},
-                .blas_device_address = device.get_device_address(rigid_blas).value(),
+                .blas_device_address = device.device_address(rigid_blas).value(),
             },
             daxa_BlasInstanceData{
                 .transform = {
@@ -1924,7 +1926,7 @@ struct App : BaseApp<App>
                 .mask = 0xFF,
                 .instance_shader_binding_table_record_offset = 1,
                 .flags = {},
-                .blas_device_address = device.get_device_address(rigid_blas).value(),
+                .blas_device_address = device.device_address(rigid_blas).value(),
             },
             daxa_BlasInstanceData{
                 .transform = {
@@ -1934,7 +1936,7 @@ struct App : BaseApp<App>
                 .mask = 0xFF,
                 .instance_shader_binding_table_record_offset = 1,
                 .flags = {},
-                .blas_device_address = device.get_device_address(rigid_blas).value(),
+                .blas_device_address = device.device_address(rigid_blas).value(),
             }
 #else // DAXA_SIMULATION_MANY_RIGID_BODIES
             daxa_BlasInstanceData{
@@ -1945,7 +1947,7 @@ struct App : BaseApp<App>
                 .mask = 0xFF,
                 .instance_shader_binding_table_record_offset = 0,
                 .flags = {},
-                .blas_device_address = device.get_device_address(blas_CDF_cell).value(),
+                .blas_device_address = device.device_address(blas_CDF_cell).value(),
             },
             daxa_BlasInstanceData{
                 .transform = {
@@ -1955,7 +1957,7 @@ struct App : BaseApp<App>
                 .mask = 0xFF,
                 .instance_shader_binding_table_record_offset = 1,
                 .flags = {},
-                .blas_device_address = device.get_device_address(rigid_blas).value(),
+                .blas_device_address = device.device_address(rigid_blas).value(),
             }
 #endif // DAXA_SIMULATION_MANY_RIGID_BODIES
             };
@@ -1973,12 +1975,12 @@ struct App : BaseApp<App>
                 .mask = 0xFF,
                 .instance_shader_binding_table_record_offset = 0,
                 .flags = {},
-                .blas_device_address = device.get_device_address(blas).value(),
+                .blas_device_address = device.device_address(blas).value(),
             }};
 #endif
 
         // copy blas instances to buffer
-        std::memcpy(device.get_host_address_as<daxa_BlasInstanceData>(blas_instances_buffer).value(),
+        std::memcpy(device.buffer_host_address_as<daxa_BlasInstanceData>(blas_instances_buffer).value(),
                     blas_instance_array.data(),
                     blas_instance_array.size() * sizeof(daxa_BlasInstanceData));
 
@@ -1991,7 +1993,7 @@ struct App : BaseApp<App>
         };
 
         // tlas build info
-        tlas_build_sizes = device.get_tlas_build_sizes(tlas_build_info);
+        tlas_build_sizes = device.tlas_build_sizes(tlas_build_info);
 
         // tlas struct
         tlas = device.create_tlas({
@@ -2024,7 +2026,7 @@ struct App : BaseApp<App>
                 // add to deferred destruction
                 ti.recorder.destroy_buffer_deferred(blas_scratch_buffer);
                 // attach scratch buffer to task
-                blas_build_info.scratch_data = device.get_device_address(blas_scratch_buffer).value();
+                blas_build_info.scratch_data = device.device_address(blas_scratch_buffer).value();
 
 #if defined(DAXA_RIGID_BODY_FLAG)
                 auto blas_scratch_buffer_CDF_cell = device.create_buffer({
@@ -2032,7 +2034,7 @@ struct App : BaseApp<App>
                     .name = "blas CDF cell build scratch buffer",
                 });
                 ti.recorder.destroy_buffer_deferred(blas_scratch_buffer_CDF_cell);
-                blas_CDF_cell_build_info.scratch_data = device.get_device_address(blas_scratch_buffer_CDF_cell).value();
+                blas_CDF_cell_build_info.scratch_data = device.device_address(blas_scratch_buffer_CDF_cell).value();
                 
                 auto rigid_blas_scratch_buffer = device.create_buffer({
                     .size = rigid_blas_build_sizes.build_scratch_size,
@@ -2041,7 +2043,7 @@ struct App : BaseApp<App>
 
                 ti.recorder.destroy_buffer_deferred(rigid_blas_scratch_buffer);
 
-                blas_build_info_rigid.scratch_data = device.get_device_address(rigid_blas_scratch_buffer).value();
+                blas_build_info_rigid.scratch_data = device.device_address(rigid_blas_scratch_buffer).value();
 
                 // build rigid blas
                 ti.recorder.build_acceleration_structures({
@@ -2072,7 +2074,7 @@ struct App : BaseApp<App>
                 // add to deferred destruction
                 ti.recorder.destroy_buffer_deferred(tlas_scratch_buffer);
                 // attach scratch buffer to task
-                tlas_build_info.scratch_data = device.get_device_address(tlas_scratch_buffer).value();
+                tlas_build_info.scratch_data = device.device_address(tlas_scratch_buffer).value();
                 // build tlas
                 ti.recorder.build_acceleration_structures({
                     .tlas_build_infos = std::array{tlas_build_info},
@@ -2125,26 +2127,27 @@ struct App : BaseApp<App>
                 ti.recorder.push_constant(ComputePush{
                     .image_id = render_image.default_view(),
                     .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.get_device_address(gpu_input_buffer).value(),
+                    .input_ptr = device.device_address(gpu_input_buffer).value(),
                     .status_buffer_id = gpu_status_buffer,
-                    .particles = device.get_device_address(particles_buffer).value(),
+                    .particles = device.device_address(particles_buffer).value(),
 #if defined(DAXA_RIGID_BODY_FLAG)
-                    .rigid_bodies = device.get_device_address(rigid_body_buffer).value(),
-                    .indices = device.get_device_address(rigid_body_index_buffer).value(),
-                    .vertices = device.get_device_address(rigid_body_vertex_buffer).value(),
-                    .rigid_particles = device.get_device_address(rigid_particles_buffer).value(),
-                    .rigid_cells = device.get_device_address(rigid_grid_buffer).value(),
-                    .rigid_particle_color = device.get_device_address(particle_CDF_buffer).value(),
+                    .rigid_bodies = device.device_address(rigid_body_buffer).value(),
+                    .indices = device.device_address(rigid_body_index_buffer).value(),
+                    .vertices = device.device_address(rigid_body_vertex_buffer).value(),
+                    .rigid_particles = device.device_address(rigid_particles_buffer).value(),
+                    .rigid_cells = device.device_address(rigid_grid_buffer).value(),
+                    .rigid_particle_color = device.device_address(particle_CDF_buffer).value(),
 #endif
-                    .cells = device.get_device_address(grid_buffer).value(),
-                    .aabbs = device.get_device_address(aabb_buffer).value(),
-                    .camera = device.get_device_address(camera_buffer).value(),
+                    .cells = device.device_address(grid_buffer).value(),
+                    .aabbs = device.device_address(aabb_buffer).value(),
+                    .camera = device.device_address(camera_buffer).value(),
                     .tlas = tlas,
                 });
                 ti.recorder.trace_rays({
                     .width = size_x,
                     .height = size_y,
                     .depth = 1,
+                    .shader_binding_table = sbt_pair.table,
                 });
             },
             .name = ("Draw (Ray Tracing)"),
@@ -2236,7 +2239,7 @@ struct App : BaseApp<App>
         std::cout << "Printing ... frame " << gpu_input.frame_number << std::endl;
 
         
-        auto * rigid_body_ptr = device.get_host_address_as<RigidBody>(rigid_body_buffer).value();
+        auto * rigid_body_ptr = device.buffer_host_address_as<RigidBody>(rigid_body_buffer).value();
 
         std::cout << "Printing rigid bodies" << std::endl;
 
@@ -2250,7 +2253,7 @@ struct App : BaseApp<App>
 
         if(print_CDF_cell) {
             print_CDF_cell = false;
-            auto rigid_cells = device.get_host_address_as<NodeCDF>(staging_rigid_grid_buffer).value();
+            auto rigid_cells = device.buffer_host_address_as<NodeCDF>(staging_rigid_grid_buffer).value();
             
             std::cout << "Printing rigid cells" << std::endl;
 
@@ -2290,11 +2293,11 @@ struct App : BaseApp<App>
         if(print_CDF_particles) {
             print_CDF_particles = false;
 
-            auto particle_CDFs = device.get_host_address_as<ParticleCDF>(_staging_particle_CDF_buffer).value();
+            auto particle_CDFs = device.buffer_host_address_as<ParticleCDF>(_staging_particle_CDF_buffer).value();
 
-            auto particles = device.get_host_address_as<Particle>(_staging_particles_buffer).value();
+            auto particles = device.buffer_host_address_as<Particle>(_staging_particles_buffer).value();
 
-            auto aabbs = device.get_host_address_as<Aabb>(_staging_aabb_buffer).value();
+            auto aabbs = device.buffer_host_address_as<Aabb>(_staging_aabb_buffer).value();
 
             std::cout << "Printing particle CDF" << std::endl;
 

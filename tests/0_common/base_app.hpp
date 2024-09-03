@@ -32,10 +32,10 @@ struct BaseApp : AppWindow<T>
         daxa::DeviceInfo2 info = {.name = "default device"};
         daxa::ImplicitFeatureFlags required_features = {};
 #if defined(DAXA_ATOMIC_FLOAT_FLAG)
-        required_features |= daxa::ImplicitFeatureFlags::SHADER_ATOMIC_FLOAT;
+        required_features |= daxa::ImplicitFeatureFlagBits::SHADER_ATOMIC_FLOAT;
 #endif
 #if defined(DAXA_RAY_TRACING_FLAG)
-        required_features |= daxa::ImplicitFeatureFlags::BASIC_RAY_TRACING;
+        required_features |= daxa::ImplicitFeatureFlagBits::BASIC_RAY_TRACING;
 #endif
         info = daxa_ctx.choose_device(required_features, info);
         return daxa_ctx.create_device_2(info);
