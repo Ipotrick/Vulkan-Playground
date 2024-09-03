@@ -10,14 +10,18 @@
 
 #include "daxa/daxa.inl"
 
+#define DAXA_SIMULATION_WATER_MPM_MLS
+#if !defined(DAXA_SIMULATION_WATER_MPM_MLS)
+// #define DAXA_SIMULATION_MANY_MATERIALS
 #define DAXA_RIGID_BODY_FLAG
+// WARN: rigid bodies don't collide with each other
+// #define DAXA_SIMULATION_MANY_RIGID_BODIES
+#endif // DAXA_SIMULATION_WATER_MPM_MLS
 
 #if defined(DAXA_RIGID_BODY_FLAG)
 // #define DAXA_LEVEL_SET_FLAG
 #endif // DAXA_RIGID_BODY_FLAG
 
-// #define DAXA_SIMULATION_WATER_MPM_MLS
-// #define DAXA_SIMULATION_MANY_MATERIALS
 #define GRID_DIM 128
 #define GRID_SIZE (GRID_DIM * GRID_DIM * GRID_DIM)
 #define QUALITY 2
@@ -34,6 +38,7 @@
 // #define TOTAL_AABB_COUNT (NUM_PARTICLES + NUM_RIGID_BOX_COUNT)
 #define TOTAL_AABB_COUNT NUM_PARTICLES
 #define BOUNDARY 3U
+#define GRAVITY -9.8f
 
 #define MPM_P2G_COMPUTE_X 64
 #define MPM_GRID_COMPUTE_X 4 
@@ -48,7 +53,6 @@
 #define MIN_DIST 1e-6f
 #define MAX_DIST 1e10f
 #define EULER 2.71828
-// #define VOXEL_PARTICLES 1
 #define MOUSE_DOWN_FLAG (1u << 0)
 #define MOUSE_TARGET_FLAG (1u << 1)
 #define PARTICLE_FORCE_ENABLED_FLAG (1u << 2)
@@ -71,15 +75,15 @@
 #define RIGID_BODY_BOX 0
 #define RIGID_BODY_MAX_ENUM (RIGID_BODY_BOX + 1)
 
-// WARN:
-// #define DAXA_SIMULATION_MANY_RIGID_BODIES
-
 #if defined(DAXA_SIMULATION_MANY_RIGID_BODIES)
 #define NUM_RIGID_BOX_COUNT 3
-const daxa_f32 rigid_body_densities[NUM_RIGID_BOX_COUNT] = {600.0f, 400.0f, 200.0f};
+const daxa_f32 rigid_body_densities[NUM_RIGID_BOX_COUNT] = {10000.0f, 800.0f, 200.0f};
+// const daxa_f32 rigid_body_densities[NUM_RIGID_BOX_COUNT] = {300.0f, 1500.0f, 10000.0f};
+const daxa_f32 rigid_body_frictions[NUM_RIGID_BOX_COUNT] = {0.1f, 0.3f, -0.1f};
 #else 
 #define NUM_RIGID_BOX_COUNT 1
-const daxa_f32 rigid_body_densities[NUM_RIGID_BOX_COUNT] = {600.0f};
+const daxa_f32 rigid_body_densities[NUM_RIGID_BOX_COUNT] = {5000.0f};
+const daxa_f32 rigid_body_frictions[NUM_RIGID_BOX_COUNT] = {0.1f};
 #endif
 #define NUM_RIGID_PARTICLES 32768
 
@@ -106,6 +110,7 @@ const daxa_f32 rigid_body_densities[NUM_RIGID_BOX_COUNT] = {600.0f};
 #define PUSHING_FORCE 0.0f
 #define APPLIED_FORCE_RIGID_BODY 100.0f
 #define BOUNDARY_FRICTION 0.1f
+#define BASE_VELOCITY 0.1f
 #else // DAXA_RIGID_BODY_FLAG
 
 #define NUM_RIGID_BOX_COUNT 0
@@ -124,7 +129,7 @@ struct GpuInput
 #if defined(DAXA_RIGID_BODY_FLAG)
   daxa_u32 rigid_body_count;
   daxa_u32 r_p_count;
-#endif
+#endif  // DAXA_RIGID_BODY_FLAG
   daxa_u32vec3 grid_dim;
   daxa_f32 dt;
   daxa_f32 dx;
@@ -134,7 +139,9 @@ struct GpuInput
   daxa_f32vec2 mouse_pos;
   daxa_f32 mouse_radius;
   daxa_f32 max_velocity;
+#if defined(DAXA_RIGID_BODY_FLAG)
   daxa_f32 applied_force;
+#endif  // DAXA_RIGID_BODY_FLAG
   };
 
 struct GpuStatus 
@@ -1290,11 +1297,19 @@ daxa_f32mat4x4 rigid_body_get_transform_matrix_from_rotation_translation(daxa_f3
 #elif defined(__cplusplus) // C++
 #include <cmath> // std::sqrt
 
+#if defined(DAXA_SIMULATION_WATER_MPM_MLS)
+#define TIME_STEP 1e-3f
+#define MAX_VELOCITY 20.0f
+#else // DAXA_SIMULATION_WATER_MPM_MLS
 #if defined(DAXA_SIMULATION_MANY_MATERIALS)
 #define MAX_VELOCITY 4.0f
+#define TIME_STEP 1e-4f
 #else 
 #define MAX_VELOCITY 12.0f
+#define TIME_STEP 2e-4f
 #endif
+
+#endif // DAXA_SIMULATION_WATER_MPM_MLS
 
 
 inline daxa_f32 length(const daxa_f32vec3 &v) {

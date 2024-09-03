@@ -65,6 +65,7 @@ void main()
           deref(status).rigid_element_index = prd.rigid_element_index;
         } 
 
+#if defined(DAXA_RIGID_BODY_FLAG)
         if (((deref(status).flags & RIGID_BODY_PICK_UP_ENABLED_FLAG) == RIGID_BODY_PICK_UP_ENABLED_FLAG) || ((deref(status).flags & RIGID_BODY_IMPULSE_ENABLED_FLAG) == RIGID_BODY_IMPULSE_ENABLED_FLAG)) {
           deref(status).flags &= ~MOUSE_DOWN_FLAG;
           if (prd.rigid_body_index != -1)
@@ -76,6 +77,7 @@ void main()
             deref(status).local_hit_position = (inverse(transform) * vec4(prd.hit_pos, 1)).xyz;
           }
         }
+#endif // DAXA_RIGID_BODY_FLAG
     }
     if((deref(status).flags & MOUSE_TARGET_FLAG) == MOUSE_TARGET_FLAG) {
       deref(status).hit_origin = ray.origin;
