@@ -469,11 +469,13 @@ struct App : BaseApp<App>
         // Groups are in order of their shader indices.
         // NOTE: The order of the groups is important! raygen, miss, hit, callable
 #if defined(DAXA_RIGID_BODY_FLAG)
-        .shader_groups_infos = {
+        .raygen_group_infos = {
             daxa::RayTracingShaderGroupInfo{
                 .type = daxa::ShaderGroup::GENERAL,
                 .general_shader_index = 0,
             },
+        },
+        .miss_group_infos = {
             daxa::RayTracingShaderGroupInfo{
                 .type = daxa::ShaderGroup::GENERAL,
                 .general_shader_index = 4,
@@ -482,6 +484,8 @@ struct App : BaseApp<App>
                 .type = daxa::ShaderGroup::GENERAL,
                 .general_shader_index = 5,
             },
+        },
+        .hit_group_infos = {
             daxa::RayTracingShaderGroupInfo{
                 .type = daxa::ShaderGroup::PROCEDURAL_HIT_GROUP,
                 .closest_hit_shader_index = 2,
@@ -493,11 +497,13 @@ struct App : BaseApp<App>
             },
         },
 #else
-        .shader_groups_infos = {
+        .raygen_group_infos = {
             daxa::RayTracingShaderGroupInfo{
                 .type = daxa::ShaderGroup::GENERAL,
                 .general_shader_index = 0,
             },
+        },
+        .miss_group_infos = {
             daxa::RayTracingShaderGroupInfo{
                 .type = daxa::ShaderGroup::GENERAL,
                 .general_shader_index = 3,
@@ -506,6 +512,8 @@ struct App : BaseApp<App>
                 .type = daxa::ShaderGroup::GENERAL,
                 .general_shader_index = 4,
             },
+        },
+        .hit_group_infos = {
             daxa::RayTracingShaderGroupInfo{
                 .type = daxa::ShaderGroup::PROCEDURAL_HIT_GROUP,
                 .closest_hit_shader_index = 2,
