@@ -487,7 +487,7 @@ namespace daxa
         };
         this->current_observed_hotload_files = &pipe_result.observed_hotload_files;
         auto ray_tracing_pipeline_info = RayTracingPipelineInfo{
-            .ray_gen_shaders = {},
+            .raygen_shaders = {},
             .intersection_shaders = {},
             .any_hit_shaders = {},
             .callable_shaders = {},
@@ -498,13 +498,13 @@ namespace daxa
             .push_constant_size = a_info.push_constant_size,
             .name = a_info.name,
         };
-        auto ray_gen_spirv_result = std::vector<daxa::Result<std::vector<unsigned int>>>();
+        auto raygen_spirv_result = std::vector<daxa::Result<std::vector<unsigned int>>>();
         auto intersection_spirv_result = std::vector<daxa::Result<std::vector<unsigned int>>>();
         auto any_hit_spirv_result = std::vector<daxa::Result<std::vector<unsigned int>>>();
         auto callable_spirv_result = std::vector<daxa::Result<std::vector<unsigned int>>>();
         auto closest_hit_spirv_result = std::vector<daxa::Result<std::vector<unsigned int>>>();
         auto miss_hit_spirv_result = std::vector<daxa::Result<std::vector<unsigned int>>>();
-        auto ray_gen_shader_infos = std::vector<ShaderInfo>{};
+        auto raygen_shader_infos = std::vector<ShaderInfo>{};
         auto intersection_shader_infos = std::vector<ShaderInfo>{};
         auto any_hit_shader_infos = std::vector<ShaderInfo>{};
         auto callable_shader_infos = std::vector<ShaderInfo>{};
@@ -512,7 +512,7 @@ namespace daxa
         auto miss_hit_shader_infos = std::vector<ShaderInfo>{};
         using ElemT = std::tuple<std::vector<ShaderCompileInfo> *, std::vector<ShaderInfo> *, std::vector<daxa::Result<std::vector<unsigned int>>> *, ShaderStage>;
         auto const result_shader_compile_infos = std::array<ElemT, 6>{
-            ElemT{&pipe_result.info.ray_gen_infos, &ray_gen_shader_infos, &ray_gen_spirv_result, ShaderStage::RAY_GEN},
+            ElemT{&pipe_result.info.raygen_infos, &raygen_shader_infos, &raygen_spirv_result, ShaderStage::RAY_GEN},
             ElemT{&pipe_result.info.intersection_infos, &intersection_shader_infos, &intersection_spirv_result, ShaderStage::RAY_INTERSECT},
             ElemT{&pipe_result.info.any_hit_infos, &any_hit_shader_infos, &any_hit_spirv_result, ShaderStage::RAY_ANY_HIT},
             ElemT{&pipe_result.info.callable_infos, &callable_shader_infos, &callable_spirv_result, ShaderStage::RAY_CALLABLE},
@@ -555,7 +555,7 @@ namespace daxa
             }
         }
 
-        ray_tracing_pipeline_info.ray_gen_shaders = {ray_gen_shader_infos.data(), ray_gen_shader_infos.size()};
+        ray_tracing_pipeline_info.raygen_shaders = {raygen_shader_infos.data(), raygen_shader_infos.size()};
         ray_tracing_pipeline_info.intersection_shaders = {intersection_shader_infos.data(), intersection_shader_infos.size()};
         ray_tracing_pipeline_info.any_hit_shaders = {any_hit_shader_infos.data(), any_hit_shader_infos.size()};
         ray_tracing_pipeline_info.callable_shaders = {callable_shader_infos.data(), callable_shader_infos.size()};
@@ -700,7 +700,7 @@ namespace daxa
     {
         // DAXA_DBG_ASSERT_TRUE_M(!daxa::holds_alternative<daxa::Monostate>(a_info.shader_info.source), "must provide shader source");
         auto modified_info = a_info;
-        for (auto & shader_compile_info : modified_info.ray_gen_infos)
+        for (auto & shader_compile_info : modified_info.raygen_infos)
         {
             shader_compile_info.compile_options.inherit(this->info.shader_compile_options);
         }

@@ -54,7 +54,7 @@ namespace daxa
 
     struct RayTracingPipelineInfo
     {
-        Span<ShaderInfo const> ray_gen_shaders = {};
+        Span<ShaderInfo const> raygen_shaders = {};
         Span<ShaderInfo const> intersection_shaders = {};
         Span<ShaderInfo const> any_hit_shaders = {};
         Span<ShaderInfo const> callable_shaders = {};
@@ -64,6 +64,14 @@ namespace daxa
         u32 max_ray_recursion_depth;
         u32 push_constant_size = {};
         SmallString name = {};
+    };
+
+    struct BuildShaderBindingTableInfo
+    {
+        u32 const raygen_group_index = {};
+        std::span<u32 const> miss_group_indices = {};
+        std::span<u32 const> hit_group_indices = {};
+        std::span<u32 const> callable_group_indices = {};
     };
 
     /**
@@ -85,7 +93,9 @@ namespace daxa
 
         struct SbtPair { daxa::BufferId buffer; RayTracingShaderBindingTable table; };
         [[nodiscard]] auto create_default_sbt() const -> SbtPair;
+        [[nodiscard]] auto create_sbt(BuildShaderBindingTableInfo const & info) const -> SbtPair;
         void get_shader_group_handles(void *out_blob) const;
+        auto get_shader_group_count() const -> u32;
 
       protected:
         template <typename T, typename H_T>

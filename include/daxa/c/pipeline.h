@@ -38,7 +38,7 @@ static daxa_RayTracingShaderGroupInfo const DAXA_DEFAULT_RAY_TRACING_SHADER_GROU
 
 typedef struct
 {
-    daxa_SpanToConst(daxa_RayTracingShaderInfo) ray_gen_stages;
+    daxa_SpanToConst(daxa_RayTracingShaderInfo) raygen_stages;
     daxa_SpanToConst(daxa_RayTracingShaderInfo) miss_stages;
     daxa_SpanToConst(daxa_RayTracingShaderInfo) callable_stages;
     daxa_SpanToConst(daxa_RayTracingShaderInfo) intersection_stages;
@@ -50,15 +50,35 @@ typedef struct
     daxa_SmallString name;
 } daxa_RayTracingPipelineInfo;
 
+
+
 DAXA_EXPORT daxa_RayTracingPipelineInfo const *
 daxa_ray_tracing_pipeline_info(daxa_RayTracingPipeline ray_tracing_pipeline);
 
+typedef struct
+{
+    uint32_t const raygen_group_index;
+    daxa_SpanToConst(uint32_t) miss_group_indices;
+    daxa_SpanToConst(uint32_t) hit_group_indices;
+    daxa_SpanToConst(uint32_t) callable_group_indices;
+} daxa_BuildShaderBindingTableInfo;
+
+static daxa_BuildShaderBindingTableInfo const DAXA_DEFAULT_BUILD_SHADER_BINDING_TABLE_INFO = DAXA_ZERO_INIT;
+
 DAXA_EXPORT daxa_Result
 daxa_ray_tracing_pipeline_create_default_sbt(daxa_RayTracingPipeline pipeline, daxa_RayTracingShaderBindingTable * out_sbt, daxa_BufferId * out_buffer);
+DAXA_EXPORT daxa_Result
+daxa_ray_tracing_pipeline_create_sbt(
+    daxa_RayTracingPipeline pipeline,
+    daxa_RayTracingShaderBindingTable * out_sbt, daxa_BufferId * out_buffer,
+    daxa_BuildShaderBindingTableInfo const * info);
 
 // out_blob must be the size of the group_count * raytracing_properties.shaderGroupHandleSize
 DAXA_EXPORT daxa_Result
 daxa_ray_tracing_pipeline_get_shader_group_handles(daxa_RayTracingPipeline pipeline, void *out_blob);
+
+DAXA_EXPORT uint32_t
+daxa_ray_tracing_pipeline_get_shader_group_count(daxa_RayTracingPipeline pipeline);
 
 DAXA_EXPORT uint64_t
 daxa_ray_tracing_pipeline_inc_refcnt(daxa_RayTracingPipeline pipeline);

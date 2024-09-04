@@ -430,10 +430,10 @@ namespace tests
                 // comp_pipeline = pipeline_manager.add_compute_pipeline(compute_pipe_info).value();
 
 
-                daxa::ShaderCompileInfo prim_ray_gen_compile_info;
-                daxa::ShaderCompileInfo ray_gen_compile_info;
+                daxa::ShaderCompileInfo prim_raygen_compile_info;
+                daxa::ShaderCompileInfo raygen_compile_info;
                 if(invocation_reorder_mode == static_cast<daxa_u32>(daxa::InvocationReorderMode::ALLOW_REORDER)) {
-                    prim_ray_gen_compile_info = daxa::ShaderCompileInfo{
+                    prim_raygen_compile_info = daxa::ShaderCompileInfo{
                         .source = daxa::ShaderFile{"raytracing.glsl"},
                         .compile_options = {
                             .defines = std::vector{daxa::ShaderDefine{"PRIMARY_RAYS", "1"}, daxa::ShaderDefine{"SER_ON", "1"}, atomic_float ?
@@ -441,13 +441,13 @@ namespace tests
                             }},
                         },
                     };
-                    ray_gen_compile_info = daxa::ShaderCompileInfo{
+                    raygen_compile_info = daxa::ShaderCompileInfo{
                         .source = daxa::ShaderFile{"raytracing.glsl"},
                         .compile_options = {
                             .defines = std::vector{daxa::ShaderDefine{"SER_ON", "1"}, atomic_float ? daxa::ShaderDefine{"ATOMIC_FLOAT", "1"} : daxa::ShaderDefine{"ATOMIC_FLOAT", "0"}}},
                     };
                 } else {
-                    prim_ray_gen_compile_info = daxa::ShaderCompileInfo{
+                    prim_raygen_compile_info = daxa::ShaderCompileInfo{
                         .source = daxa::ShaderFile{"raytracing.glsl"},
                         .compile_options = {
                             .defines = std::vector{daxa::ShaderDefine{"PRIMARY_RAYS", "1"}, atomic_float ?
@@ -455,7 +455,7 @@ namespace tests
                             }},
                         }
                     };
-                    ray_gen_compile_info = daxa::ShaderCompileInfo{
+                    raygen_compile_info = daxa::ShaderCompileInfo{
                         .source = daxa::ShaderFile{"raytracing.glsl"},
                         .compile_options = {.defines = std::vector{daxa::ShaderDefine{"HIT_TRIANGLE", "1"}, atomic_float ?
                                 daxa::ShaderDefine{"ATOMIC_FLOAT", "1"} : daxa::ShaderDefine{"ATOMIC_FLOAT", "0"
@@ -466,9 +466,9 @@ namespace tests
 
                 
                 auto const ray_tracing_pipe_info = daxa::RayTracingPipelineCompileInfo{
-                    .ray_gen_infos = {
-                        prim_ray_gen_compile_info,
-                        ray_gen_compile_info
+                    .raygen_infos = {
+                        prim_raygen_compile_info,
+                        raygen_compile_info
                     },
                     .intersection_infos = {daxa::ShaderCompileInfo{
                         .source = daxa::ShaderFile{"raytracing.glsl"},
@@ -551,15 +551,14 @@ namespace tests
                 rt_pipeline = pipeline_manager.add_ray_tracing_pipeline(ray_tracing_pipe_info).value();
 
                 sbt_pair = rt_pipeline->create_default_sbt();
-                second_sbt_pair = rt_pipeline->create_default_sbt();
 
-                // TODO: create a gentler way to manage shader groups and SBT
-                auto const get_host_address_result = device.buffer_host_address_as<uint8_t>(second_sbt_pair.buffer);
-                
-                std::unique_ptr<uint8_t[]> sbt_data = std::make_unique<uint8_t[]>(1024);
-                rt_pipeline->get_shader_group_handles(sbt_data.get());
-
-                memcpy(get_host_address_result.value(), sbt_data.get() + device.properties().ray_tracing_properties.value(). shader_group_handle_size, device.properties().ray_tracing_properties.value().shader_group_handle_size);
+                second_sbt_pair = rt_pipeline->create_sbt({
+                        1,
+                        std::array{0u, 1u}, // miss groups
+                        std::array{0u, 1u}, // hit groups
+                        std::array{0u, 1u}, // callable groups
+                    }
+                );
             }
 
             auto update() -> bool

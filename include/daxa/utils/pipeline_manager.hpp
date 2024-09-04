@@ -66,7 +66,7 @@ namespace daxa
 
     struct RayTracingPipelineCompileInfo
     {
-        std::vector<ShaderCompileInfo> ray_gen_infos = {};
+        std::vector<ShaderCompileInfo> raygen_infos = {};
         std::vector<ShaderCompileInfo> intersection_infos = {};
         std::vector<ShaderCompileInfo> any_hit_infos = {};
         std::vector<ShaderCompileInfo> callable_infos = {};

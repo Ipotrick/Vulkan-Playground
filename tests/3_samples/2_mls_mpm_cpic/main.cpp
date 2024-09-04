@@ -450,7 +450,7 @@ struct App : BaseApp<App>
         };
 
         return pipeline_manager.add_ray_tracing_pipeline({
-        .ray_gen_infos = {
+        .raygen_infos = {
             rt_gen_shader
         },
         .intersection_infos = {
