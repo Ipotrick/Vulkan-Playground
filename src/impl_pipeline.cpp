@@ -478,9 +478,6 @@ auto daxa_dvc_create_ray_tracing_pipeline(daxa_Device device, daxa_RayTracingPip
     u32 const closest_hit_count = static_cast<u32>(ret.info.closest_hit_shaders.size());
     u32 const miss_hit_count = static_cast<u32>(ret.info.miss_hit_shaders.size());
     u32 const all_stages_count = raygen_count + intersection_count + any_hit_count + callable_count + closest_hit_count + miss_hit_count;
-    u32 const first_callable_index = raygen_count + intersection_count + any_hit_count;
-    u32 const last_callable_index = raygen_count + intersection_count + any_hit_count + callable_count;
-    u32 const first_miss_index = raygen_count + intersection_count + any_hit_count + callable_count + closest_hit_count;
 
     std::vector<VkPipelineShaderStageRequiredSubgroupSizeCreateInfo> require_subgroup_size_vkstructs = {};
     // Necessary to prevent re-allocation
@@ -534,23 +531,15 @@ auto daxa_dvc_create_ray_tracing_pipeline(daxa_Device device, daxa_RayTracingPip
         DAXA_DECL_TRY_CREATE_RAY_TRACING_MODULE(stage, RAYGEN)
     }
 
-    for (FixedListSizeT i = 0; i < intersection_count; ++i)
+    const u32 miss_hit_offset = raygen_count;
+
+    for (FixedListSizeT i = 0; i < miss_hit_count; ++i)
     {
-        auto stage = ret.info.intersection_shaders.at(i);
-        DAXA_DECL_TRY_CREATE_RAY_TRACING_MODULE(stage, INTERSECTION)
+        auto stage = ret.info.miss_hit_shaders.at(i);
+        DAXA_DECL_TRY_CREATE_RAY_TRACING_MODULE(stage, MISS)
     }
 
-    for (FixedListSizeT i = 0; i < any_hit_count; ++i)
-    {
-        auto stage = ret.info.any_hit_shaders.at(i);
-        DAXA_DECL_TRY_CREATE_RAY_TRACING_MODULE(stage, ANY_HIT)
-    }
-
-    for (FixedListSizeT i = 0; i < callable_count; ++i)
-    {
-        auto stage = ret.info.callable_shaders.at(i);
-        DAXA_DECL_TRY_CREATE_RAY_TRACING_MODULE(stage, CALLABLE)
-    }
+    const u32 closest_hit_offset = raygen_count + miss_hit_count;
 
     for (FixedListSizeT i = 0; i < closest_hit_count; ++i)
     {
@@ -558,10 +547,28 @@ auto daxa_dvc_create_ray_tracing_pipeline(daxa_Device device, daxa_RayTracingPip
         DAXA_DECL_TRY_CREATE_RAY_TRACING_MODULE(stage, CLOSEST_HIT)
     }
 
-    for (FixedListSizeT i = 0; i < miss_hit_count; ++i)
+    const u32 any_hit_offset = raygen_count + miss_hit_count + closest_hit_count;
+
+    for (FixedListSizeT i = 0; i < any_hit_count; ++i)
     {
-        auto stage = ret.info.miss_hit_shaders.at(i);
-        DAXA_DECL_TRY_CREATE_RAY_TRACING_MODULE(stage, MISS)
+        auto stage = ret.info.any_hit_shaders.at(i);
+        DAXA_DECL_TRY_CREATE_RAY_TRACING_MODULE(stage, ANY_HIT)
+    }
+
+    const u32 intersection_offset = raygen_count + miss_hit_count + closest_hit_count + any_hit_count;
+
+    for (FixedListSizeT i = 0; i < intersection_count; ++i)
+    {
+        auto stage = ret.info.intersection_shaders.at(i);
+        DAXA_DECL_TRY_CREATE_RAY_TRACING_MODULE(stage, INTERSECTION)
+    }
+
+    const u32 callable_offset = raygen_count + miss_hit_count + closest_hit_count + any_hit_count + intersection_count;
+
+    for (FixedListSizeT i = 0; i < callable_count; ++i)
+    {
+        auto stage = ret.info.callable_shaders.at(i);
+        DAXA_DECL_TRY_CREATE_RAY_TRACING_MODULE(stage, CALLABLE)
     }
 
     u32 const raygen_group_count = static_cast<u32>(ret.raygen_groups.size());
@@ -570,72 +577,79 @@ auto daxa_dvc_create_ray_tracing_pipeline(daxa_Device device, daxa_RayTracingPip
     u32 const callable_group_count = static_cast<u32>(ret.callable_groups.size());
     u32 const all_group_count = raygen_group_count + miss_group_count + hit_group_count + callable_group_count;
 
-    std::vector<u32> raygen_indices(raygen_group_count);
-    std::vector<u32> miss_indices(miss_group_count);
-    std::vector<u32> hit_indices(hit_group_count);
-    std::vector<u32> callable_indices(callable_group_count);
-
     std::vector<RayTracingShaderGroupInfo> shader_groups(all_group_count);
 
     daxa_u32 index = 0;
-    daxa_u32 class_index = 0;
 
     // fill shader groups
     for(auto & group : ret.raygen_groups)
     {
-        if (group.general_shader_index == VK_SHADER_UNUSED_KHR ||
-            group.general_shader_index > raygen_count)
+        if (group.general_shader_index == VK_SHADER_UNUSED_KHR || group.general_shader_index > raygen_count)
         {
             return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
         }
 
         shader_groups[index] = group;
-        raygen_indices[class_index++] = index;
         index++;
     }
-    class_index = 0;
     for(auto & group : ret.miss_groups)
     {
-        if (group.general_shader_index < first_miss_index ||
-            group.general_shader_index >= all_stages_count)
+        
+        if (group.general_shader_index == VK_SHADER_UNUSED_KHR || group.general_shader_index > miss_hit_count)
+        {
+            return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
+        }
+        group.general_shader_index += miss_hit_offset;
+
+        shader_groups[index] = group;
+        index++;
+    }
+    for(auto & group : ret.hit_groups)
+    {
+        if (group.general_shader_index != VK_SHADER_UNUSED_KHR)
         {
             return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
         }
 
-        shader_groups[index] = group;
-        miss_indices[class_index++] = index;
-        index++;
-    }
-    class_index = 0;
-    for(auto & group : ret.hit_groups)
-    {
         if (group.type != ShaderGroup::TRIANGLES_HIT_GROUP && group.type != ShaderGroup::PROCEDURAL_HIT_GROUP)
         {
             return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
         }
-
-        shader_groups[index] = group;
-        hit_indices[class_index++] = index;
-        index++;
-    }
-    class_index = 0;
-    for(auto & group : ret.callable_groups)
-    {
-        if (group.general_shader_index < first_callable_index ||
-            group.general_shader_index >= last_callable_index)
+        
+        if (group.closest_hit_shader_index != VK_SHADER_UNUSED_KHR && group.closest_hit_shader_index > closest_hit_count)
+        {
+            return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
+        }
+        
+        if (group.any_hit_shader_index != VK_SHADER_UNUSED_KHR && group.any_hit_shader_index > any_hit_count)
         {
             return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
         }
 
+        if (group.intersection_shader_index != VK_SHADER_UNUSED_KHR && group.intersection_shader_index > intersection_count)
+        {
+            return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
+        }
+
+        group.closest_hit_shader_index += (group.closest_hit_shader_index != VK_SHADER_UNUSED_KHR) ? closest_hit_offset : 0;
+        group.any_hit_shader_index += (group.any_hit_shader_index != VK_SHADER_UNUSED_KHR) ? any_hit_offset : 0;
+        group.intersection_shader_index += (group.intersection_shader_index != VK_SHADER_UNUSED_KHR) ? intersection_offset : 0;
+
         shader_groups[index] = group;
-        callable_indices[class_index++] = index;
         index++;
     }
+    for(auto & group : ret.callable_groups)
+    {
+        if (group.general_shader_index == VK_SHADER_UNUSED_KHR || group.general_shader_index > callable_count)
+        {
+            return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
+        }
 
-    ret.raygen_group_indices = raygen_indices;
-    ret.miss_group_indices = miss_indices;
-    ret.hit_group_indices = hit_indices;
-    ret.callable_group_indices = callable_indices;
+        group.general_shader_index += callable_offset;
+
+        shader_groups[index] = group;
+        index++;
+    }
 
     // Shader groups to vulkan shader groups
     for (u32 i = 0; i < shader_groups.size(); ++i)
@@ -765,10 +779,10 @@ inline auto daxa_ray_tracing_pipeline_build_sbt(
     auto * device = pipeline->device;
 
     // total number of groups in the pipeline
-    u32 const raygen_group_handle_count = static_cast<u32>(pipeline->raygen_group_indices.size());
-    u32 const miss_group_handle_count = static_cast<u32>(pipeline->miss_group_indices.size());
-    u32 const hit_group_handle_count = static_cast<u32>(pipeline->hit_group_indices.size());
-    u32 const callable_group_handle_count = static_cast<u32>(pipeline->callable_group_indices.size());
+    u32 const raygen_group_handle_count = static_cast<u32>(pipeline->raygen_groups.size());
+    u32 const miss_group_handle_count = static_cast<u32>(pipeline->miss_groups.size());
+    u32 const hit_group_handle_count = static_cast<u32>(pipeline->hit_groups.size());
+    u32 const callable_group_handle_count = static_cast<u32>(pipeline->callable_groups.size());
 
 
     u32* _miss_group_indices = const_cast<u32*>(miss_group_indices);
@@ -797,31 +811,36 @@ inline auto daxa_ray_tracing_pipeline_build_sbt(
         return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
     }
 
+    const u32 miss_offset = raygen_group_handle_count;
     for (u32 i = 0; i < miss_group_count; ++i)
     {
         if (miss_group_indices[i] > miss_group_handle_count)
         {
             return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
         } else {
-            _miss_group_indices[i] += raygen_group_handle_count;
+            _miss_group_indices[i] += miss_offset;
         }
     }
+
+    const u32 hit_offset = raygen_group_handle_count + miss_group_handle_count;
     for (u32 i = 0; i < hit_group_count; ++i)
     {
         if (hit_group_indices[i] > hit_group_handle_count)
         {
             return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
         } else {
-            _hit_group_indices[i] += raygen_group_handle_count + miss_group_handle_count;
+            _hit_group_indices[i] += hit_offset;
         }
     }
+
+    const u32 callable_offset = raygen_group_handle_count + miss_group_handle_count + hit_group_handle_count;
     for (u32 i = 0; i < callable_group_count; ++i)
     {
         if (callable_group_indices[i] > callable_group_handle_count)
         {
             return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
         } else {
-            _callable_group_indices[i] += raygen_group_handle_count + miss_group_handle_count + hit_group_handle_count;
+            _callable_group_indices[i] += callable_offset;
         }
     }
 
@@ -940,49 +959,35 @@ auto daxa_ray_tracing_pipeline_create_sbt(
 auto daxa_ray_tracing_pipeline_create_default_sbt(daxa_RayTracingPipeline pipeline, daxa_RayTracingShaderBindingTable * out_sbt, daxa_BufferId * out_buffer) -> daxa_Result
 {
     u32 const raygen_group_index = 0;
-    u32 const raygen_group_count = static_cast<u32>(pipeline->raygen_group_indices.size());
-    u32 const miss_group_count = static_cast<u32>(pipeline->miss_group_indices.size());
-    u32 const hit_group_count = static_cast<u32>(pipeline->hit_group_indices.size());
-    u32 const callable_group_count = static_cast<u32>(pipeline->callable_group_indices.size());
+    u32 const raygen_group_count = static_cast<u32>(pipeline->raygen_groups.size());
+    u32 const miss_group_count = static_cast<u32>(pipeline->miss_groups.size());
+    u32 const hit_group_count = static_cast<u32>(pipeline->hit_groups.size());
+    u32 const callable_group_count = static_cast<u32>(pipeline->callable_groups.size());
 
     //  access v1 and v2 by reference
-    auto copy_vector = [&] (daxa_u32 *& group_indices, std::vector<u32> & in_group_indices) {
-        group_indices = in_group_indices.data();
+    auto fill_vector = [&] (daxa_u32 *& group_indices, u32 max_index) {
+        for(u32 i = 0; i < max_index; ++i) {
+            group_indices[i] = i;
+        }
     };
 
     u32* miss_group_indices = nullptr;
     // copy the group indices
     if(miss_group_count > 0) {
         miss_group_indices = new u32[miss_group_count];
-        copy_vector(miss_group_indices, pipeline->miss_group_indices);
+        fill_vector(miss_group_indices, miss_group_count);
     }
 
     u32* hit_group_indices = nullptr;
     if(hit_group_count > 0) {
         hit_group_indices = new u32[hit_group_count];
-        copy_vector(hit_group_indices, pipeline->hit_group_indices);
+        fill_vector(hit_group_indices, hit_group_count);
     }
 
     u32* callable_group_indices = nullptr;
     if(callable_group_count > 0) {
         callable_group_indices = new u32[callable_group_count];
-        copy_vector(callable_group_indices, pipeline->callable_group_indices);
-    }
-
-    if(miss_group_count > 0) {
-        for(u32 i = 0; i < miss_group_count; ++i) {
-            miss_group_indices[i] -= raygen_group_count;
-        }
-    }
-    if(hit_group_count > 0) {
-        for(u32 i = 0; i < hit_group_count; ++i) {
-            hit_group_indices[i] -= (raygen_group_count + miss_group_count);
-        }
-    }
-    if(callable_group_count > 0) {
-        for(u32 i = 0; i < callable_group_count; ++i) {
-            callable_group_indices[i] -= (raygen_group_count + miss_group_count + hit_group_count);
-        }
+        fill_vector(callable_group_indices, callable_group_count);
     }
 
     auto result = daxa_ray_tracing_pipeline_build_sbt(pipeline, out_sbt, out_buffer, raygen_group_index, miss_group_indices, miss_group_count, hit_group_indices, hit_group_count, callable_group_indices, callable_group_count);

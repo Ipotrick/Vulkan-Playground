@@ -520,33 +520,33 @@ namespace tests
                     .miss_group_infos = {
                         daxa::RayTracingShaderGroupInfo{
                             .type = daxa::ShaderGroup::GENERAL,
-                            .general_shader_index = 8,
+                            .general_shader_index = 0,
                         },
                         daxa::RayTracingShaderGroupInfo{
                             .type = daxa::ShaderGroup::GENERAL,
-                            .general_shader_index = 9,
+                            .general_shader_index = 1,
                         },
                     },
                     .hit_group_infos = {
                         daxa::RayTracingShaderGroupInfo{
                             .type = daxa::ShaderGroup::PROCEDURAL_HIT_GROUP,
-                            .closest_hit_shader_index = 6,
-                            .any_hit_shader_index = 3,
-                            .intersection_shader_index = 2,
+                            .closest_hit_shader_index = 0,
+                            .any_hit_shader_index = 0,
+                            .intersection_shader_index = 0,
                         },
                         daxa::RayTracingShaderGroupInfo{
                             .type = daxa::ShaderGroup::TRIANGLES_HIT_GROUP,
-                            .closest_hit_shader_index = 7,
+                            .closest_hit_shader_index = 1,
                         },
                     },
                     .callable_group_infos = {
                         daxa::RayTracingShaderGroupInfo{
                             .type = daxa::ShaderGroup::GENERAL,
-                            .general_shader_index = 4,
+                            .general_shader_index = 0,
                         },
                         daxa::RayTracingShaderGroupInfo{
                             .type = daxa::ShaderGroup::GENERAL,
-                            .general_shader_index = 5,
+                            .general_shader_index = 1,
                         },
                     },
                     .max_ray_recursion_depth = 2,

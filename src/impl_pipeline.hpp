@@ -40,8 +40,4 @@ struct daxa_ImplRayTracingPipeline final : ImplPipeline
     std::vector<RayTracingShaderGroupInfo> hit_groups = {};
     std::vector<RayTracingShaderGroupInfo> callable_groups = {};
     RayTracingPipelineInfo info = {};
-    std::vector<u32> raygen_group_indices = {};
-    std::vector<u32> miss_group_indices = {};
-    std::vector<u32> hit_group_indices = {};
-    std::vector<u32> callable_group_indices = {};
 };
