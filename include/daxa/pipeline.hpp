@@ -60,7 +60,10 @@ namespace daxa
         Span<ShaderInfo const> callable_shaders = {};
         Span<ShaderInfo const> closest_hit_shaders = {};
         Span<ShaderInfo const> miss_hit_shaders = {};
-        Span<RayTracingShaderGroupInfo const> shader_groups = {};
+        Span<RayTracingShaderGroupInfo const> raygen_groups = {};
+        Span<RayTracingShaderGroupInfo const> miss_groups = {};
+        Span<RayTracingShaderGroupInfo const> hit_groups = {};
+        Span<RayTracingShaderGroupInfo const> callable_groups = {};
         u32 max_ray_recursion_depth;
         u32 push_constant_size = {};
         SmallString name = {};

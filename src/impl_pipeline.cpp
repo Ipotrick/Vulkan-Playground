@@ -426,10 +426,26 @@ auto daxa_dvc_create_ray_tracing_pipeline(daxa_Device device, daxa_RayTracingPip
     ret.device = device;
     ret.info = *reinterpret_cast<RayTracingPipelineInfo const *>(info);
 
-    ret.shader_groups.resize(ret.info.shader_groups.size());
-    for (size_t i = 0; i < ret.shader_groups.size(); ++i)
+    // Store shader groups
+    ret.raygen_groups.resize(ret.info.raygen_groups.size());
+    for (size_t i = 0; i < ret.raygen_groups.size(); ++i)
     {
-        ret.shader_groups[i] = ret.info.shader_groups[i];
+        ret.raygen_groups[i] = ret.info.raygen_groups[i];
+    }
+    ret.miss_groups.resize(ret.info.miss_groups.size());
+    for (size_t i = 0; i < ret.miss_groups.size(); ++i)
+    {
+        ret.miss_groups[i] = ret.info.miss_groups[i];
+    }
+    ret.hit_groups.resize(ret.info.hit_groups.size());
+    for(size_t i = 0; i < ret.hit_groups.size(); ++i)
+    {
+        ret.hit_groups[i] = ret.info.hit_groups[i];
+    }
+    ret.callable_groups.resize(ret.info.callable_groups.size());
+    for(size_t i = 0; i < ret.callable_groups.size(); ++i)
+    {
+        ret.callable_groups[i] = ret.info.callable_groups[i];
     }
 
     // Check if ray tracing is supported
@@ -548,50 +564,72 @@ auto daxa_dvc_create_ray_tracing_pipeline(daxa_Device device, daxa_RayTracingPip
         DAXA_DECL_TRY_CREATE_RAY_TRACING_MODULE(stage, MISS)
     }
 
-    std::vector<u32> raygen_indices = {};
-    std::vector<u32> miss_indices = {};
-    std::vector<u32> hit_indices = {};
-    std::vector<u32> callable_indices = {};
+    u32 const raygen_group_count = static_cast<u32>(ret.raygen_groups.size());
+    u32 const miss_group_count = static_cast<u32>(ret.miss_groups.size());
+    u32 const hit_group_count = static_cast<u32>(ret.hit_groups.size());
+    u32 const callable_group_count = static_cast<u32>(ret.callable_groups.size());
+    u32 const all_group_count = raygen_group_count + miss_group_count + hit_group_count + callable_group_count;
 
-    // We need to know into which type a shader group belongs. That is what the following piece of code is for.
-    // We iterate over all the shader groups provided by the user and get their type based on the index shader
-    // range. We need to group them based on types because that is how the default generated SBT is layed out.
-    for (u32 i = 0; i < ret.info.shader_groups.size(); ++i)
+    std::vector<u32> raygen_indices(raygen_group_count);
+    std::vector<u32> miss_indices(miss_group_count);
+    std::vector<u32> hit_indices(hit_group_count);
+    std::vector<u32> callable_indices(callable_group_count);
+
+    std::vector<RayTracingShaderGroupInfo> shader_groups(all_group_count);
+
+    daxa_u32 index = 0;
+    daxa_u32 class_index = 0;
+
+    // fill shader groups
+    for(auto & group : ret.raygen_groups)
     {
-        auto shader_group = ret.info.shader_groups.at(i);
-
-        // Hit groups are the only ones that need the type explicitly specified, thus we can immediately 
-        // deduce the group type from this.
-        if (shader_group.type == ShaderGroup::TRIANGLES_HIT_GROUP || shader_group.type == ShaderGroup::PROCEDURAL_HIT_GROUP)
+        if (group.general_shader_index == VK_SHADER_UNUSED_KHR ||
+            group.general_shader_index > raygen_count)
         {
-            hit_indices.push_back(i);
+            return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
         }
-        else
-        { 
-            // Group indices raygen shader -> it is a raygen group
-            if (shader_group.general_shader_index != VK_SHADER_UNUSED_KHR &&
-                shader_group.general_shader_index < raygen_count)
-            {
-                raygen_indices.push_back(i);
-            }
-            // Group indices miss shader -> it is a miss group
-            else if (shader_group.general_shader_index >= first_miss_index &&
-                     shader_group.general_shader_index < all_stages_count)
-            {
-                miss_indices.push_back(i);
-            }
-            // Group indices callable shader -> it is callable group
-            else if (shader_group.general_shader_index >= first_callable_index &&
-                     shader_group.general_shader_index < last_callable_index)
-            {
-                callable_indices.push_back(i);
-            }
-            // Group indices invalid shader
-            else
-            {
-                return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
-            }
+
+        shader_groups[index] = group;
+        raygen_indices[class_index++] = index;
+        index++;
+    }
+    class_index = 0;
+    for(auto & group : ret.miss_groups)
+    {
+        if (group.general_shader_index < first_miss_index ||
+            group.general_shader_index >= all_stages_count)
+        {
+            return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
         }
+
+        shader_groups[index] = group;
+        miss_indices[class_index++] = index;
+        index++;
+    }
+    class_index = 0;
+    for(auto & group : ret.hit_groups)
+    {
+        if (group.type != ShaderGroup::TRIANGLES_HIT_GROUP && group.type != ShaderGroup::PROCEDURAL_HIT_GROUP)
+        {
+            return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
+        }
+
+        shader_groups[index] = group;
+        hit_indices[class_index++] = index;
+        index++;
+    }
+    class_index = 0;
+    for(auto & group : ret.callable_groups)
+    {
+        if (group.general_shader_index < first_callable_index ||
+            group.general_shader_index >= last_callable_index)
+        {
+            return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
+        }
+
+        shader_groups[index] = group;
+        callable_indices[class_index++] = index;
+        index++;
     }
 
     ret.raygen_group_indices = raygen_indices;
@@ -600,9 +638,9 @@ auto daxa_dvc_create_ray_tracing_pipeline(daxa_Device device, daxa_RayTracingPip
     ret.callable_group_indices = callable_indices;
 
     // Shader groups to vulkan shader groups
-    for (u32 i = 0; i < ret.info.shader_groups.size(); ++i)
+    for (u32 i = 0; i < shader_groups.size(); ++i)
     {
-        auto shader_group = ret.info.shader_groups.at(i);
+        auto& shader_group = shader_groups.at(i);
         auto const group = VkRayTracingShaderGroupCreateInfoKHR{
             .sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
             .pNext = nullptr,
@@ -966,7 +1004,7 @@ auto daxa_ray_tracing_pipeline_create_default_sbt(daxa_RayTracingPipeline pipeli
 
 auto daxa_ray_tracing_pipeline_get_shader_group_count(daxa_RayTracingPipeline pipeline) -> u32
 {
-    return static_cast<u32>(pipeline->shader_groups.size());
+    return static_cast<u32>(pipeline->info.raygen_groups.size() + pipeline->info.miss_groups.size() + pipeline->info.hit_groups.size() + pipeline->info.callable_groups.size());
 }
 
 auto daxa_ray_tracing_pipeline_get_shader_group_handles(daxa_RayTracingPipeline pipeline, void * out_blob) -> daxa_Result

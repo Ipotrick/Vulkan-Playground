@@ -506,9 +506,8 @@ namespace tests
                             }}
                         }},
                     },
-                    // Groups are in order of their shader indices.
-                    // NOTE: The order of the groups is important! raygen, miss, hit, callable
-                    .shader_groups_infos = {
+                    // NOTE: The order of the shaders are important! raygen, miss, intersection, anyhit, closesthit, callable
+                    .raygen_group_infos = {
                         daxa::RayTracingShaderGroupInfo{
                             .type = daxa::ShaderGroup::GENERAL,
                             .general_shader_index = 0,
@@ -517,6 +516,8 @@ namespace tests
                             .type = daxa::ShaderGroup::GENERAL,
                             .general_shader_index = 1,
                         },
+                    },
+                    .miss_group_infos = {
                         daxa::RayTracingShaderGroupInfo{
                             .type = daxa::ShaderGroup::GENERAL,
                             .general_shader_index = 8,
@@ -525,6 +526,8 @@ namespace tests
                             .type = daxa::ShaderGroup::GENERAL,
                             .general_shader_index = 9,
                         },
+                    },
+                    .hit_group_infos = {
                         daxa::RayTracingShaderGroupInfo{
                             .type = daxa::ShaderGroup::PROCEDURAL_HIT_GROUP,
                             .closest_hit_shader_index = 6,
@@ -535,6 +538,8 @@ namespace tests
                             .type = daxa::ShaderGroup::TRIANGLES_HIT_GROUP,
                             .closest_hit_shader_index = 7,
                         },
+                    },
+                    .callable_group_infos = {
                         daxa::RayTracingShaderGroupInfo{
                             .type = daxa::ShaderGroup::GENERAL,
                             .general_shader_index = 4,

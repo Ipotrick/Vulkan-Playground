@@ -72,7 +72,10 @@ namespace daxa
         std::vector<ShaderCompileInfo> callable_infos = {};
         std::vector<ShaderCompileInfo> closest_hit_infos = {};
         std::vector<ShaderCompileInfo> miss_hit_infos = {};
-        std::vector<RayTracingShaderGroupInfo> shader_groups_infos = {};
+        std::vector<RayTracingShaderGroupInfo> raygen_group_infos = {};
+        std::vector<RayTracingShaderGroupInfo> miss_group_infos = {};
+        std::vector<RayTracingShaderGroupInfo> hit_group_infos = {};
+        std::vector<RayTracingShaderGroupInfo> callable_group_infos = {};
         u32 max_ray_recursion_depth = {};
         u32 push_constant_size = {};
         std::string name = {};

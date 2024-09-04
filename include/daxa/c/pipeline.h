@@ -44,7 +44,10 @@ typedef struct
     daxa_SpanToConst(daxa_RayTracingShaderInfo) intersection_stages;
     daxa_SpanToConst(daxa_RayTracingShaderInfo) closest_hit_stages;
     daxa_SpanToConst(daxa_RayTracingShaderInfo) any_hit_stages;
-    daxa_SpanToConst(daxa_RayTracingShaderGroupInfo) shader_groups;
+    daxa_SpanToConst(daxa_RayTracingShaderGroupInfo) raygen_groups;
+    daxa_SpanToConst(daxa_RayTracingShaderGroupInfo) miss_groups;
+    daxa_SpanToConst(daxa_RayTracingShaderGroupInfo) hit_groups;
+    daxa_SpanToConst(daxa_RayTracingShaderGroupInfo) callable_groups;
     uint32_t max_ray_recursion_depth;
     uint32_t push_constant_size;
     daxa_SmallString name;
