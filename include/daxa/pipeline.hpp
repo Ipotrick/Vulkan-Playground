@@ -96,10 +96,7 @@ namespace daxa
 
     struct BuildShaderBindingTableInfo
     {
-        u32 const raygen_group_index = {};
-        std::span<u32 const> miss_group_indices = {};
-        std::span<u32 const> hit_group_indices = {};
-        std::span<u32 const> callable_group_indices = {};
+        std::span<u32 const> group_indices = {};
     };
 
     struct RayTracingShaderBindingTableEntries
@@ -108,6 +105,7 @@ namespace daxa
         Span<StridedDeviceAddressRegion const> miss_regions = {};
         Span<StridedDeviceAddressRegion const> hit_regions = {};
         Span<StridedDeviceAddressRegion const> callable_regions = {};
+        Span<GroupRegionInfo const> group_regions = {};
     };
 
     /**

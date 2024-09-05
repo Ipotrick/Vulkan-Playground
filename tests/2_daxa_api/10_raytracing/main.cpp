@@ -55,6 +55,7 @@ namespace tests
 
             daxa_u32 frame = 0;
             bool primary_rays = true;
+            bool second_sbt = true;
 
             Camera my_camera = {
                 .position = {0.0f, 0.0f, -1.0f},
@@ -77,7 +78,7 @@ namespace tests
                 if (device.is_valid())
                 {
                     device.destroy_buffer(sbt_pair.buffer);
-                    // device.destroy_buffer(second_sbt_pair.buffer);
+                    device.destroy_buffer(second_sbt_pair.buffer);
                     device.destroy_tlas(tlas);
                     device.destroy_blas(blas);
                     device.destroy_blas(proc_blas);
@@ -549,7 +550,7 @@ namespace tests
                 };
 
 
-                enum GroupIndex{
+                enum GroupIndex : u32{
                     PRIMARY_RAY,
                     SECONDARY_RAY,
                     HIT_MISS,
@@ -616,10 +617,9 @@ namespace tests
 
                 sbt_pair = rt_pipeline->create_default_sbt();
 
-                // second_sbt_pair = rt_pipeline->create_sbt({
-                //         {GroupIndex::SECONDARY_RAY, GroupIndex::HIT_MISS, GroupIndex::SHADOW_MISS, GroupIndex::TRIANGLE_HIT, GroupIndex::PROCEDURAL_HIT, GroupIndex::DIRECTIONAL_LIGHT, GroupIndex::SPOT_LIGHT},
-                //     }
-                // );
+                second_sbt_pair = rt_pipeline->create_sbt({
+                    std::array<u32, 7>{GroupIndex::SECONDARY_RAY, GroupIndex::HIT_MISS, GroupIndex::SHADOW_MISS, GroupIndex::TRIANGLE_HIT, GroupIndex::PROCEDURAL_HIT, GroupIndex::DIRECTIONAL_LIGHT, GroupIndex::SPOT_LIGHT},
+                });
             }
 
             auto update() -> bool
@@ -741,12 +741,22 @@ namespace tests
                 daxa::RayTracingShaderBindingTable shader_binding_table;
                 if(primary_rays) {
                     shader_binding_table.raygen_region = sbt_pair.entries.raygen_regions[0];
+                    shader_binding_table.miss_region = sbt_pair.entries.miss_regions[0];
+                    shader_binding_table.hit_region = sbt_pair.entries.hit_regions[0];
+                    shader_binding_table.callable_region = sbt_pair.entries.callable_regions[0];
                 } else {
-                    shader_binding_table.raygen_region = sbt_pair.entries.raygen_regions[1];
+                    if(second_sbt) {
+                      shader_binding_table.raygen_region = second_sbt_pair.entries.raygen_regions[0];
+                      shader_binding_table.miss_region = second_sbt_pair.entries.miss_regions[0];
+                      shader_binding_table.hit_region = second_sbt_pair.entries.hit_regions[0];
+                      shader_binding_table.callable_region = second_sbt_pair.entries.callable_regions[0];
+                    } else {
+                      shader_binding_table.raygen_region = sbt_pair.entries.raygen_regions[1];
+                      shader_binding_table.miss_region = sbt_pair.entries.miss_regions[0];
+                      shader_binding_table.hit_region = sbt_pair.entries.hit_regions[0];
+                      shader_binding_table.callable_region = sbt_pair.entries.callable_regions[0];
+                    }
                 }
-                shader_binding_table.miss_region = sbt_pair.entries.miss_regions[0];
-                shader_binding_table.hit_region = sbt_pair.entries.hit_regions[0];
-                shader_binding_table.callable_region = sbt_pair.entries.callable_regions[0];
 
                 recorder.trace_rays({
                     .width = width,
@@ -817,6 +827,10 @@ namespace tests
             void on_key(i32 key, i32 action) {
                 if(key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
                     primary_rays = !primary_rays;
+                } else if(key == GLFW_KEY_T && action == GLFW_PRESS) {
+                    second_sbt = !second_sbt;
+                } else if(key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+                    glfwSetWindowShouldClose(glfw_window_ptr, GLFW_TRUE);
                 }
             }
 
