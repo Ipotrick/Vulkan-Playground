@@ -632,7 +632,7 @@ namespace tests
                 sbt_pair = rt_pipeline->create_default_sbt();
 
                 second_sbt_pair = rt_pipeline->create_sbt({
-                    std::array<u32, 7>{GroupIndex::SECONDARY_RAY, GroupIndex::HIT_MISS, GroupIndex::SHADOW_MISS, GroupIndex::TRIANGLE_HIT, GroupIndex::PROCEDURAL_HIT, GroupIndex::DIRECTIONAL_LIGHT, GroupIndex::SPOT_LIGHT},
+                    std::array<u32, 14>{GroupIndex::PRIMARY_RAY, GroupIndex::HIT_MISS, GroupIndex::SHADOW_MISS, GroupIndex::TRIANGLE_HIT, GroupIndex::PROCEDURAL_HIT, GroupIndex::DIRECTIONAL_LIGHT, GroupIndex::SPOT_LIGHT,GroupIndex::SECONDARY_RAY, GroupIndex::HIT_MISS, GroupIndex::SHADOW_MISS, GroupIndex::TRIANGLE_HIT, GroupIndex::PROCEDURAL_HIT, GroupIndex::DIRECTIONAL_LIGHT, GroupIndex::SPOT_LIGHT},
                 });
             }
 
@@ -754,16 +754,23 @@ namespace tests
 
                 daxa::RayTracingShaderBindingTable shader_binding_table;
                 if(primary_rays) {
+                  if(second_sbt) {
+                    shader_binding_table.raygen_region = second_sbt_pair.entries.raygen_regions[0];
+                    shader_binding_table.miss_region = second_sbt_pair.entries.miss_regions[0];
+                    shader_binding_table.hit_region = second_sbt_pair.entries.hit_regions[0];
+                    shader_binding_table.callable_region = second_sbt_pair.entries.callable_regions[0];
+                  } else {
                     shader_binding_table.raygen_region = sbt_pair.entries.raygen_regions[0];
                     shader_binding_table.miss_region = sbt_pair.entries.miss_regions[0];
                     shader_binding_table.hit_region = sbt_pair.entries.hit_regions[0];
                     shader_binding_table.callable_region = sbt_pair.entries.callable_regions[0];
+                  }
                 } else {
                     if(second_sbt) {
-                      shader_binding_table.raygen_region = second_sbt_pair.entries.raygen_regions[0];
-                      shader_binding_table.miss_region = second_sbt_pair.entries.miss_regions[0];
-                      shader_binding_table.hit_region = second_sbt_pair.entries.hit_regions[0];
-                      shader_binding_table.callable_region = second_sbt_pair.entries.callable_regions[0];
+                      shader_binding_table.raygen_region = second_sbt_pair.entries.raygen_regions[1];
+                      shader_binding_table.miss_region = second_sbt_pair.entries.miss_regions[1];
+                      shader_binding_table.hit_region = second_sbt_pair.entries.hit_regions[1];
+                      shader_binding_table.callable_region = second_sbt_pair.entries.callable_regions[1];
                     } else {
                       shader_binding_table.raygen_region = sbt_pair.entries.raygen_regions[1];
                       shader_binding_table.miss_region = sbt_pair.entries.miss_regions[0];
