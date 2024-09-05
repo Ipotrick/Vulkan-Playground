@@ -968,7 +968,7 @@ inline auto daxa_ray_tracing_pipeline_build_sbt(
     auto name_cstr = info.name.c_str();
     // Allocate a buffer for storing the SBT.
     auto sbt_info = daxa_BufferInfo{
-        .size = current_offset, // TODO: set the size
+        .size = current_offset,
         .allocate_info = DAXA_MEMORY_FLAG_HOST_ACCESS_SEQUENTIAL_WRITE,
         .name = std::bit_cast<daxa_SmallString>(name_cstr),
     };
@@ -1045,7 +1045,7 @@ inline auto daxa_ray_tracing_pipeline_build_sbt(
     };
     
     // Set group region references
-    // TODO: free the memory when the pipeline is destroyed
+    // TODO: free the memory when the pipeline is destroyed?
     out_entries->group_regions.data = create_group_region_array(regions);
     out_entries->group_regions.size = regions.size();
     out_entries->raygen_regions.data = create_strided_device_address_region_array(raygen_regions);

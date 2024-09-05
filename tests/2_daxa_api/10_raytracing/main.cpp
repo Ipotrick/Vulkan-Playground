@@ -78,7 +78,21 @@ namespace tests
                 if (device.is_valid())
                 {
                     device.destroy_buffer(sbt_pair.buffer);
+                    {
+                      if(sbt_pair.entries.raygen_regions.m_data) delete[] sbt_pair.entries.raygen_regions.m_data;
+                      if(sbt_pair.entries.miss_regions.m_data) delete[] sbt_pair.entries.miss_regions.m_data;
+                      if(sbt_pair.entries.hit_regions.m_data) delete[] sbt_pair.entries.hit_regions.m_data;
+                      if(sbt_pair.entries.callable_regions.m_data) delete[] sbt_pair.entries.callable_regions.m_data;
+                      if(sbt_pair.entries.group_regions.m_data) delete[] sbt_pair.entries.group_regions.m_data;
+                    }
                     device.destroy_buffer(second_sbt_pair.buffer);
+                    {
+                      if(second_sbt_pair.entries.raygen_regions.m_data) delete[] second_sbt_pair.entries.raygen_regions.m_data;
+                      if(second_sbt_pair.entries.miss_regions.m_data) delete[] second_sbt_pair.entries.miss_regions.m_data;
+                      if(second_sbt_pair.entries.hit_regions.m_data) delete[] second_sbt_pair.entries.hit_regions.m_data;
+                      if(second_sbt_pair.entries.callable_regions.m_data) delete[] second_sbt_pair.entries.callable_regions.m_data;
+                      if(second_sbt_pair.entries.group_regions.m_data) delete[] second_sbt_pair.entries.group_regions.m_data;
+                    }
                     device.destroy_tlas(tlas);
                     device.destroy_blas(blas);
                     device.destroy_blas(proc_blas);
