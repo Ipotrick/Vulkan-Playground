@@ -77,7 +77,7 @@ namespace tests
                 if (device.is_valid())
                 {
                     device.destroy_buffer(sbt_pair.buffer);
-                    device.destroy_buffer(second_sbt_pair.buffer);
+                    // device.destroy_buffer(second_sbt_pair.buffer);
                     device.destroy_tlas(tlas);
                     device.destroy_blas(blas);
                     device.destroy_blas(proc_blas);
@@ -429,7 +429,9 @@ namespace tests
                 // };
                 // comp_pipeline = pipeline_manager.add_compute_pipeline(compute_pipe_info).value();
 
-
+                daxa::ShaderCompileInfo default_shader_info = daxa::ShaderCompileInfo{
+                    .source = daxa::ShaderFile{"raytracing.glsl"},
+                };
                 daxa::ShaderCompileInfo prim_raygen_compile_info;
                 daxa::ShaderCompileInfo raygen_compile_info;
                 if(invocation_reorder_mode == static_cast<daxa_u32>(daxa::InvocationReorderMode::ALLOW_REORDER)) {
@@ -464,91 +466,148 @@ namespace tests
                     };
                 }
 
+                enum StageIndex{
+                    RAYGEN,
+                    RAYGEN2,
+                    MISS,
+                    MISS2,
+                    CLOSE_HIT,
+                    CLOSE_HIT2,
+                    ANY_HIT,
+                    INTERSECTION,
+                    CALLABLE,
+                    CALLABLE2,
+                    STAGES_COUNT,
+                };
+
+                std::vector<daxa::RayTracingShaderCompileInfo> stages(STAGES_COUNT);
+
+                stages[StageIndex::RAYGEN] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = prim_raygen_compile_info,
+                    .type = daxa::RayTracingShaderType::RAYGEN,
+                };
+
+                stages[StageIndex::RAYGEN2] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = raygen_compile_info,
+                    .type = daxa::RayTracingShaderType::RAYGEN,
+                };
+
+                stages[StageIndex::MISS] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = default_shader_info,
+                    .type = daxa::RayTracingShaderType::MISS,
+                };
+
+                stages[StageIndex::MISS2] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = daxa::ShaderCompileInfo{
+                        .source = daxa::ShaderFile{"raytracing.glsl"},
+                        .compile_options = {.defines = std::vector{daxa::ShaderDefine{"MISS_SHADOW", "1"}, atomic_float ?
+                                daxa::ShaderDefine{"ATOMIC_FLOAT", "1"} : daxa::ShaderDefine{"ATOMIC_FLOAT", "0"
+                            }}
+                        },
+                    },
+                    .type = daxa::RayTracingShaderType::MISS,
+                };
+
+                stages[StageIndex::CLOSE_HIT] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = default_shader_info,
+                    .type = daxa::RayTracingShaderType::CLOSEST_HIT,
+                };
+
+                stages[StageIndex::CLOSE_HIT2] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = daxa::ShaderCompileInfo{
+                        .source = daxa::ShaderFile{"raytracing.glsl"},
+                        .compile_options = {.defines = std::vector{daxa::ShaderDefine{"HIT_TRIANGLE", "1"}, atomic_float ?
+                                daxa::ShaderDefine{"ATOMIC_FLOAT", "1"} : daxa::ShaderDefine{"ATOMIC_FLOAT", "0"
+                            }}
+                        },
+                    },
+                    .type = daxa::RayTracingShaderType::CLOSEST_HIT,
+                };
+
+                stages[StageIndex::ANY_HIT] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = default_shader_info,
+                    .type = daxa::RayTracingShaderType::ANY_HIT,
+                };
+
+                stages[StageIndex::INTERSECTION] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = default_shader_info,
+                    .type = daxa::RayTracingShaderType::INTERSECTION,
+                };
+
+                stages[StageIndex::CALLABLE] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = default_shader_info,
+                    .type = daxa::RayTracingShaderType::CALLABLE,
+                };
+
+                stages[StageIndex::CALLABLE2] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = daxa::ShaderCompileInfo{
+                        .source = daxa::ShaderFile{"raytracing.glsl"},
+                        .compile_options = {
+                            .defines = std::vector{daxa::ShaderDefine{"SPOT_LIGHT", "1"}}},
+                    },
+                    .type = daxa::RayTracingShaderType::CALLABLE,
+                };
+
+
+                enum GroupIndex{
+                    PRIMARY_RAY,
+                    SECONDARY_RAY,
+                    HIT_MISS,
+                    SHADOW_MISS,
+                    TRIANGLE_HIT,
+                    PROCEDURAL_HIT,
+                    DIRECTIONAL_LIGHT,
+                    SPOT_LIGHT,
+                    GROUPS_COUNT,
+                };
+
+                std::vector<daxa::RayTracingShaderGroupInfo> groups(GROUPS_COUNT);
+              
+                groups[GroupIndex::PRIMARY_RAY] = daxa::RayTracingShaderGroupInfo{
+                    .type = daxa::ShaderGroup::RAYGEN,
+                    .general_shader_index = StageIndex::RAYGEN,
+                };
+
+                groups[GroupIndex::SECONDARY_RAY] = daxa::RayTracingShaderGroupInfo{
+                    .type = daxa::ShaderGroup::RAYGEN,
+                    .general_shader_index = StageIndex::RAYGEN2,
+                };
+
+                groups[GroupIndex::HIT_MISS] = daxa::RayTracingShaderGroupInfo{
+                    .type = daxa::ShaderGroup::MISS,
+                    .general_shader_index = StageIndex::MISS,
+                };
+
+                groups[GroupIndex::SHADOW_MISS] = daxa::RayTracingShaderGroupInfo{
+                    .type = daxa::ShaderGroup::MISS,
+                    .general_shader_index = StageIndex::MISS2,
+                };
+
+                groups[GroupIndex::TRIANGLE_HIT] = daxa::RayTracingShaderGroupInfo{
+                    .type = daxa::ShaderGroup::PROCEDURAL_HIT_GROUP,
+                    .closest_hit_shader_index = StageIndex::CLOSE_HIT,
+                    .any_hit_shader_index = StageIndex::ANY_HIT,
+                    .intersection_shader_index = StageIndex::INTERSECTION,
+                };
+
+                groups[GroupIndex::PROCEDURAL_HIT] = daxa::RayTracingShaderGroupInfo{
+                    .type = daxa::ShaderGroup::TRIANGLES_HIT_GROUP,
+                    .closest_hit_shader_index = StageIndex::CLOSE_HIT2
+                };
+
+                groups[GroupIndex::DIRECTIONAL_LIGHT] = daxa::RayTracingShaderGroupInfo{
+                    .type = daxa::ShaderGroup::CALLABLE,
+                    .general_shader_index = StageIndex::CALLABLE,
+                };
+
+                groups[GroupIndex::SPOT_LIGHT] = daxa::RayTracingShaderGroupInfo{
+                    .type = daxa::ShaderGroup::CALLABLE,
+                    .general_shader_index = StageIndex::CALLABLE2,
+                };
                 
                 auto const ray_tracing_pipe_info = daxa::RayTracingPipelineCompileInfo{
-                    .raygen_infos = {
-                        prim_raygen_compile_info,
-                        raygen_compile_info
-                    },
-                    .intersection_infos = {daxa::ShaderCompileInfo{
-                        .source = daxa::ShaderFile{"raytracing.glsl"},
-                    }},
-                    .any_hit_infos = {daxa::ShaderCompileInfo{
-                        .source = daxa::ShaderFile{"raytracing.glsl"},
-                    }},
-                    .callable_infos = {
-                        daxa::ShaderCompileInfo{
-                            .source = daxa::ShaderFile{"raytracing.glsl"},
-                            .compile_options = {
-                                .defines = std::vector{daxa::ShaderDefine{"SPOT_LIGHT", "1"}}},
-                        },
-                        daxa::ShaderCompileInfo{
-                            .source = daxa::ShaderFile{"raytracing.glsl"},
-                        },
-                    },
-                    .closest_hit_infos = {
-                        daxa::ShaderCompileInfo{
-                            .source = daxa::ShaderFile{"raytracing.glsl"},
-                        },
-                        daxa::ShaderCompileInfo{
-                            .source = daxa::ShaderFile{"raytracing.glsl"},
-                            .compile_options = {.defines = std::vector{daxa::ShaderDefine{"HIT_TRIANGLE", "1"}, atomic_float ?
-                                daxa::ShaderDefine{"ATOMIC_FLOAT", "1"} : daxa::ShaderDefine{"ATOMIC_FLOAT", "0"
-                            }}
-                        }},
-                    },
-                    .miss_hit_infos = {
-                        daxa::ShaderCompileInfo{.source = daxa::ShaderFile{"raytracing.glsl"}},
-                        daxa::ShaderCompileInfo{
-                            .source = daxa::ShaderFile{"raytracing.glsl"},
-                            .compile_options = {.defines = std::vector{daxa::ShaderDefine{"MISS_SHADOW", "1"}, atomic_float ?
-                                daxa::ShaderDefine{"ATOMIC_FLOAT", "1"} : daxa::ShaderDefine{"ATOMIC_FLOAT", "0"
-                            }}
-                        }},
-                    },
-                    // NOTE: The order of the shaders are important! raygen, miss, intersection, anyhit, closesthit, callable
-                    .raygen_group_infos = {
-                        daxa::RayTracingShaderGroupInfo{
-                            .type = daxa::ShaderGroup::GENERAL,
-                            .general_shader_index = 0,
-                        },
-                        daxa::RayTracingShaderGroupInfo{
-                            .type = daxa::ShaderGroup::GENERAL,
-                            .general_shader_index = 1,
-                        },
-                    },
-                    .miss_group_infos = {
-                        daxa::RayTracingShaderGroupInfo{
-                            .type = daxa::ShaderGroup::GENERAL,
-                            .general_shader_index = 0,
-                        },
-                        daxa::RayTracingShaderGroupInfo{
-                            .type = daxa::ShaderGroup::GENERAL,
-                            .general_shader_index = 1,
-                        },
-                    },
-                    .hit_group_infos = {
-                        daxa::RayTracingShaderGroupInfo{
-                            .type = daxa::ShaderGroup::PROCEDURAL_HIT_GROUP,
-                            .closest_hit_shader_index = 0,
-                            .any_hit_shader_index = 0,
-                            .intersection_shader_index = 0,
-                        },
-                        daxa::RayTracingShaderGroupInfo{
-                            .type = daxa::ShaderGroup::TRIANGLES_HIT_GROUP,
-                            .closest_hit_shader_index = 1,
-                        },
-                    },
-                    .callable_group_infos = {
-                        daxa::RayTracingShaderGroupInfo{
-                            .type = daxa::ShaderGroup::GENERAL,
-                            .general_shader_index = 0,
-                        },
-                        daxa::RayTracingShaderGroupInfo{
-                            .type = daxa::ShaderGroup::GENERAL,
-                            .general_shader_index = 1,
-                        },
-                    },
+                    .stages = stages,
+                    .groups = groups,
                     .max_ray_recursion_depth = 2,
                     .push_constant_size = sizeof(PushConstant),
                     .name = "basic ray tracing pipeline",
@@ -557,13 +616,10 @@ namespace tests
 
                 sbt_pair = rt_pipeline->create_default_sbt();
 
-                second_sbt_pair = rt_pipeline->create_sbt({
-                        1,
-                        std::array{0u, 1u}, // miss groups
-                        std::array{0u, 1u}, // hit groups
-                        std::array{0u, 1u}, // callable groups
-                    }
-                );
+                // second_sbt_pair = rt_pipeline->create_sbt({
+                //         {GroupIndex::SECONDARY_RAY, GroupIndex::HIT_MISS, GroupIndex::SHADOW_MISS, GroupIndex::TRIANGLE_HIT, GroupIndex::PROCEDURAL_HIT, GroupIndex::DIRECTIONAL_LIGHT, GroupIndex::SPOT_LIGHT},
+                //     }
+                // );
             }
 
             auto update() -> bool
@@ -682,11 +738,21 @@ namespace tests
                     .aabb_buffer = this->device.device_address(aabb_buffer).value(),
                 });
 
+                daxa::RayTracingShaderBindingTable shader_binding_table;
+                if(primary_rays) {
+                    shader_binding_table.raygen_region = sbt_pair.entries.raygen_regions[0];
+                } else {
+                    shader_binding_table.raygen_region = sbt_pair.entries.raygen_regions[1];
+                }
+                shader_binding_table.miss_region = sbt_pair.entries.miss_regions[0];
+                shader_binding_table.hit_region = sbt_pair.entries.hit_regions[0];
+                shader_binding_table.callable_region = sbt_pair.entries.callable_regions[0];
+
                 recorder.trace_rays({
                     .width = width,
                     .height = height,
                     .depth = 1,
-                    .shader_binding_table = primary_rays ? sbt_pair.table : second_sbt_pair.table,
+                    .shader_binding_table = shader_binding_table,
                 });
 
 #if ACTIVATE_ATOMIC_FLOAT == 1      

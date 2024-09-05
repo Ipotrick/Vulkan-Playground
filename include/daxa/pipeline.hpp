@@ -18,6 +18,8 @@ namespace daxa
         static inline constexpr ShaderCreateFlags REQUIRE_FULL_SUBGROUPS  = {0x00000002};
     };
 
+    
+
     struct ShaderInfo
     {
         u32 const * byte_code = {};
@@ -25,9 +27,34 @@ namespace daxa
         ShaderCreateFlags create_flags = {};
         Optional<u32> required_subgroup_size = {};
         SmallString entry_point = "main";
+
     };
 
-    // TODO: find a better way to link shader groups to shaders than by index
+    enum struct RayTracingShaderType
+    {
+        RAYGEN,
+        MISS,
+        CLOSEST_HIT,
+        ANY_HIT,
+        INTERSECTION,
+        CALLABLE,
+        MAX_ENUM = 0x7fffffff,
+    };
+
+    enum struct RayTracingShaderGroup 
+    {
+        RAYGEN_GROUP,
+        MISS_GROUP,
+        HIT_GROUP,
+        CALLABLE_GROUP,
+        MAX_ENUM = 0x7fffffff,
+    };
+
+    struct RayTracingShaderInfo {
+        RayTracingShaderType type;
+        ShaderInfo info;
+    };
+    
     struct RayTracingShaderGroupInfo
     {
         ShaderGroup type;
@@ -44,6 +71,12 @@ namespace daxa
         u64 size {};
     };
 
+    // Group region links
+    struct GroupRegionInfo {
+        u32 index;
+        ShaderGroup type;
+    };
+
     struct RayTracingShaderBindingTable
     {
         StridedDeviceAddressRegion raygen_region = {};
@@ -54,16 +87,8 @@ namespace daxa
 
     struct RayTracingPipelineInfo
     {
-        Span<ShaderInfo const> raygen_shaders = {};
-        Span<ShaderInfo const> intersection_shaders = {};
-        Span<ShaderInfo const> any_hit_shaders = {};
-        Span<ShaderInfo const> callable_shaders = {};
-        Span<ShaderInfo const> closest_hit_shaders = {};
-        Span<ShaderInfo const> miss_hit_shaders = {};
-        Span<RayTracingShaderGroupInfo const> raygen_groups = {};
-        Span<RayTracingShaderGroupInfo const> miss_groups = {};
-        Span<RayTracingShaderGroupInfo const> hit_groups = {};
-        Span<RayTracingShaderGroupInfo const> callable_groups = {};
+        Span<RayTracingShaderInfo const> stages = {};
+        Span<RayTracingShaderGroupInfo const> groups = {};
         u32 max_ray_recursion_depth;
         u32 push_constant_size = {};
         SmallString name = {};
@@ -75,6 +100,14 @@ namespace daxa
         std::span<u32 const> miss_group_indices = {};
         std::span<u32 const> hit_group_indices = {};
         std::span<u32 const> callable_group_indices = {};
+    };
+
+    struct RayTracingShaderBindingTableEntries
+    {
+        Span<StridedDeviceAddressRegion const> raygen_regions = {};
+        Span<StridedDeviceAddressRegion const> miss_regions = {};
+        Span<StridedDeviceAddressRegion const> hit_regions = {};
+        Span<StridedDeviceAddressRegion const> callable_regions = {};
     };
 
     /**
@@ -94,7 +127,7 @@ namespace daxa
         /// @return reference to info of object.
         [[nodiscard]] auto info() const -> RayTracingPipelineInfo const &;
 
-        struct SbtPair { daxa::BufferId buffer; RayTracingShaderBindingTable table; };
+        struct SbtPair { daxa::BufferId buffer; RayTracingShaderBindingTableEntries entries; };
         [[nodiscard]] auto create_default_sbt() const -> SbtPair;
         [[nodiscard]] auto create_sbt(BuildShaderBindingTableInfo const & info) const -> SbtPair;
         void get_shader_group_handles(void *out_blob) const;

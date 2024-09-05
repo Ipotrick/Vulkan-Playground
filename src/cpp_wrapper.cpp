@@ -861,7 +861,7 @@ namespace daxa
         auto result = SbtPair{};
         auto daxa_res = daxa_ray_tracing_pipeline_create_default_sbt(
             rc_cast<daxa_RayTracingPipeline>(this->object),
-            r_cast<daxa_RayTracingShaderBindingTable *>(&result.table),
+            r_cast<daxa_RayTracingShaderBindingTableEntries *>(&result.entries),
             r_cast<daxa_BufferId *>(&result.buffer));
         check_result(daxa_res, "failed in create_default_sbt");
         return result;
@@ -872,7 +872,7 @@ namespace daxa
         auto result = SbtPair{};
         auto daxa_res = daxa_ray_tracing_pipeline_create_sbt(
             rc_cast<daxa_RayTracingPipeline>(this->object),
-            r_cast<daxa_RayTracingShaderBindingTable *>(&result.table),
+            r_cast<daxa_RayTracingShaderBindingTableEntries *>(&result.entries),
             r_cast<daxa_BufferId *>(&result.buffer),
             r_cast<daxa_BuildShaderBindingTableInfo const *>(&info));
         check_result(daxa_res, "failed in create_default_sbt");
