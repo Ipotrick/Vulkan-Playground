@@ -5,8 +5,8 @@
 
 #define MAX_PRIMITIVES 2
 #define NUM_VERTICES 3
-// #define ACTIVATE_ATOMIC_FLOAT // this will throws an exception if the device does not support atomic daxa_f32
-#define DAXA_SHADERLANG_COMPILE_SLANG
+#define ACTIVATE_ATOMIC_FLOAT // this will throws an exception if the device does not support atomic daxa_f32
+// #define DAXA_SHADERLANG_COMPILE_SLANG
 
 struct CameraView
 {
@@ -147,6 +147,19 @@ daxa_f32 rnd(inout daxa_u32 prev)
 
 
 #if !defined(GL_core_profile)
+
+float atomicAdd(__ref float value, float amount)
+{
+    __target_switch
+    {
+    case cpp:
+        __requirePrelude("#include <atomic>");
+        __intrinsic_asm "std::atomic_ref(*$0).fetch_add($1)";
+    case spirv:
+        return __atomicAdd(value, amount);
+    }
+    return 0;
+}
 
 daxa_f32mat4x4 inverse(daxa_f32mat4x4 m)
 {

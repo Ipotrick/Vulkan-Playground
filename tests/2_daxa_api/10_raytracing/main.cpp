@@ -189,7 +189,6 @@ namespace tests
                     .name = "index buffer",
                 });
                 defer { device.destroy_buffer(index_buffer); };
-                // *device.buffer_host_address_as<decltype(indices)>(index_buffer).value() = indices;
                 std::memcpy(device.buffer_host_address_as<daxa_u32>(index_buffer).value(), indices.data(), sizeof(daxa_u32) * indices.size());
                 /// Transforms:
                 auto transform_buffer = device.create_buffer({
@@ -204,27 +203,25 @@ namespace tests
                     {0, 0, 1, 0},
                 };
 
-                // TODO: The fact that we delayed some parameters to the create info and afterwards, we add them for building the acceleration structure cause a crash.
-                // TODO: Could we improve the whole process?
                 /// Triangle Geometry Info:
                 auto geometries = std::array{
                     daxa::BlasTriangleGeometryInfo{
-                        .vertex_format = daxa::Format::R32G32B32_SFLOAT, // Is also default
-                        .vertex_data = device.device_address(vertex_buffer).value(),                               // Ignored in get_acceleration_structure_build_sizes.    // Is also default
-                        .vertex_stride = sizeof(daxa_f32vec3),           // Is also default
+                        .vertex_format = daxa::Format::R32G32B32_SFLOAT,
+                        .vertex_data = device.device_address(vertex_buffer).value(),
+                        .vertex_stride = sizeof(daxa_f32vec3),
                         .max_vertex = static_cast<u32>(vertices.size() - 1),
-                        .index_type = daxa::IndexType::uint32, // Is also default
-                        .index_data = device.device_address(index_buffer).value(),                      // Ignored in get_acceleration_structure_build_sizes. // Is also default
-                        .transform_data = device.device_address(transform_buffer).value(),                  // Ignored in get_acceleration_structure_build_sizes. // Is also default
+                        .index_type = daxa::IndexType::uint32,
+                        .index_data = device.device_address(index_buffer).value(),
+                        .transform_data = device.device_address(transform_buffer).value(),
                         .count = static_cast<daxa_u32>(indices.size() / 3),
-                        .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
+                        .flags = daxa::GeometryFlagBits::OPAQUE, 
                     }};
                 /// Create Triangle Blas:
                 auto blas_build_info = daxa::BlasBuildInfo{
                     .flags = daxa::AccelerationStructureBuildFlagBits::PREFER_FAST_TRACE | daxa::AccelerationStructureBuildFlagBits::ALLOW_DATA_ACCESS,
-                    .dst_blas = {}, // Ignored in get_acceleration_structure_build_sizes.       // Is also default
+                    .dst_blas = {},
                     .geometries = geometries,
-                    .scratch_data = {}, // Ignored in get_acceleration_structure_build_sizes.   // Is also default
+                    .scratch_data = {},
                 };
                 daxa::AccelerationStructureBuildSizesInfo build_size_info = device.blas_build_sizes(blas_build_info);
 
@@ -282,20 +279,20 @@ namespace tests
                         .data = device.device_address(aabb_buffer).value(),
                         .stride = sizeof(daxa_f32mat3x2),
                         .count = 1,
-                        .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
+                        .flags = daxa::GeometryFlagBits::OPAQUE,
                     },
                     daxa::BlasAabbGeometryInfo{
                         .data = device.device_address(aabb_buffer).value() + sizeof(daxa_f32mat3x2),
                         .stride = sizeof(daxa_f32mat3x2),
                         .count = 1,
-                        .flags = daxa::GeometryFlagBits::NO_DUPLICATE_ANY_HIT_INVOCATION, // Is also default
+                        .flags = daxa::GeometryFlagBits::NO_DUPLICATE_ANY_HIT_INVOCATION,
                     }};
                 /// Create Procedural Blas:
                 auto proc_blas_build_info = daxa::BlasBuildInfo{
-                    .flags = daxa::AccelerationStructureBuildFlagBits::PREFER_FAST_TRACE, // Is also default
-                    .dst_blas = {},                                                       // Ignored in get_acceleration_structure_build_sizes.       // Is also default
+                    .flags = daxa::AccelerationStructureBuildFlagBits::PREFER_FAST_TRACE,
+                    .dst_blas = {}, 
                     .geometries = proc_geometries,
-                    .scratch_data = {}, // Ignored in get_acceleration_structure_build_sizes.   // Is also default
+                    .scratch_data = {},
                 };
                 daxa::AccelerationStructureBuildSizesInfo proc_build_size_info = device.blas_build_sizes(proc_blas_build_info);
                 
@@ -905,11 +902,6 @@ namespace tests
                     .dst_layout = daxa::ImageLayout::PRESENT_SRC,
                     .image_id = swapchain_image,
                 });
-
-                // recorder.pipeline_barrier({
-                //     .src_access = daxa::AccessConsts::TRANSFER_WRITE,
-                //     .dst_access = daxa::AccessConsts::RAY_TRACING_SHADER_READ,
-                // });
 
                 auto executable_commands = recorder.complete_current_commands();
                 /// NOTE:

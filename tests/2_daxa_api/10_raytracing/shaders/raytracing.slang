@@ -7,12 +7,6 @@ struct ShadowRayPayload
     daxa_f32vec4 shadow;
 };
 
-// struct MyAttributes
-// {
-//     daxa_f32vec3 normal;
-//     daxa_f32vec3 position;
-// };
-
 struct MyParams
 {
     daxa_f32vec4 color;
@@ -41,7 +35,13 @@ struct MyParams
     daxa_u32 frame_number = p.frame;
     daxa_u32 seed = tea(threadIdx.y * rt_size.x + threadIdx.x, frame_number);
 
-    hitPayload payload = {daxa_f32vec3(0.0, 0.0, 0.0), seed};
+    hitPayload payload = 
+    {
+        daxa_f32vec3(0.0, 0.0, 0.0), seed
+#if defined(ACTIVATE_ATOMIC_FLOAT)
+        , false
+#endif
+    };
 
     // credits: https://microsoft.github.io/DirectX-Specs/d3d/Raytracing.html
 
@@ -88,11 +88,17 @@ struct MyParams
     case COMMITTED_TRIANGLE_HIT:
     {
         payload.hitValue = 1.0 / q.CommittedRayT() * daxa_f32vec3(1.0, 1.0, 1.0);
+#if defined(ACTIVATE_ATOMIC_FLOAT)
+        payload.is_hit = true;
+#endif
         break;
     }
     case COMMITTED_PROCEDURAL_PRIMITIVE_HIT:
     {
         payload.hitValue = 1.0 / THit * daxa_f32vec3(1.0, 1.0, 1.0);
+#if defined(ACTIVATE_ATOMIC_FLOAT)
+        payload.is_hit = true;
+#endif
         break;
     }
     case COMMITTED_NOTHING:
@@ -101,6 +107,13 @@ struct MyParams
         break;
     }
     }
+    
+#if defined(ACTIVATE_ATOMIC_FLOAT)
+    if(payload.is_hit)
+    {
+        atomicAdd(deref(p.camera_buffer).hit_count, 1);
+    }
+#endif
 
     p.swapchain.get()[threadIdx.xy] = daxa_f32vec4(payload.hitValue, 1.0);
 }
@@ -128,10 +141,23 @@ struct MyParams
     daxa_u32 frame_number = p.frame;
     daxa_u32 seed = tea(threadIdx.y * rt_size.x + threadIdx.x, frame_number);
 
-    hitPayload payload = {daxa_f32vec3(0.0, 0.0, 0.0), seed};
+    hitPayload payload = 
+    {
+        daxa_f32vec3(0.0, 0.0, 0.0), seed
+#if defined(ACTIVATE_ATOMIC_FLOAT)
+        , false
+#endif
+    };
 
 
     TraceRay(RaytracingAccelerationStructure::get(p.tlas), RAY_FLAG_NONE, ~0, 0, 0, 0, ray, payload);
+
+#if defined(ACTIVATE_ATOMIC_FLOAT)
+    if(payload.is_hit)
+    {
+        atomicAdd(deref(p.camera_buffer).hit_count, 1);
+    }
+#endif
 
 
     p.swapchain.get()[threadIdx.xy] = daxa_f32vec4(payload.hitValue, 1.0);
@@ -209,6 +235,9 @@ struct MyParams
     }
 
     payload.hitValue = daxa_f32vec3(cLight.outIntensity * attenuation * (diffuse));
+#if defined(ACTIVATE_ATOMIC_FLOAT)
+    payload.is_hit = true;
+#endif // HIT_TRIANGLE
 }
 
 // #define DEBUG_NORMALS
@@ -271,6 +300,9 @@ struct MyParams
 
     payload.hitValue = daxa_f32vec3(cLight.outIntensity * attenuation * (diffuse));
 #endif // DEBUG_NORMALS
+#if defined(ACTIVATE_ATOMIC_FLOAT)
+    payload.is_hit = true;
+#endif // HIT_TRIANGLE
 }
 
 // Shader de intersección

@@ -1,11 +1,11 @@
 #define DAXA_RAY_TRACING 1
 #extension GL_EXT_ray_tracing : enable
-#if defined(ACTIVATE_ATOMIC_FLOAT)
-#extension GL_EXT_shader_atomic_float : enable
-#endif
 #include <daxa/daxa.inl>
 
 #include "shared.inl"
+#if defined(ACTIVATE_ATOMIC_FLOAT)
+#extension GL_EXT_shader_atomic_float : enable
+#endif
 
 #if SER_ON == 1
 #extension GL_NV_shader_invocation_reorder : enable
@@ -79,7 +79,12 @@ layout(location = 0) rayPayloadEXT hitPayload prd;
 #endif
     }
 
-#else
+#else // SER ON
+
+#if defined(ACTIVATE_ATOMIC_FLOAT)
+        prd.is_hit = false;
+#endif
+
     
 #extension GL_EXT_ray_query : enable
 
@@ -109,21 +114,22 @@ layout(location = 0) rayPayloadEXT hitPayload prd;
     {
         color = vec3(1.0, 1.0, 1.0);
 #if defined(ACTIVATE_ATOMIC_FLOAT)
-        atomicAdd(deref(p.camera_buffer).hit_count, 1);
+        prd.is_hit = true;
 #endif
     }
     else if (type == gl_RayQueryCommittedIntersectionGeneratedEXT)
     {
         color = vec3(1.0, 1.0, 1.0);
 #if defined(ACTIVATE_ATOMIC_FLOAT)
-        atomicAdd(deref(p.camera_buffer).hit_count, 1);
+        prd.is_hit = true;
 #endif
     }
-#endif
 
-    // imageStore(daxa_image2D(p.swapchain), index, fromLinear(vec4(prd.hitValue, 1.0)));
+#if defined(ACTIVATE_ATOMIC_FLOAT)
+        atomicAdd(deref(p.camera_buffer).hit_count, 1);
+#endif
+#endif // SER_ON
     imageStore(daxa_image2D(p.swapchain), index, vec4(color, 1.0));
-    // imageStore(daxa_image2D(p.swapchain), index, vec4(1.0, 1.0, 1.0, 1.0));
 }
 
 #else 
@@ -157,6 +163,10 @@ void main()
     daxa_u32 frame_number = p.frame;
     daxa_u32 seed = tea(index.y * rt_size.x + index.x, frame_number);
     prd.seed = seed;
+
+#if defined(ACTIVATE_ATOMIC_FLOAT)
+    prd.is_hit = false;
+#endif
 
 #if SER_ON == 1
     hitObjectNV hitObject;
@@ -199,9 +209,6 @@ void main()
     
 
 #else
-#if defined(ACTIVATE_ATOMIC_FLOAT)
-    prd.is_hit = false;
-#endif
     traceRayEXT(
         daxa_accelerationStructureEXT(p.tlas), // topLevelAccelerationStructure
         rayFlags,      // rayFlags
@@ -497,10 +504,10 @@ void main()
     }
 
     prd.hitValue = vec3(cLight.outIntensity * attenuation * (diffuse));
+#endif // DEBUG_NORMALS
 #if defined(ACTIVATE_ATOMIC_FLOAT)
     prd.is_hit = true;
 #endif // ACTIVATE_ATOMIC_FLOAT
-#endif // DEBUG_NORMALS
 }
 
 #endif // HIT_TRIANGLE
