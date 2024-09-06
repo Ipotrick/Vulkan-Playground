@@ -6,7 +6,7 @@
 #define MAX_PRIMITIVES 2
 #define NUM_VERTICES 3
 // #define ACTIVATE_ATOMIC_FLOAT // this will throws an exception if the device does not support atomic daxa_f32
-// #define DAXA_SHADERLANG_COMPILE_SLANG
+#define DAXA_SHADERLANG_COMPILE_SLANG
 
 struct CameraView
 {
@@ -41,6 +41,7 @@ struct PushConstant
     daxa_u32 frame;
     daxa_u32vec2 size;
     daxa_TlasId tlas;
+    daxa_u32 callable_index;
 #if defined(DAXA_SHADERLANG_COMPILE_SLANG)
     daxa::RWTexture2DId<daxa_f32vec4> swapchain;
 #else

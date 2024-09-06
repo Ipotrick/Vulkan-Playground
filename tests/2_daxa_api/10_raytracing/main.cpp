@@ -57,6 +57,7 @@ namespace tests
             daxa_u32 frame = 0;
             bool primary_rays = true;
             bool second_sbt = true;
+            daxa_u32 callable_index = 0;
 
             Camera my_camera = {
                 .position = {0.0f, 0.0f, -1.0f},
@@ -178,7 +179,6 @@ namespace tests
                     .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_RANDOM,
                     .name = "vertex buffer",
                 });
-                // *device.buffer_host_address_as<decltype(vertices)>(vertex_buffer).value() = vertices;
                 std::memcpy(device.buffer_host_address_as<daxa_f32vec3>(vertex_buffer).value(), vertices.data(), sizeof(daxa_f32vec3) * vertices.size());
 
                 /// Indices:
@@ -840,6 +840,7 @@ namespace tests
                     .frame = frame++,
                     .size = {width, height},
                     .tlas = tlas,
+                    .callable_index = callable_index,
                     .swapchain = swapchain_image.default_view(),
                     .camera_buffer = this->device.device_address(cam_buffer).value(),
                     .vertex_buffer = this->device.device_address(vertex_buffer).value(),
@@ -946,6 +947,12 @@ namespace tests
                     second_sbt = !second_sbt;
                 } else if(key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
                     glfwSetWindowShouldClose(glfw_window_ptr, GLFW_TRUE);
+                } else if(key == GLFW_KEY_1 && action == GLFW_PRESS) {
+                    callable_index = 0;
+                } else if(key == GLFW_KEY_2 && action == GLFW_PRESS) {
+                    callable_index = 1;
+                } else if(key == GLFW_KEY_3 && action == GLFW_PRESS) {
+                    callable_index = 2;
                 }
             }
 

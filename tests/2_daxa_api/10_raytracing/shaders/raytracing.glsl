@@ -312,9 +312,6 @@ void main()
 
 #elif DAXA_SHADER_STAGE == DAXA_SHADER_STAGE_CLOSEST_HIT
 
-// Change this to 0 to see the difference between callables
-#define DAXA_CALLABLE_INDEX 0
-
 layout(location = 0) rayPayloadInEXT hitPayload prd;
 layout(location = 1) rayPayloadEXT bool isShadowed;
 layout(location = 3) callableDataEXT rayLight cLight;
@@ -331,15 +328,15 @@ void main()
     
     cLight.inHitPosition = world_pos;
 
-    if (DAXA_CALLABLE_INDEX == 0)
+    if (p.callable_index == 0)
         executeCallableEXT(0, 3);
-    else if(DAXA_CALLABLE_INDEX == 1)
+    else if(p.callable_index == 1)
         executeCallableEXT(1, 3);
     else
     {
-        vec3 lDir = vec3(1.0, 2.0, 0.4) - cLight.inHitPosition;
+        vec3 lDir = vec3(1.0, 2.0, -0.4) - cLight.inHitPosition;
         cLight.outLightDistance = length(lDir);
-        cLight.outIntensity = 100.0 / (cLight.outLightDistance * cLight.outLightDistance);
+        cLight.outIntensity = 5.0 / (cLight.outLightDistance * cLight.outLightDistance);
         cLight.outLightDir = normalize(lDir);
     }
 
@@ -425,9 +422,9 @@ void main()
 
     cLight.inHitPosition = world_pos;
 
-    if (DAXA_CALLABLE_INDEX == 0)
+    if (p.callable_index == 0)
         executeCallableEXT(0, 3);
-    else if(DAXA_CALLABLE_INDEX == 1)
+    else if(p.callable_index == 1)
         executeCallableEXT(1, 3);
     else
     {

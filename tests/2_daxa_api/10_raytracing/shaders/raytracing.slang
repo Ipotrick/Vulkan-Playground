@@ -146,7 +146,6 @@ struct MyParams
 {
     payload.shadow.x = 1.0;
 }
-#define DAXA_CALLABLE_INDEX 0
 
 [shader("closesthit")] void closest_hit_shader(inout hitPayload payload,
                                                  in BuiltInTriangleIntersectionAttributes attr)
@@ -183,15 +182,15 @@ struct MyParams
 
     rayLight cLight = {hitLocation, 0.0, daxa_f32vec3(0.0, 0.0, 0.0),   0.0};
 
-    if (DAXA_CALLABLE_INDEX == 0)
+    if (p.callable_index == 0)
         CallShader(0, cLight);
-    else if (DAXA_CALLABLE_INDEX == 1)
+    else if (p.callable_index == 1)
         CallShader(1, cLight);
     else
     {
-        daxa_f32vec3 lDir = daxa_f32vec3(1.0, 2.0, 0.4) - cLight.inHitPosition;
+        daxa_f32vec3 lDir = daxa_f32vec3(1.0, 2.0, -0.4) - cLight.inHitPosition;
         cLight.outLightDistance = length(lDir);
-        cLight.outIntensity = 100.0 / (cLight.outLightDistance * cLight.outLightDistance);
+        cLight.outIntensity = 5.0 / (cLight.outLightDistance * cLight.outLightDistance);
         cLight.outLightDir = normalize(lDir);
     }
 
@@ -221,9 +220,9 @@ struct MyParams
 
     rayLight cLight = {hitLocation, 0.0, daxa_f32vec3(0.0, 0.0, 0.0),   0.0};
 
-    if (DAXA_CALLABLE_INDEX == 0)
+    if (p.callable_index == 0)
         CallShader(0, cLight);
-    else if (DAXA_CALLABLE_INDEX == 1)
+    else if (p.callable_index == 1)
         CallShader(1, cLight);
     else
     {
