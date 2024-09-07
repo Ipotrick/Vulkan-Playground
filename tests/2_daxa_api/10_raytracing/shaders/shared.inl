@@ -5,8 +5,8 @@
 
 #define MAX_PRIMITIVES 2
 #define NUM_VERTICES 3
-#define ACTIVATE_ATOMIC_FLOAT // this will throws an exception if the device does not support atomic daxa_f32
-// #define DAXA_SHADERLANG_COMPILE_SLANG
+#define DAXA_SHADERLANG_COMPILE_SLANG
+// #define ACTIVATE_ATOMIC_FLOAT // this will throws an exception if the device does not support atomic daxa_f32
 
 struct CameraView
 {

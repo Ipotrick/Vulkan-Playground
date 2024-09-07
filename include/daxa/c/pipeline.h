@@ -59,8 +59,8 @@ typedef struct
 
 typedef struct 
 {
-    uint32_t index;
-    daxa_ShaderGroup type;
+    daxa_ShaderGroupType type;
+    daxa_StridedDeviceAddressRegion region;
 } daxa_GroupRegionInfo;
 
 static daxa_RayTracingShaderBindingTable const DAXA_DEFAULT_RAY_TRACING_SHADER_BINDING_TABLE = {
@@ -72,10 +72,7 @@ static daxa_RayTracingShaderBindingTable const DAXA_DEFAULT_RAY_TRACING_SHADER_B
 
 typedef struct
 {
-    daxa_SpanToConst(daxa_StridedDeviceAddressRegion) raygen_regions;
-    daxa_SpanToConst(daxa_StridedDeviceAddressRegion) miss_regions;
-    daxa_SpanToConst(daxa_StridedDeviceAddressRegion) hit_regions;
-    daxa_SpanToConst(daxa_StridedDeviceAddressRegion) callable_regions;
+    daxa_BufferId buffer;
     daxa_SpanToConst(daxa_GroupRegionInfo) group_regions;
 } daxa_RayTracingShaderBindingTableEntries;
 

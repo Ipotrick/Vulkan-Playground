@@ -1833,13 +1833,22 @@ namespace daxa
         none = 1000165000,
     };
 
-    enum struct ShaderGroup
+    enum struct ExtendedShaderGroupType
     {
         RAYGEN = 0,
         MISS = 1,
         TRIANGLES_HIT_GROUP = 2,
         PROCEDURAL_HIT_GROUP = 3,
         CALLABLE = 4,
+        MAX_ENUM = 0x7fffffff,
+    };
+
+    enum struct ShaderGroupType
+    {
+        RAYGEN = 0,
+        MISS = 1,
+        HIT = 2,
+        CALLABLE = 3,
         MAX_ENUM = 0x7fffffff,
     };
 

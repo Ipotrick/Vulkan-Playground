@@ -471,51 +471,51 @@ struct App : BaseApp<App>
 #if defined(DAXA_RIGID_BODY_FLAG)
         .raygen_group_infos = {
             daxa::RayTracingShaderGroupInfo{
-                .type = daxa::ShaderGroup::GENERAL,
+                .type = daxa::ExtendedShaderGroupType::GENERAL,
                 .general_shader_index = 0,
             },
         },
         .miss_group_infos = {
             daxa::RayTracingShaderGroupInfo{
-                .type = daxa::ShaderGroup::GENERAL,
+                .type = daxa::ExtendedShaderGroupType::GENERAL,
                 .general_shader_index = 4,
             },
             daxa::RayTracingShaderGroupInfo{
-                .type = daxa::ShaderGroup::GENERAL,
+                .type = daxa::ExtendedShaderGroupType::GENERAL,
                 .general_shader_index = 5,
             },
         },
         .hit_group_infos = {
             daxa::RayTracingShaderGroupInfo{
-                .type = daxa::ShaderGroup::PROCEDURAL_HIT_GROUP,
+                .type = daxa::ExtendedShaderGroupType::PROCEDURAL_HIT_GROUP,
                 .closest_hit_shader_index = 2,
                 .intersection_shader_index = 1,
             },
             daxa::RayTracingShaderGroupInfo {
-                .type = daxa::ShaderGroup::TRIANGLES_HIT_GROUP,
+                .type = daxa::ExtendedShaderGroupType::TRIANGLES_HIT_GROUP,
                 .closest_hit_shader_index = 3,
             },
         },
 #else
         .raygen_group_infos = {
             daxa::RayTracingShaderGroupInfo{
-                .type = daxa::ShaderGroup::GENERAL,
+                .type = daxa::ExtendedShaderGroupType::GENERAL,
                 .general_shader_index = 0,
             },
         },
         .miss_group_infos = {
             daxa::RayTracingShaderGroupInfo{
-                .type = daxa::ShaderGroup::GENERAL,
+                .type = daxa::ExtendedShaderGroupType::GENERAL,
                 .general_shader_index = 3,
             },
             daxa::RayTracingShaderGroupInfo{
-                .type = daxa::ShaderGroup::GENERAL,
+                .type = daxa::ExtendedShaderGroupType::GENERAL,
                 .general_shader_index = 4,
             },
         },
         .hit_group_infos = {
             daxa::RayTracingShaderGroupInfo{
-                .type = daxa::ShaderGroup::PROCEDURAL_HIT_GROUP,
+                .type = daxa::ExtendedShaderGroupType::PROCEDURAL_HIT_GROUP,
                 .closest_hit_shader_index = 2,
                 .intersection_shader_index = 1,
             },

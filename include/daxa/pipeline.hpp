@@ -57,7 +57,7 @@ namespace daxa
     
     struct RayTracingShaderGroupInfo
     {
-        ShaderGroup type;
+        ExtendedShaderGroupType type;
         u32 general_shader_index = (~0U);
         u32 closest_hit_shader_index = (~0U);
         u32 any_hit_shader_index = (~0U);
@@ -71,10 +71,10 @@ namespace daxa
         u64 size {};
     };
 
-    // Group region links
+    // Group region info where group shader handles are stored.
     struct GroupRegionInfo {
-        u32 index;
-        ShaderGroup type;
+        ShaderGroupType type;
+        StridedDeviceAddressRegion region;
     };
 
     struct RayTracingShaderBindingTable
@@ -101,10 +101,7 @@ namespace daxa
 
     struct RayTracingShaderBindingTableEntries
     {
-        Span<StridedDeviceAddressRegion const> raygen_regions = {};
-        Span<StridedDeviceAddressRegion const> miss_regions = {};
-        Span<StridedDeviceAddressRegion const> hit_regions = {};
-        Span<StridedDeviceAddressRegion const> callable_regions = {};
+        daxa::BufferId buffer = {};
         Span<GroupRegionInfo const> group_regions = {};
     };
 
@@ -125,7 +122,10 @@ namespace daxa
         /// @return reference to info of object.
         [[nodiscard]] auto info() const -> RayTracingPipelineInfo const &;
 
-        struct SbtPair { daxa::BufferId buffer; RayTracingShaderBindingTableEntries entries; };
+        struct SbtPair {
+            daxa::BufferId buffer;
+            RayTracingShaderBindingTableEntries entries;
+        };
         [[nodiscard]] auto create_default_sbt() const -> SbtPair;
         [[nodiscard]] auto create_sbt(BuildShaderBindingTableInfo const & info) const -> SbtPair;
         void get_shader_group_handles(void *out_blob) const;

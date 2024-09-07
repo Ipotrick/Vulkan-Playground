@@ -565,7 +565,7 @@ auto daxa_dvc_create_ray_tracing_pipeline(daxa_Device device, daxa_RayTracingPip
         };
 
         // check if raygen shader is valid
-        if(group.type == ShaderGroup::RAYGEN)
+        if(group.type == ExtendedShaderGroupType::RAYGEN)
         {
             if(!check_is_valid_general_shader(group))
             {
@@ -582,7 +582,7 @@ auto daxa_dvc_create_ray_tracing_pipeline(daxa_Device device, daxa_RayTracingPip
 
         } 
         // check if miss shader is valid
-        else if(group.type == ShaderGroup::MISS)
+        else if(group.type == ExtendedShaderGroupType::MISS)
         {
             if(!check_is_valid_general_shader(group))
             {
@@ -598,7 +598,7 @@ auto daxa_dvc_create_ray_tracing_pipeline(daxa_Device device, daxa_RayTracingPip
             }
         }
         // check if hit group is valid
-        else if(group.type == ShaderGroup::TRIANGLES_HIT_GROUP || group.type == ShaderGroup::PROCEDURAL_HIT_GROUP)
+        else if(group.type == ExtendedShaderGroupType::TRIANGLES_HIT_GROUP || group.type == ExtendedShaderGroupType::PROCEDURAL_HIT_GROUP)
         {
             // check if hit group closest hit shader is valid
             if (group.closest_hit_shader_index != VK_SHADER_UNUSED_KHR && group.closest_hit_shader_index > all_stages_count)
@@ -634,7 +634,7 @@ auto daxa_dvc_create_ray_tracing_pipeline(daxa_Device device, daxa_RayTracingPip
             }
         }
         // check if miss shader is valid
-        else if(group.type == ShaderGroup::CALLABLE)
+        else if(group.type == ExtendedShaderGroupType::CALLABLE)
         {
             if(!check_is_valid_general_shader(group))
             {
@@ -665,19 +665,19 @@ auto daxa_dvc_create_ray_tracing_pipeline(daxa_Device device, daxa_RayTracingPip
     }
 
     // translate shader groups to vulkan shader groups
-    auto translate_shader_group = [&](ShaderGroup const & type) -> VkRayTracingShaderGroupTypeKHR
+    auto translate_shader_group = [&](ExtendedShaderGroupType const & type) -> VkRayTracingShaderGroupTypeKHR
     {
         switch (type)
         {
-        case ShaderGroup::RAYGEN:
+        case ExtendedShaderGroupType::RAYGEN:
             return VkRayTracingShaderGroupTypeKHR::VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-        case ShaderGroup::MISS:
+        case ExtendedShaderGroupType::MISS:
             return VkRayTracingShaderGroupTypeKHR::VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-        case ShaderGroup::TRIANGLES_HIT_GROUP:
+        case ExtendedShaderGroupType::TRIANGLES_HIT_GROUP:
             return VkRayTracingShaderGroupTypeKHR::VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-        case ShaderGroup::PROCEDURAL_HIT_GROUP:
+        case ExtendedShaderGroupType::PROCEDURAL_HIT_GROUP:
             return VkRayTracingShaderGroupTypeKHR::VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR;
-        case ShaderGroup::CALLABLE:
+        case ExtendedShaderGroupType::CALLABLE:
             return VkRayTracingShaderGroupTypeKHR::VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
         default:
             return VkRayTracingShaderGroupTypeKHR::VK_RAY_TRACING_SHADER_GROUP_TYPE_MAX_ENUM_KHR;
@@ -766,29 +766,34 @@ struct InputGroupRegion {
     RayTracingShaderGroupInfo* group;
 };
 
+struct LinkedGroupRegionInfo {
+    u32 index;
+    ExtendedShaderGroupType type;
+};
+
 inline auto daxa_ray_tracing_pipeline_fill_sbt_buffer(
     u8 * sbt_buffer_ptr, u32 group_handle_size, 
     std::vector<uint8_t> const & shader_handle_storage, 
     std::vector<InputGroupRegion> const & groups,
-    std::vector<GroupRegionInfo> const & regions,
+    std::vector<LinkedGroupRegionInfo> const & regions,
     std::vector<StridedDeviceAddressRegion> const & raygen_regions,
     std::vector<StridedDeviceAddressRegion> const & miss_regions, 
     std::vector<StridedDeviceAddressRegion> const & hit_regions, 
     std::vector<StridedDeviceAddressRegion> const & callable_regions) -> void
 {
 
-    auto get_region = [&](GroupRegionInfo const & link) -> StridedDeviceAddressRegion const &
+    auto get_region = [&](LinkedGroupRegionInfo const & link) -> StridedDeviceAddressRegion const &
     {
         switch (link.type)
         {
-        case ShaderGroup::RAYGEN:
+        case ExtendedShaderGroupType::RAYGEN:
             return raygen_regions.at(link.index);
-        case ShaderGroup::MISS:
+        case ExtendedShaderGroupType::MISS:
             return miss_regions.at(link.index);
-        case ShaderGroup::TRIANGLES_HIT_GROUP:
-        case ShaderGroup::PROCEDURAL_HIT_GROUP:
+        case ExtendedShaderGroupType::TRIANGLES_HIT_GROUP:
+        case ExtendedShaderGroupType::PROCEDURAL_HIT_GROUP:
             return hit_regions.at(link.index);
-        case ShaderGroup::CALLABLE:
+        case ExtendedShaderGroupType::CALLABLE:
             return callable_regions.at(link.index);
         default:
             return raygen_regions.at(link.index);
@@ -859,8 +864,8 @@ inline auto daxa_ray_tracing_pipeline_build_sbt(
     _DAXA_RETURN_IF_ERROR(get_group_handles_result, get_group_handles_result);
 
     // Add a new group region
-    auto add_new_group_region = [&](std::initializer_list<ShaderGroup> group_flags, ShaderGroup group_type, ShaderGroup & current_group_type, u32 & current_offset, StridedDeviceAddressRegion *& current_region, std::vector<StridedDeviceAddressRegion> & specific_regions,
-                                    std::vector<GroupRegionInfo> & regions) -> void
+    auto add_new_group_region = [&](std::initializer_list<ExtendedShaderGroupType> group_flags, ExtendedShaderGroupType group_type, ExtendedShaderGroupType & current_group_type, u32 & current_offset, StridedDeviceAddressRegion *& current_region, std::vector<StridedDeviceAddressRegion> & specific_regions,
+                                    std::vector<LinkedGroupRegionInfo> & regions) -> void
     {
         // if there is no current region, create one
         if(!current_region)
@@ -916,16 +921,16 @@ inline auto daxa_ray_tracing_pipeline_build_sbt(
     auto hit_regions = std::vector<StridedDeviceAddressRegion>{};
     auto callable_regions = std::vector<StridedDeviceAddressRegion>{};
 
-    auto regions = std::vector<GroupRegionInfo>{};
+    auto regions = std::vector<LinkedGroupRegionInfo>{};
 
     u32 current_offset = 0;
     StridedDeviceAddressRegion* current_region = nullptr;
-    ShaderGroup current_group_type = ShaderGroup::MAX_ENUM;
+    ExtendedShaderGroupType current_group_type = ExtendedShaderGroupType::MAX_ENUM;
 
     for(auto & group_region : requested_groups) {
         auto & group = group_region.group;
         // Check current region
-        if(group->type == ShaderGroup::RAYGEN) {
+        if(group->type == ExtendedShaderGroupType::RAYGEN) {
             // if there is no current region, create one
             if(!current_region) {
                 // create a new region
@@ -954,13 +959,13 @@ inline auto daxa_ray_tracing_pipeline_build_sbt(
             // reset the current region, since raygen regions need to be aligned
             current_region = nullptr;
             // set the current group type
-            current_group_type = ShaderGroup::RAYGEN;
-        } else if(group->type == ShaderGroup::MISS) {
+            current_group_type = ExtendedShaderGroupType::RAYGEN;
+        } else if(group->type == ExtendedShaderGroupType::MISS) {
             add_new_group_region({group->type}, group->type, current_group_type, current_offset, current_region, miss_regions, regions);
-        } else if(group->type == ShaderGroup::TRIANGLES_HIT_GROUP || group->type == ShaderGroup::PROCEDURAL_HIT_GROUP) {
-            auto requested_group_type = {ShaderGroup::TRIANGLES_HIT_GROUP,ShaderGroup::PROCEDURAL_HIT_GROUP};
+        } else if(group->type == ExtendedShaderGroupType::TRIANGLES_HIT_GROUP || group->type == ExtendedShaderGroupType::PROCEDURAL_HIT_GROUP) {
+            auto requested_group_type = {ExtendedShaderGroupType::TRIANGLES_HIT_GROUP,ExtendedShaderGroupType::PROCEDURAL_HIT_GROUP};
             add_new_group_region(requested_group_type, group->type, current_group_type, current_offset, current_region, hit_regions, regions);
-        } else if(group->type == ShaderGroup::CALLABLE) {
+        } else if(group->type == ExtendedShaderGroupType::CALLABLE) {
             add_new_group_region({group->type}, group->type, current_group_type, current_offset, current_region, callable_regions, regions);
         }
     }
@@ -998,7 +1003,7 @@ inline auto daxa_ray_tracing_pipeline_build_sbt(
     
 
     for(auto & region : regions) {
-        auto & region_data = region.type == ShaderGroup::RAYGEN ? raygen_regions[region.index] : region.type == ShaderGroup::MISS ? miss_regions[region.index] : region.type == ShaderGroup::TRIANGLES_HIT_GROUP || region.type == ShaderGroup::PROCEDURAL_HIT_GROUP ? hit_regions[region.index] : callable_regions[region.index];
+        auto & region_data = region.type == ExtendedShaderGroupType::RAYGEN ? raygen_regions[region.index] : region.type == ExtendedShaderGroupType::MISS ? miss_regions[region.index] : region.type == ExtendedShaderGroupType::TRIANGLES_HIT_GROUP || region.type == ExtendedShaderGroupType::PROCEDURAL_HIT_GROUP ? hit_regions[region.index] : callable_regions[region.index];
         auto const device_address = static_cast<DeviceAddress>(sbt_address + region_data.address);
         // set the device address
         region_data.address = device_address;
@@ -1015,47 +1020,79 @@ inline auto daxa_ray_tracing_pipeline_build_sbt(
         hit_regions,
         callable_regions);
 
-    auto create_group_region_array = [&] (std::vector<GroupRegionInfo> const & regions) -> daxa_GroupRegionInfo *
+    auto create_strided_device_address_region_array = [&](std::vector<LinkedGroupRegionInfo> const & regions, 
+    std::vector<StridedDeviceAddressRegion> const & raygen_regions,
+    std::vector<StridedDeviceAddressRegion> const & miss_regions,
+    std::vector<StridedDeviceAddressRegion> const & hit_regions,
+    std::vector<StridedDeviceAddressRegion> const & callable_regions,
+    GroupRegionInfo * strided_device_addr_regions) -> void
     {
-        auto * array = new daxa_GroupRegionInfo[regions.size()];
-        for (u32 i = 0; i < regions.size(); ++i)
+        auto extended_group_shader_to_group_shader = [&](ExtendedShaderGroupType const & type) -> ShaderGroupType
         {
-            auto const & region = regions.at(i);
-            array[i] = {
-                .index = region.index,
-                .type = static_cast<daxa_ShaderGroup>(region.type),
-            };
+            switch (type)
+            {
+            case ExtendedShaderGroupType::RAYGEN:
+                return ShaderGroupType::RAYGEN;
+            case ExtendedShaderGroupType::MISS:
+                return ShaderGroupType::MISS;
+            case ExtendedShaderGroupType::TRIANGLES_HIT_GROUP:
+            case ExtendedShaderGroupType::PROCEDURAL_HIT_GROUP:
+                return ShaderGroupType::HIT;
+            case ExtendedShaderGroupType::CALLABLE:
+                return ShaderGroupType::CALLABLE;
+            default:
+                return ShaderGroupType::MAX_ENUM;
+            }
+        };
+
+        for(u32 i = 0; i < regions.size(); ++i) {
+            auto const & region = regions[i];
+            auto const & region_data = region.type == ExtendedShaderGroupType::RAYGEN ? raygen_regions[region.index] : region.type == ExtendedShaderGroupType::MISS ? miss_regions[region.index] : region.type == ExtendedShaderGroupType::TRIANGLES_HIT_GROUP || region.type == ExtendedShaderGroupType::PROCEDURAL_HIT_GROUP ? hit_regions[region.index] : callable_regions[region.index];
+            auto const type = extended_group_shader_to_group_shader(region.type);
+            auto & strided_device_addr_region = strided_device_addr_regions[i];
+            strided_device_addr_region.type = type;
+            strided_device_addr_region.region = region_data;
         }
-        return array;
+
+        
     };
 
-    auto create_strided_device_address_region_array = [&](std::vector<StridedDeviceAddressRegion> const & regions) -> daxa_StridedDeviceAddressRegion *
-    {
-        auto * array = new daxa_StridedDeviceAddressRegion[regions.size()];
-        for (u32 i = 0; i < regions.size(); ++i)
-        {
-            auto const & region = regions.at(i);
-            array[i] = {
-                .device_address = region.address,
-                .stride = region.stride,
-                .size = region.size,
-            };
-        }
-        return array;
+    auto sbt_handle_size = regions.size() * sizeof(daxa_GroupRegionInfo);
+
+    // TODO: append "_SBT_handler_buffer" to the name
+    auto name_handle_cstr = info.name.c_str();
+    // Allocate a buffer for storing the SBT.
+    auto sbt_handler_info = daxa_BufferInfo{
+        .size = sbt_handle_size,
+        .allocate_info = DAXA_MEMORY_FLAG_HOST_ACCESS_RANDOM,
+        .name = std::bit_cast<daxa_SmallString>(name_handle_cstr),
     };
     
+     auto handle_result = daxa_dvc_create_buffer(device, &sbt_handler_info, r_cast<daxa_BufferId *>(&out_entries->buffer));
+     if(handle_result != DAXA_RESULT_SUCCESS) {
+        auto const destroy_buffer_result = daxa_dvc_destroy_buffer(device, sbt_buffer_id);
+        _DAXA_RETURN_IF_ERROR(destroy_buffer_result, destroy_buffer_result);
+
+         return handle_result;
+     }
+
+     void * group_regions_data = nullptr;
+
+     auto const get_host_address_handle_result = daxa_dvc_buffer_host_address(device, out_entries->buffer, reinterpret_cast<void **>(&group_regions_data));
+     if(get_host_address_handle_result != DAXA_RESULT_SUCCESS) {
+        auto const destroy_buffer_result = daxa_dvc_destroy_buffer(device, sbt_buffer_id);
+        auto const destroy_buffer_handle_result = daxa_dvc_destroy_buffer(device, out_entries->buffer);
+        _DAXA_RETURN_IF_ERROR(destroy_buffer_result, destroy_buffer_result);
+        _DAXA_RETURN_IF_ERROR(destroy_buffer_handle_result, destroy_buffer_handle_result);
+
+         return get_host_address_handle_result;
+     }
+
     // Set group region references
-    // TODO: free the memory when the pipeline is destroyed?
-    out_entries->group_regions.data = create_group_region_array(regions);
+    out_entries->group_regions.data = r_cast<daxa_GroupRegionInfo *>(group_regions_data);
     out_entries->group_regions.size = regions.size();
-    out_entries->raygen_regions.data = create_strided_device_address_region_array(raygen_regions);
-    out_entries->raygen_regions.size = raygen_regions.size();
-    out_entries->miss_regions.data = create_strided_device_address_region_array(miss_regions);
-    out_entries->miss_regions.size = miss_regions.size();
-    out_entries->hit_regions.data = create_strided_device_address_region_array(hit_regions);
-    out_entries->hit_regions.size = hit_regions.size();
-    out_entries->callable_regions.data = create_strided_device_address_region_array(callable_regions);
-    out_entries->callable_regions.size = callable_regions.size();
+
+    create_strided_device_address_region_array(regions, raygen_regions, miss_regions, hit_regions, callable_regions, reinterpret_cast<GroupRegionInfo *>(const_cast<daxa_GroupRegionInfo *>(out_entries->group_regions.data)));
 
     return DAXA_RESULT_SUCCESS;
 }

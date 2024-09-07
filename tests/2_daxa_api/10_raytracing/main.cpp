@@ -36,7 +36,6 @@ namespace tests
             daxa::Device device = {};
             daxa::Swapchain swapchain = {};
             daxa::PipelineManager pipeline_manager = {};
-            // std::shared_ptr<daxa::ComputePipeline> comp_pipeline = {};
             std::shared_ptr<daxa::RayTracingPipeline> rt_pipeline = {};daxa::RayTracingPipeline::SbtPair sbt_pair = {}, second_sbt_pair = {};
             daxa::TlasId tlas = {};
             daxa::BlasId blas = {};
@@ -80,21 +79,9 @@ namespace tests
                 if (device.is_valid())
                 {
                     device.destroy_buffer(sbt_pair.buffer);
-                    {
-                      if(sbt_pair.entries.raygen_regions.m_data) delete[] sbt_pair.entries.raygen_regions.m_data;
-                      if(sbt_pair.entries.miss_regions.m_data) delete[] sbt_pair.entries.miss_regions.m_data;
-                      if(sbt_pair.entries.hit_regions.m_data) delete[] sbt_pair.entries.hit_regions.m_data;
-                      if(sbt_pair.entries.callable_regions.m_data) delete[] sbt_pair.entries.callable_regions.m_data;
-                      if(sbt_pair.entries.group_regions.m_data) delete[] sbt_pair.entries.group_regions.m_data;
-                    }
+                    device.destroy_buffer(sbt_pair.entries.buffer);
                     device.destroy_buffer(second_sbt_pair.buffer);
-                    {
-                      if(second_sbt_pair.entries.raygen_regions.m_data) delete[] second_sbt_pair.entries.raygen_regions.m_data;
-                      if(second_sbt_pair.entries.miss_regions.m_data) delete[] second_sbt_pair.entries.miss_regions.m_data;
-                      if(second_sbt_pair.entries.hit_regions.m_data) delete[] second_sbt_pair.entries.hit_regions.m_data;
-                      if(second_sbt_pair.entries.callable_regions.m_data) delete[] second_sbt_pair.entries.callable_regions.m_data;
-                      if(second_sbt_pair.entries.group_regions.m_data) delete[] second_sbt_pair.entries.group_regions.m_data;
-                    }
+                    device.destroy_buffer(second_sbt_pair.entries.buffer);
                     device.destroy_tlas(tlas);
                     device.destroy_blas(blas);
                     device.destroy_blas(proc_blas);
@@ -103,6 +90,52 @@ namespace tests
                     device.destroy_buffer(vertex_buffer);
                     device.destroy_buffer(blas_buffer);
                 }
+            }
+            
+            
+
+
+            enum StageIndex{
+                RAYGEN,
+                RAYGEN2,
+                MISS,
+                MISS2,
+                CLOSE_HIT,
+                CLOSE_HIT2,
+                ANY_HIT,
+                INTERSECTION,
+                CALLABLE,
+                CALLABLE2,
+                STAGES_COUNT,
+            };
+
+
+            enum GroupIndex : u32{
+                PRIMARY_RAY,
+                SECONDARY_RAY,
+                HIT_MISS,
+                SHADOW_MISS,
+                TRIANGLE_HIT,
+                PROCEDURAL_HIT,
+                DIRECTIONAL_LIGHT,
+                SPOT_LIGHT,
+                GROUPS_COUNT,
+            };
+
+            void recreate_sbt() {
+                if(!sbt_pair.buffer.is_empty()) {
+                    device.destroy_buffer(sbt_pair.buffer);
+                    device.destroy_buffer(sbt_pair.entries.buffer);
+                }
+                sbt_pair = rt_pipeline->create_default_sbt();
+
+                if(!second_sbt_pair.buffer.is_empty()) {
+                    device.destroy_buffer(second_sbt_pair.buffer);
+                    device.destroy_buffer(second_sbt_pair.entries.buffer);
+                }
+                second_sbt_pair = rt_pipeline->create_sbt({
+                    std::array<u32, 14>{GroupIndex::PRIMARY_RAY, GroupIndex::HIT_MISS, GroupIndex::SHADOW_MISS, GroupIndex::TRIANGLE_HIT, GroupIndex::PROCEDURAL_HIT, GroupIndex::DIRECTIONAL_LIGHT, GroupIndex::SPOT_LIGHT,GroupIndex::SECONDARY_RAY, GroupIndex::HIT_MISS, GroupIndex::SHADOW_MISS, GroupIndex::TRIANGLE_HIT, GroupIndex::PROCEDURAL_HIT, GroupIndex::DIRECTIONAL_LIGHT, GroupIndex::SPOT_LIGHT},
+                });
             }
 
             void initialize()
@@ -586,21 +619,6 @@ namespace tests
 #endif
                 };
 
-
-                enum StageIndex{
-                    RAYGEN,
-                    RAYGEN2,
-                    MISS,
-                    MISS2,
-                    CLOSE_HIT,
-                    CLOSE_HIT2,
-                    ANY_HIT,
-                    INTERSECTION,
-                    CALLABLE,
-                    CALLABLE2,
-                    STAGES_COUNT,
-                };
-
                 std::vector<daxa::RayTracingShaderCompileInfo> stages(STAGES_COUNT);
 
                 stages[StageIndex::RAYGEN] = daxa::RayTracingShaderCompileInfo{
@@ -653,60 +671,47 @@ namespace tests
                     .type = daxa::RayTracingShaderType::CALLABLE,
                 };
 
-
-                enum GroupIndex : u32{
-                    PRIMARY_RAY,
-                    SECONDARY_RAY,
-                    HIT_MISS,
-                    SHADOW_MISS,
-                    TRIANGLE_HIT,
-                    PROCEDURAL_HIT,
-                    DIRECTIONAL_LIGHT,
-                    SPOT_LIGHT,
-                    GROUPS_COUNT,
-                };
-
                 std::vector<daxa::RayTracingShaderGroupInfo> groups(GROUPS_COUNT);
               
                 groups[GroupIndex::PRIMARY_RAY] = daxa::RayTracingShaderGroupInfo{
-                    .type = daxa::ShaderGroup::RAYGEN,
+                    .type = daxa::ExtendedShaderGroupType::RAYGEN,
                     .general_shader_index = StageIndex::RAYGEN,
                 };
 
                 groups[GroupIndex::SECONDARY_RAY] = daxa::RayTracingShaderGroupInfo{
-                    .type = daxa::ShaderGroup::RAYGEN,
+                    .type = daxa::ExtendedShaderGroupType::RAYGEN,
                     .general_shader_index = StageIndex::RAYGEN2,
                 };
 
                 groups[GroupIndex::HIT_MISS] = daxa::RayTracingShaderGroupInfo{
-                    .type = daxa::ShaderGroup::MISS,
+                    .type = daxa::ExtendedShaderGroupType::MISS,
                     .general_shader_index = StageIndex::MISS,
                 };
 
                 groups[GroupIndex::SHADOW_MISS] = daxa::RayTracingShaderGroupInfo{
-                    .type = daxa::ShaderGroup::MISS,
+                    .type = daxa::ExtendedShaderGroupType::MISS,
                     .general_shader_index = StageIndex::MISS2,
                 };
 
                 groups[GroupIndex::TRIANGLE_HIT] = daxa::RayTracingShaderGroupInfo{
-                    .type = daxa::ShaderGroup::PROCEDURAL_HIT_GROUP,
+                    .type = daxa::ExtendedShaderGroupType::PROCEDURAL_HIT_GROUP,
                     .closest_hit_shader_index = StageIndex::CLOSE_HIT,
                     .any_hit_shader_index = StageIndex::ANY_HIT,
                     .intersection_shader_index = StageIndex::INTERSECTION,
                 };
 
                 groups[GroupIndex::PROCEDURAL_HIT] = daxa::RayTracingShaderGroupInfo{
-                    .type = daxa::ShaderGroup::TRIANGLES_HIT_GROUP,
+                    .type = daxa::ExtendedShaderGroupType::TRIANGLES_HIT_GROUP,
                     .closest_hit_shader_index = StageIndex::CLOSE_HIT2
                 };
 
                 groups[GroupIndex::DIRECTIONAL_LIGHT] = daxa::RayTracingShaderGroupInfo{
-                    .type = daxa::ShaderGroup::CALLABLE,
+                    .type = daxa::ExtendedShaderGroupType::CALLABLE,
                     .general_shader_index = StageIndex::CALLABLE,
                 };
 
                 groups[GroupIndex::SPOT_LIGHT] = daxa::RayTracingShaderGroupInfo{
-                    .type = daxa::ShaderGroup::CALLABLE,
+                    .type = daxa::ExtendedShaderGroupType::CALLABLE,
                     .general_shader_index = StageIndex::CALLABLE2,
                 };
                 
@@ -732,8 +737,10 @@ namespace tests
 
                 if (auto * reload_err = daxa::get_if<daxa::PipelineReloadError>(&reload_result))
                     std::cout << reload_err->message << std::endl;
-                else if (daxa::get_if<daxa::PipelineReloadSuccess>(&reload_result))
+                else if (daxa::get_if<daxa::PipelineReloadSuccess>(&reload_result)) {
                     std::cout << "reload success" << std::endl;
+                    recreate_sbt();
+                }
                 glfwPollEvents();
                 if (glfwWindowShouldClose(glfw_window_ptr) != 0)
                 {
@@ -847,27 +854,30 @@ namespace tests
                 daxa::RayTracingShaderBindingTable shader_binding_table;
                 if(primary_rays) {
                   if(second_sbt) {
-                    shader_binding_table.raygen_region = second_sbt_pair.entries.raygen_regions[0];
-                    shader_binding_table.miss_region = second_sbt_pair.entries.miss_regions[0];
-                    shader_binding_table.hit_region = second_sbt_pair.entries.hit_regions[0];
-                    shader_binding_table.callable_region = second_sbt_pair.entries.callable_regions[0];
+                    shader_binding_table.raygen_region = second_sbt_pair.entries.group_regions.at(0).region;
+                    shader_binding_table.miss_region = second_sbt_pair.entries.group_regions.at(1).region;
+                    shader_binding_table.hit_region = second_sbt_pair.entries.group_regions.at(2).region;
+                    shader_binding_table.callable_region = second_sbt_pair.entries.group_regions.at(3).region;
                   } else {
-                    shader_binding_table.raygen_region = sbt_pair.entries.raygen_regions[0];
-                    shader_binding_table.miss_region = sbt_pair.entries.miss_regions[0];
-                    shader_binding_table.hit_region = sbt_pair.entries.hit_regions[0];
-                    shader_binding_table.callable_region = sbt_pair.entries.callable_regions[0];
+                    shader_binding_table.raygen_region = sbt_pair.entries.group_regions.at(0).region;
+                    shader_binding_table.miss_region = sbt_pair.entries.group_regions.at(2).region;
+                    shader_binding_table.hit_region = sbt_pair.entries.group_regions.at(3).region;
+                    shader_binding_table.callable_region = sbt_pair.entries.group_regions.at(4).region;
                   }
                 } else {
-                    if(second_sbt) {
-                      shader_binding_table.raygen_region = second_sbt_pair.entries.raygen_regions[1];
-                      shader_binding_table.miss_region = second_sbt_pair.entries.miss_regions[1];
-                      shader_binding_table.hit_region = second_sbt_pair.entries.hit_regions[1];
-                      shader_binding_table.callable_region = second_sbt_pair.entries.callable_regions[1];
-                    } else {
-                      shader_binding_table.raygen_region = sbt_pair.entries.raygen_regions[1];
-                      shader_binding_table.miss_region = sbt_pair.entries.miss_regions[0];
-                      shader_binding_table.hit_region = sbt_pair.entries.hit_regions[0];
-                      shader_binding_table.callable_region = sbt_pair.entries.callable_regions[0];
+                    if (second_sbt)
+                    {
+                      shader_binding_table.raygen_region = second_sbt_pair.entries.group_regions.at(4).region;
+                      shader_binding_table.miss_region = second_sbt_pair.entries.group_regions.at(5).region;
+                      shader_binding_table.hit_region = second_sbt_pair.entries.group_regions.at(6).region;
+                      shader_binding_table.callable_region = second_sbt_pair.entries.group_regions.at(7).region;
+                    }
+                    else
+                    {
+                      shader_binding_table.raygen_region = sbt_pair.entries.group_regions.at(1).region;
+                      shader_binding_table.miss_region = sbt_pair.entries.group_regions.at(2).region;
+                      shader_binding_table.hit_region = sbt_pair.entries.group_regions.at(3).region;
+                      shader_binding_table.callable_region = sbt_pair.entries.group_regions.at(4).region;
                     }
                 }
 
