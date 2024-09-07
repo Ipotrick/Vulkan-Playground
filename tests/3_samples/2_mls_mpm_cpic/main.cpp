@@ -449,81 +449,98 @@ struct App : BaseApp<App>
 #endif
         };
 
+        enum StageIndex{
+            RAYGEN,
+            MISS,
+            MISS2,
+            CLOSE_HIT,
+            CLOSE_HIT2,
+            INTERSECTION,
+            STAGES_COUNT,
+        };
+
+
+        enum GroupIndex : u32{
+            PRIMARY_RAY,
+            HIT_MISS,
+            SHADOW_MISS,
+            PROCEDURAL_HIT,
+            TRIANGLE_HIT,
+            GROUPS_COUNT,
+        };
+
+        std::vector<daxa::RayTracingShaderCompileInfo> stages(STAGES_COUNT);
+
+        stages[RAYGEN] = daxa::RayTracingShaderCompileInfo{
+            .shader_info = rt_gen_shader,
+            .type = daxa::RayTracingShaderType::RAYGEN,
+        };
+
+        stages[MISS] = daxa::RayTracingShaderCompileInfo{
+            .shader_info = rt_miss_shader,
+            .type = daxa::RayTracingShaderType::MISS,
+        };
+
+        stages[MISS2] = daxa::RayTracingShaderCompileInfo{
+            .shader_info = rt_miss_shadow_shader,
+            .type = daxa::RayTracingShaderType::MISS,
+        };
+
+        stages[CLOSE_HIT] = daxa::RayTracingShaderCompileInfo{
+            .shader_info = rt_closest_hit_shader,
+            .type = daxa::RayTracingShaderType::CLOSEST_HIT,
+        };
+
+#if defined(DAXA_RIGID_BODY_FLAG)
+        stages[CLOSE_HIT2] = daxa::RayTracingShaderCompileInfo{
+            .shader_info = rt_rigid_body_closest_hit_shader,
+            .type = daxa::RayTracingShaderType::CLOSEST_HIT,
+        };
+#endif
+
+        stages[INTERSECTION] = daxa::RayTracingShaderCompileInfo{
+            .shader_info = rt_intersection_shader,
+            .type = daxa::RayTracingShaderType::INTERSECTION,
+        };
+
+        std::vector<daxa::RayTracingShaderGroupInfo> groups(GROUPS_COUNT);
+
+        groups[PRIMARY_RAY] = daxa::RayTracingShaderGroupInfo{
+            .type = daxa::ExtendedShaderGroupType::RAYGEN,
+            .general_shader_index = StageIndex::RAYGEN,
+        };
+
+        groups[HIT_MISS] = daxa::RayTracingShaderGroupInfo{
+            .type = daxa::ExtendedShaderGroupType::MISS,
+            .general_shader_index = StageIndex::MISS,
+        };
+
+        groups[SHADOW_MISS] = daxa::RayTracingShaderGroupInfo{
+            .type = daxa::ExtendedShaderGroupType::MISS,
+            .general_shader_index = StageIndex::MISS2,
+        };
+
+        groups[PROCEDURAL_HIT] = daxa::RayTracingShaderGroupInfo{
+            .type = daxa::ExtendedShaderGroupType::PROCEDURAL_HIT_GROUP,
+            .closest_hit_shader_index = StageIndex::CLOSE_HIT,
+            .intersection_shader_index = StageIndex::INTERSECTION,
+        };
+
+#if defined(DAXA_RIGID_BODY_FLAG)
+        groups[TRIANGLE_HIT] = daxa::RayTracingShaderGroupInfo{
+            .type = daxa::ExtendedShaderGroupType::TRIANGLES_HIT_GROUP,
+            .closest_hit_shader_index = StageIndex::CLOSE_HIT2,
+        };
+#endif // DAXA_RIGID_BODY_FLAG
+
+
+
         return pipeline_manager.add_ray_tracing_pipeline({
-        .raygen_infos = {
-            rt_gen_shader
-        },
-        .intersection_infos = {
-            rt_intersection_shader
-        },
-        .closest_hit_infos = {
-            rt_closest_hit_shader,
-#if defined(DAXA_RIGID_BODY_FLAG)
-            rt_rigid_body_closest_hit_shader,
-#endif
-        },
-        .miss_hit_infos = {
-            rt_miss_shader,
-            rt_miss_shadow_shader
-        },
-        // Groups are in order of their shader indices.
-        // NOTE: The order of the groups is important! raygen, miss, hit, callable
-#if defined(DAXA_RIGID_BODY_FLAG)
-        .raygen_group_infos = {
-            daxa::RayTracingShaderGroupInfo{
-                .type = daxa::ExtendedShaderGroupType::GENERAL,
-                .general_shader_index = 0,
-            },
-        },
-        .miss_group_infos = {
-            daxa::RayTracingShaderGroupInfo{
-                .type = daxa::ExtendedShaderGroupType::GENERAL,
-                .general_shader_index = 4,
-            },
-            daxa::RayTracingShaderGroupInfo{
-                .type = daxa::ExtendedShaderGroupType::GENERAL,
-                .general_shader_index = 5,
-            },
-        },
-        .hit_group_infos = {
-            daxa::RayTracingShaderGroupInfo{
-                .type = daxa::ExtendedShaderGroupType::PROCEDURAL_HIT_GROUP,
-                .closest_hit_shader_index = 2,
-                .intersection_shader_index = 1,
-            },
-            daxa::RayTracingShaderGroupInfo {
-                .type = daxa::ExtendedShaderGroupType::TRIANGLES_HIT_GROUP,
-                .closest_hit_shader_index = 3,
-            },
-        },
-#else
-        .raygen_group_infos = {
-            daxa::RayTracingShaderGroupInfo{
-                .type = daxa::ExtendedShaderGroupType::GENERAL,
-                .general_shader_index = 0,
-            },
-        },
-        .miss_group_infos = {
-            daxa::RayTracingShaderGroupInfo{
-                .type = daxa::ExtendedShaderGroupType::GENERAL,
-                .general_shader_index = 3,
-            },
-            daxa::RayTracingShaderGroupInfo{
-                .type = daxa::ExtendedShaderGroupType::GENERAL,
-                .general_shader_index = 4,
-            },
-        },
-        .hit_group_infos = {
-            daxa::RayTracingShaderGroupInfo{
-                .type = daxa::ExtendedShaderGroupType::PROCEDURAL_HIT_GROUP,
-                .closest_hit_shader_index = 2,
-                .intersection_shader_index = 1,
-            },
-        },
-#endif
-        .max_ray_recursion_depth = 2,
-        .push_constant_size = sizeof(ComputePush),
-        .name = "ray tracing pipeline",
+            .stages = stages,
+            .groups = groups,
+            .max_ray_recursion_depth = 2,
+            .push_constant_size = sizeof(ComputePush),
+            .name = "ray tracing pipeline",
     }).value();
     }();
     // clang-format on
@@ -535,7 +552,7 @@ struct App : BaseApp<App>
         .name = "gpu_input_buffer",
     });
     GpuInput gpu_input = {
-        .p_count = NUM_PARTICLES, 
+        .p_count = NUM_PARTICLES,
 #if defined(DAXA_RIGID_BODY_FLAG)
         .rigid_body_count = NUM_RIGID_BOX_COUNT,
         .r_p_count = 0,
@@ -548,12 +565,12 @@ struct App : BaseApp<App>
         .frame_number = 0,
         .mouse_pos = {0.0f, 0.0f},
         .mouse_radius = 0.1f,
-        .max_velocity = 
+        .max_velocity =
             MAX_VELOCITY,
-#if defined(DAXA_RIGID_BODY_FLAG)            
+#if defined(DAXA_RIGID_BODY_FLAG)
         .applied_force = APPLIED_FORCE_RIGID_BODY,
 #endif // DAXA_RIGID_BODY_FLAG
-        };
+    };
 
     daxa::TaskBuffer task_gpu_input_buffer{{.initial_buffers = {.buffers = std::array{gpu_input_buffer}}, .name = "input_buffer"}};
 
@@ -2152,11 +2169,19 @@ struct App : BaseApp<App>
                     .camera = device.device_address(camera_buffer).value(),
                     .tlas = tlas,
                 });
+
+                daxa::RayTracingShaderBindingTable shader_binding_table = {
+                    .raygen_region = sbt_pair.entries.group_regions.at(0).region,
+                    .miss_region = sbt_pair.entries.group_regions.at(1).region,
+                    .hit_region = sbt_pair.entries.group_regions.at(2).region,
+                    .callable_region = {},
+                };
+
                 ti.recorder.trace_rays({
                     .width = size_x,
                     .height = size_y,
                     .depth = 1,
-                    .shader_binding_table = sbt_pair.table,
+                    .shader_binding_table = shader_binding_table,
                 });
             },
             .name = ("Draw (Ray Tracing)"),
