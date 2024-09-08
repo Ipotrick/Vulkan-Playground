@@ -83,7 +83,10 @@ struct App : BaseApp<App>
     bool print_level_set_cells = false;
     bool stop_when_detected = false;
     bool slow_down = false;
+    bool step_by_step = false;
+    bool simulation_step = false;
     bool print_CDF_cell = false;
+    bool print_grid_cell = false;
     bool print_CDF_particles = false;
 #endif // _DEBUG
     camera cam = {};
@@ -645,6 +648,15 @@ struct App : BaseApp<App>
     daxa::BufferClearInfo clear_info = {grid_buffer, 0, grid_size, 0};
 
     daxa::usize aabb_size = TOTAL_AABB_COUNT * sizeof(Aabb);
+
+#if defined(_DEBUG)
+    daxa::BufferId staging_grid_buffer = device.create_buffer({
+        .size = grid_size,
+        .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_SEQUENTIAL_WRITE,
+        .name = ("staging_grid_buffer"),
+    });
+    daxa::TaskBuffer task_staging_grid_buffer{{.initial_buffers = {.buffers = std::array{staging_grid_buffer}}, .name = "staging_grid_buffer_task"}};
+#endif // _DEBUG
     
 #if defined(DAXA_RIGID_BODY_FLAG)
     daxa::usize rigid_grid_size = GRID_SIZE * sizeof(NodeCDF);
@@ -655,6 +667,8 @@ struct App : BaseApp<App>
     daxa::TaskBuffer task_rigid_grid_buffer{{.initial_buffers = {.buffers = std::array{rigid_grid_buffer}}, .name = "rigid_grid_buffer_task"}};
 
 #if defined(_DEBUG)
+
+
     daxa::BufferId staging_rigid_grid_buffer = device.create_buffer({
         .size = rigid_grid_size,
         .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_SEQUENTIAL_WRITE,
@@ -823,9 +837,12 @@ struct App : BaseApp<App>
         device.destroy_buffer(_staging_particle_CDF_buffer);
         device.destroy_buffer(_staging_particles_buffer);
         device.destroy_buffer(_staging_aabb_buffer);
-#endif // _DEBUG
         device.destroy_buffer(particle_CDF_buffer);
+#endif // _DEBUG
 #endif // DAXA_RIGID_BODY_FLAG
+#if defined(_DEBUG)
+        device.destroy_buffer(staging_grid_buffer);
+#endif // _DEBUG
         device.destroy_buffer(grid_buffer);
         device.destroy_buffer(aabb_buffer);
         device.destroy_buffer(camera_buffer);
@@ -989,18 +1006,29 @@ struct App : BaseApp<App>
 #if defined(_DEBUG)
         } else if(key == GLFW_KEY_P && action == GLFW_PRESS) {
             print_rigid_cells = !print_rigid_cells;
+            std::cout << "PRINT RIGID CELLS: " << print_rigid_cells << std::endl;
         } else if(key == GLFW_KEY_O && action == GLFW_PRESS) {
             stop_when_detected = !stop_when_detected;
+            std::cout << "STOP WHEN DETECTED: " << stop_when_detected << std::endl;
         } else if(key == GLFW_KEY_I && action == GLFW_PRESS) {
             slow_down = !slow_down;
             sim_loop_count = slow_down ? 1 : SIM_LOOP_COUNT;
             std::cout << "SIMULATION ITERATIONS: " << sim_loop_count << std::endl;
+        } else if(key == GLFW_KEY_J && action == GLFW_PRESS) {
+            step_by_step = !step_by_step;
+            std::cout << "STEP BY STEP: " << step_by_step << std::endl;
         } else if(key == GLFW_KEY_U && action == GLFW_PRESS) {
             print_CDF_cell = true;
+            std::cout << "PRINT CDF CELL" << std::endl;
         } else if(key == GLFW_KEY_Y && action == GLFW_PRESS) {
             print_CDF_particles = true;
+            std::cout << "PRINT CDF PARTICLES" << std::endl;
         } else if(key == GLFW_KEY_L && action == GLFW_PRESS) {
             print_level_set_cells = true;
+            std::cout << "PRINT LEVEL SET CELLS" << std::endl;
+        } else if(key == GLFW_KEY_F && action == GLFW_PRESS) {
+            print_grid_cell = !print_grid_cell;
+            std::cout << "PRINT CELLS" << std::endl;
 #endif // _DEBUG
         }
     }
@@ -2283,20 +2311,24 @@ struct App : BaseApp<App>
         download_info_graph.use_persistent_buffer(task_staging_particle_CDF_buffer);
         download_info_graph.use_persistent_buffer(task_staging_particles_buffer);
         download_info_graph.use_persistent_buffer(task_staging_aabb_buffer);
-#endif
+#endif // DAXA_RIGID_BODY_FLAG
+        download_info_graph.use_persistent_buffer(task_staging_grid_buffer);
 
-#if defined(DAXA_RIGID_BODY_FLAG)
         download_info_graph.add_task({
             .attachments = {
+#if defined(DAXA_RIGID_BODY_FLAG)
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_rigid_grid_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_staging_rigid_grid_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_rigid_particles_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_staging_particle_CDF_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_staging_particles_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_staging_aabb_buffer),
+#endif // DAXA_RIGID_BODY_FLAG
+                daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_READ, task_staging_grid_buffer),
             },
             .task = [this](daxa::TaskInterface ti)
             {
+#if defined(DAXA_RIGID_BODY_FLAG)
                 ti.recorder.copy_buffer_to_buffer({
                     .src_buffer = rigid_grid_buffer,
                     .dst_buffer = staging_rigid_grid_buffer,
@@ -2317,10 +2349,15 @@ struct App : BaseApp<App>
                     .dst_buffer = _staging_aabb_buffer,
                     .size = aabb_size,
                 });
+#endif // DAXA_RIGID_BODY_FLAG
+                ti.recorder.copy_buffer_to_buffer({
+                    .src_buffer = grid_buffer,
+                    .dst_buffer = staging_grid_buffer,
+                    .size = grid_size,
+                });
             },
             .name = "Download Info Task",
         });
-#endif // DAXA_RIGID_BODY_FLAG
         download_info_graph.submit({});
         download_info_graph.complete({});
         return download_info_graph;
@@ -2330,6 +2367,28 @@ struct App : BaseApp<App>
     void print_rigid_cells_task() {
         _download_info_graph.execute({});
         device.wait_idle();
+
+        if(print_grid_cell) {
+            print_grid_cell = false;
+            auto cells = device.buffer_host_address_as<Cell>(staging_grid_buffer).value();
+
+            std::cout << "Printing cells" << std::endl;
+
+            daxa_u32 cells_count = 0;
+            for(int i = 0; i < GRID_SIZE; i++) {
+                const auto& cell = cells[i];
+                // get x, y, z from i where i = x + y * GRID_DIM + z * GRID_DIM * GRID_DIM
+                auto x = i % GRID_DIM;
+                auto y = (i / GRID_DIM) % GRID_DIM;
+                auto z = i / (GRID_DIM * GRID_DIM);
+                if(cell.m > 0) {
+                    std::cout << "      Cell " << x << ", " << y << ", " << z << " mass " << cell.m << ", velocity (" << cell.v.x << ", " << cell.v.y << ", " << cell.v.z << ")" << std::endl;
+                    ++cells_count;
+                }
+            }
+
+            std::cout << "  Cells count: " << cells_count << std::endl << std::endl;
+        }
 
 #if defined(DAXA_RIGID_BODY_FLAG)
         std::cout << "Printing ... frame " << gpu_input.frame_number << std::endl;
@@ -2346,6 +2405,7 @@ struct App : BaseApp<App>
         }
 
         std::cout << std::endl << std::endl;
+
 
         if(print_CDF_cell) {
             print_CDF_cell = false;
@@ -2434,7 +2494,7 @@ struct App : BaseApp<App>
 
             std::cout << "  Particle CDF count: " << particles_CDF_count << std::endl << std::endl << std::endl;
         }
-#endif
+#endif // DAXA_RIGID_BODY_FLAG
     }
 };
 #endif // _DEBUG
@@ -2450,18 +2510,27 @@ auto main() -> int
     while (true)
     {
         app.update_input_task();
+#if defined(_DEBUG)
+        if(app.simulate && app.step_by_step && !app.simulation_step) {
+            app.simulation_step = true;
+            std::cout << "Simulation step frame " << app.gpu_input.frame_number << std::endl;
+        } else if(app.simulate && app.step_by_step && app.simulation_step) {
+            app.simulate = false;
+            app.simulation_step = false;
+        }
+#endif
+
         if(app.simulate)
             app.update_sim();
         else 
             app.device.wait_idle();
-        // app.update_accel_struct_task();
         if (app.update())
         {
             break;
         }
 
 #if defined(_DEBUG)
-        if(app.print_rigid_cells) {
+        if(app.print_rigid_cells || app.print_grid_cell) {
             // app.print_rigid_cells = false;
             app.print_rigid_cells_task();
         }

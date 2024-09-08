@@ -54,12 +54,13 @@ void miss_shadows(inout ShadowRayPayload payload)
     payload.shadow = 1.0f;
 }
 
+CONST_STATIC_VARIABLE daxa_f32vec3 light_position = daxa_f32vec3(2, 5, 3);
+CONST_STATIC_VARIABLE daxa_f32vec3 light_intensity = daxa_f32vec3(2.5);
+  
 [shader("closesthit")]
 void closest_hit(inout hitPayload payload, 
 in MyAttributes attr)
 {
-  const daxa_f32vec3 light_position = daxa_f32vec3(2, 5, 3);
-  const daxa_f32vec3 light_intensity = daxa_f32vec3(2.5);
   daxa_f32vec3 hit_location = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
 
   payload.hit_pos = hit_location;

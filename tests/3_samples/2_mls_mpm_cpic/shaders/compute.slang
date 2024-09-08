@@ -71,12 +71,8 @@ struct Test
   daxa_f32vec3 fx;
   daxa_i32vec3 base_coord = calculate_particle_status(aabb, inv_dx, fx, w);
 
-  daxa_f32mat3x3 stress = calculate_p2g(particle, dt, p_vol, mu_0, lambda_0, inv_dx);
-
-  daxa_f32mat3x3 affine = stress + p_mass * particle.C;
-
-  // Transactional momentum
-  daxa_f32vec3 mv = daxa_f32vec3(p_mass * particle.v);
+  daxa_f32mat3x3 affine; // Affine matrix
+  daxa_f32vec3 mv = calculate_p2g(particle, dt, p_vol, mu_0, lambda_0, inv_dx, p_mass, affine);
 
   daxa_u32vec3 array_grid = daxa_u32vec3(base_coord);
 
@@ -93,27 +89,20 @@ struct Test
 
         float weight = w[i].x * w[j].y * w[k].z;
 
-        daxa_f32vec3 velocity_mass = weight * (mv + mul(affine, dpos));
         float m = weight * p_mass;
+        daxa_f32vec3 velocity_mass = calculate_weighted_p2g_velocity(dpos, weight, mv, affine);
 
         uint index = (coord.x + coord.y * config->grid_dim.x + coord.z * config->grid_dim.x * config->grid_dim.y);
 
-        daxa_f32vec4 old_vel_mass_value;
-        Ptr<float> grid_x = &Ptr<float>(cells)[(index*4) + 0];
-        Ptr<float> grid_y = &Ptr<float>(cells)[(index*4) + 1];
-        Ptr<float> grid_z = &Ptr<float>(cells)[(index*4) + 2];
-        Ptr<float> grid_w = &Ptr<float>(cells)[(index*4) + 3];
-
-        old_vel_mass_value.x = atomicAdd(*grid_x, velocity_mass.x);
-        old_vel_mass_value.y = atomicAdd(*grid_y, velocity_mass.y);
-        old_vel_mass_value.z = atomicAdd(*grid_z, velocity_mass.z);
-        old_vel_mass_value.w = atomicAdd(*grid_w, m);
+        atomicAdd(cells[index].v.x, velocity_mass.x);
+        atomicAdd(cells[index].v.y, velocity_mass.y);
+        atomicAdd(cells[index].v.z, velocity_mass.z);
+        atomicAdd(cells[index].m, m);
       }
     }
   }
 
-  // TODO: optimize this write
-  particles[pixel_i.x] = particle;
+  particles[pixel_i.x].F = particle.F;
 }
 
 
@@ -216,25 +205,25 @@ struct Test
 
         uint index = coord.x + coord.y * config->grid_dim.x + coord.z * config->grid_dim.x * config->grid_dim.y;
 
-        daxa_f32vec3 grid_value = cells[index].v;
+        daxa_f32vec3 vel_value = cells[index].v;
 
-        daxa_f32vec3 w_grid = daxa_f32vec3(grid_value * weight);
+        daxa_f32vec3 w_grid = daxa_f32vec3(vel_value * weight);
 
         particle_velocity += w_grid; // Velocity
-        particle_C += 4 * inv_dx * inv_dx * weight * outer_product(grid_value, dpos);
+        particle_C += calculate_weighted_g2p_deformation(dpos, weight, vel_value); // Deformation gradient
       }
     }
   }
 
-  particle.C = particle_C;
+  particle.C = 4 * inv_dx * inv_dx * particle_C;
   particle.v = particle_velocity;
 
   aabb->min += particle.v * dt;
   aabb->max += particle.v * dt;
 
   daxa_f32vec3 pos = (aabb.min + aabb.max) * 0.5f;
-  const daxa_f32 wall_min = 3 * dx;
-  const daxa_f32 wall_max = ((config->grid_dim.x) - 3) * dx;
+  const daxa_f32 wall_min = BOUNDARY * dx;
+  const daxa_f32 wall_max = ((config->grid_dim.x) - BOUNDARY) * dx;
 
   check_boundaries(pos, particle, wall_min, wall_max);
 
@@ -255,7 +244,6 @@ struct Test
       particle.v = normalize(particle.v) * max_v;
   }
 
-
-  // TODO: optimize this write
-  particles[pixel_i.x] = particle;
+  particles[pixel_i.x].v = particle.v;
+  particles[pixel_i.x].C = particle.C;
 }

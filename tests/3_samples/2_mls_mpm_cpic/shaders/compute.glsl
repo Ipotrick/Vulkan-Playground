@@ -541,7 +541,7 @@ void main()
       return;
   }
 
-  // float dx = deref(config).dx;
+  float dx = deref(config).dx;
   float inv_dx = deref(config).inv_dx;
   float dt = deref(config).dt;
   float p_mass = 1.0f;
@@ -612,7 +612,7 @@ void main()
   float p_mass = 1.0f;
 
   // fluid parameters
-  const float rest_density = 4.0f;
+  const float rest_density = 1.0f;
   const float dynamic_viscosity = 0.1f;
   // equation of state
   const float eos_stiffness = 25.0f;
@@ -746,12 +746,8 @@ void main()
   daxa_f32vec3 fx;
   daxa_i32vec3 base_coord = calculate_particle_status(aabb, inv_dx, fx, w);
 
-  daxa_f32mat3x3 stress = calculate_p2g(particle, dt, p_vol, mu_0, lambda_0, inv_dx);
-
-  daxa_f32mat3x3 affine = stress + p_mass * particle.C;
-
-  // Transactional momentum
-  vec3 mv = vec3(p_mass * particle.v);
+  daxa_f32mat3x3 affine; // Affine matrix
+  daxa_f32vec3 mv = calculate_p2g(particle, dt, p_vol, mu_0, lambda_0, inv_dx, p_mass, affine);
 
   uvec3 array_grid = uvec3(base_coord);
 
@@ -785,7 +781,7 @@ void main()
 
               float weight = w[i].x * w[j].y * w[k].z;
 
-              vec3 velocity_mass = weight * (mv + affine * dpos);
+              vec3 velocity_mass = calculate_weighted_p2g_velocity(dpos, weight, mv, affine);
               float m = weight * p_mass;
 
               set_atomic_cell_vel_x_by_index(index, velocity_mass.x);
@@ -1031,13 +1027,13 @@ void main()
               vec3 w_grid = vec3(vel_value * weight);
 
               particle_velocity += w_grid; // Velocity
-              particle_C += 4 * inv_dx * inv_dx * weight * outer_product(vel_value, dpos);
+              particle_C += calculate_weighted_g2p_deformation(dpos, weight, vel_value); // Deformation gradient
           }
       }
   }
 
   particle.v = particle_velocity;
-  particle.C = particle_C;
+  particle.C = 4 * inv_dx * inv_dx * particle_C;
 
   // Apply penalty force to particle if it is in collision with a rigid body
 #if defined(DAXA_RIGID_BODY_FLAG)

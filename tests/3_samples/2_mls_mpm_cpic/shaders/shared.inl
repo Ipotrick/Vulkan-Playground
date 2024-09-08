@@ -15,7 +15,7 @@
 // #define DAXA_SIMULATION_MANY_MATERIALS
 #if defined(DAXA_RIGID_BODY_FLAG)
 // WARN: rigid bodies don't collide with each other
-#define DAXA_SIMULATION_MANY_RIGID_BODIES
+// #define DAXA_SIMULATION_MANY_RIGID_BODIES
 #endif // DAXA_RIGID_BODY_FLAG
 #endif // DAXA_SIMULATION_WATER_MPM_MLS
 
@@ -287,13 +287,20 @@ const daxa_f32vec3 RIGID_BODY_PURPLE_COLOR = daxa_f32vec3(0.8f, 0.3f, 0.8f); // 
 
 
 #if !defined(__cplusplus)
-const daxa_f32vec3 RIGID_BODY_PARTICLE_COLOR = daxa_f32vec3(0.6f, 0.4f, 0.2f);
-const daxa_f32vec3 WATER_HIGH_SPEED_COLOR = daxa_f32vec3(0.3f, 0.5f, 1.0f);
-const daxa_f32vec3 WATER_LOW_SPEED_COLOR = daxa_f32vec3(0.1f, 0.2f, 0.4f);
-const daxa_f32vec3 SNOW_HIGH_SPEED_COLOR = daxa_f32vec3(0.9f, 0.9f, 1.0f);
-const daxa_f32vec3 SNOW_LOW_SPEED_COLOR = daxa_f32vec3(0.5f, 0.5f, 0.6f);
-const daxa_f32vec3 JELLY_HIGH_SPEED_COLOR = daxa_f32vec3(1.0f, 0.5f, 0.5f);
-const daxa_f32vec3 JELLY_LOW_SPEED_COLOR = daxa_f32vec3(0.7f, 0.2f, 0.2f);
+
+#if defined(GL_core_profile) // GLSL
+#define CONST_STATIC_VARIABLE const
+#else // SLANG
+#define CONST_STATIC_VARIABLE static const
+#endif // GL_core_profile
+
+CONST_STATIC_VARIABLE daxa_f32vec3 RIGID_BODY_PARTICLE_COLOR = daxa_f32vec3(0.6f, 0.4f, 0.2f);
+CONST_STATIC_VARIABLE daxa_f32vec3 WATER_HIGH_SPEED_COLOR = daxa_f32vec3(0.3f, 0.5f, 1.0f);
+CONST_STATIC_VARIABLE daxa_f32vec3 WATER_LOW_SPEED_COLOR = daxa_f32vec3(0.1f, 0.2f, 0.4f);
+CONST_STATIC_VARIABLE daxa_f32vec3 SNOW_HIGH_SPEED_COLOR = daxa_f32vec3(0.9f, 0.9f, 1.0f);
+CONST_STATIC_VARIABLE daxa_f32vec3 SNOW_LOW_SPEED_COLOR = daxa_f32vec3(0.5f, 0.5f, 0.6f);
+CONST_STATIC_VARIABLE daxa_f32vec3 JELLY_HIGH_SPEED_COLOR = daxa_f32vec3(1.0f, 0.5f, 0.5f);
+CONST_STATIC_VARIABLE daxa_f32vec3 JELLY_LOW_SPEED_COLOR = daxa_f32vec3(0.7f, 0.2f, 0.2f);
 
 
 
@@ -865,10 +872,32 @@ daxa_f32 rnd_interval(inout daxa_u32 prev, daxa_f32 min, daxa_f32 max)
 
 
 
+daxa_f32mat3x3 indentity_matrix()
+{
+    return daxa_f32mat3x3(
+        1.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 1.0f
+    );
+}
+
+
 
 daxa_f32mat3x3 outer_product(daxa_f32vec3 a, daxa_f32vec3 b)
 {
-    return daxa_f32mat3x3(a.x * b, a.y * b, a.z * b);
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
+    return daxa_f32mat3x3(
+        a.x * b.x, a.x * b.y, a.x * b.z,
+        a.y * b.x, a.y * b.y, a.y * b.z,
+        a.z * b.x, a.z * b.y, a.z * b.z
+    );
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+    return daxa_f32mat3x3(
+        a.x * b.x, a.y * b.x, a.z * b.x,
+        a.x * b.y, a.y * b.y, a.z * b.y,
+        a.x * b.z, a.y * b.z, a.z * b.z
+    );
+#endif // DAXA_SHADERLANG
 }
 
 daxa_f32mat4x4 outer_product_mat4(daxa_f32vec4 a, daxa_f32vec4 b)
@@ -915,6 +944,7 @@ void swap(inout daxa_f32 a, inout daxa_f32 b)
 
 void swapColumns(inout daxa_f32mat3x3 mat, daxa_i32 col1, daxa_i32 col2)
 {
+# if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
   daxa_f32vec3 temp = daxa_f32vec3(mat[0][col1], mat[1][col1], mat[2][col1]);
   mat[0][col1] = mat[0][col2];
   mat[1][col1] = mat[1][col2];
@@ -922,6 +952,15 @@ void swapColumns(inout daxa_f32mat3x3 mat, daxa_i32 col1, daxa_i32 col2)
   mat[0][col2] = temp.x;
   mat[1][col2] = temp.y;
   mat[2][col2] = temp.z;
+# elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+  daxa_f32vec3 temp = daxa_f32vec3(mat[col1][0], mat[col1][1], mat[col1][2]);
+  mat[col1][0] = mat[col2][0];
+  mat[col1][1] = mat[col2][1];
+  mat[col1][2] = mat[col2][2];
+  mat[col2][0] = temp.x;
+  mat[col2][1] = temp.y;
+  mat[col2][2] = temp.z;
+# endif // DAXA_SHADERLANG
 }
 
 // Function to normalize a vector and handle small magnitude cases
@@ -935,14 +974,11 @@ daxa_f32vec3 normalizeSafe(daxa_f32vec3 v, daxa_f32 epsilon)
 void svd(daxa_f32mat3x3 A, out daxa_f32mat3x3 U, out daxa_f32mat3x3 S, out daxa_f32mat3x3 V, int iters)
 {
   // Initialize U, V as identity matrices
-  U = daxa_f32mat3x3(1.0f, 0.0f, 0.0f,
-            0.0f, 1.0f, 0.0f,
-            0.0f, 0.0f, 1.0f);
-  V = daxa_f32mat3x3(1.0f, 0.0f, 0.0f,
-            0.0f, 1.0f, 0.0f,
-            0.0f, 0.0f, 1.0f);
+  U = indentity_matrix();
+  V = indentity_matrix();
   S = A;
 
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
   // Perform Jacobi iterations
   for (int sweep = 0; sweep < iters; sweep++)
   {
@@ -1130,6 +1166,199 @@ void svd(daxa_f32mat3x3 A, out daxa_f32mat3x3 U, out daxa_f32mat3x3 S, out daxa_
       sigma3 = -sigma3;
       U[2] = -U[2];
   }
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+  // Perform Jacobi iterations
+  for (int sweep = 0; sweep < iters; sweep++)
+  {
+      daxa_f32 Sch, Ssh, Stmp1, Stmp2, Stmp3, Stmp4, Stmp5;
+
+      // First rotation (zero out Ss21)
+      Ssh = S[0][1] * 0.5f;
+      Stmp5 = S[1][1] - S[2][2];
+      Stmp2 = Ssh * Ssh;
+      Stmp1 = (Stmp2 >= Tiny_Number) ? 1.0f : 0.0f;
+      Ssh = Stmp1 * Ssh;
+      Sch = Stmp1 * Stmp5 + (1.0f - Stmp1);
+      Stmp1 = Ssh * Ssh;
+      Stmp2 = Sch * Sch;
+      Stmp3 = Stmp1 + Stmp2;
+      Stmp4 = rsqrt(Stmp3);
+      Ssh *= Stmp4;
+      Sch *= Stmp4;
+      Stmp1 = Four_Gamma_Squared * Stmp1;
+      Stmp1 = (Stmp2 <= Stmp1) ? 1.0f : 0.0f;
+      Ssh = Ssh * (1.0f - Stmp1) + Stmp1 * Sine_Pi_Over_Eight;
+      Sch = Sch * (1.0f - Stmp1) + Stmp1 * Cosine_Pi_Over_Eight;
+      Stmp1 = Ssh * Ssh;
+      Stmp2 = Sch * Sch;
+      daxa_f32 Sc = Stmp2 - Stmp1;
+      daxa_f32 Ss = 2.0f * Sch * Ssh;
+
+      Stmp1 = Ss * S[0][2];
+      Stmp2 = Ss * S[0][0];
+      S[0][2] = Sc * S[0][2] + Stmp2;
+      S[0][0] = Sc * S[0][0] - Stmp1;
+
+      Stmp2 = Ss * Ss * S[1][1];
+      Stmp3 = Ss * Ss * S[2][2];
+      Stmp4 = Sch * Sch;
+      S[1][1] = S[1][1] * Stmp4 + Stmp3;
+      S[2][2] = S[2][2] * Stmp4 + Stmp2;
+      Stmp4 = Stmp4 - Ss * Ss;
+      S[2][1] = S[2][1] * Stmp4 - Stmp5 * Ss * Ss;
+      S[1][1] += S[2][1] * 2.0f * Sch * Ssh;
+      S[2][2] -= S[2][1] * 2.0f * Sch * Ssh;
+      S[2][1] *= Sch * Sch - Ss * Ss;
+
+      daxa_f32 Sqvs = 1.0f, Sqvvx = 0.0f, Sqvvy = 0.0f, Sqvvz = 0.0f;
+
+      Stmp1 = Ssh * Sqvvx;
+      Stmp2 = Ssh * Sqvvy;
+      Stmp3 = Ssh * Sqvvz;
+      Ssh *= Sqvs;
+
+      Sqvs = Sch * Sqvs - Stmp3;
+      Sqvvx = Sch * Sqvvx + Stmp2;
+      Sqvvy = Sch * Sqvvy - Stmp1;
+      Sqvvz = Sch * Sqvvz + Ssh;
+
+      // Second rotation (zero out Ss32)
+      Ssh = S[1][2] * 0.5f;
+      Stmp5 = S[2][2] - S[0][0];
+      Stmp2 = Ssh * Ssh;
+      Stmp1 = (Stmp2 >= Tiny_Number) ? 1.0f : 0.0f;
+      Ssh = Stmp1 * Ssh;
+      Sch = Stmp1 * Stmp5 + (1.0f - Stmp1);
+      Stmp1 = Ssh * Ssh;
+      Stmp2 = Sch * Sch;
+      Stmp3 = Stmp1 + Stmp2;
+      Stmp4 = rsqrt(Stmp3);
+      Ssh *= Stmp4;
+      Sch *= Stmp4;
+      Stmp1 = Four_Gamma_Squared * Stmp1;
+      Stmp1 = (Stmp2 <= Stmp1) ? 1.0f : 0.0f;
+      Ssh = Ssh * (1.0f - Stmp1) + Stmp1 * Sine_Pi_Over_Eight;
+      Sch = Sch * (1.0f - Stmp1) + Stmp1 * Cosine_Pi_Over_Eight;
+      Stmp1 = Ssh * Ssh;
+      Stmp2 = Sch * Sch;
+      Sc = Stmp2 - Stmp1;
+      Ss = 2.0f * Sch * Ssh;
+
+      Stmp1 = Ss * S[1][0];
+      Stmp2 = Ss * S[0][0];
+      S[1][0] = Sc * S[1][0] + Stmp2;
+      S[0][0] = Sc * S[0][0] - Stmp1;
+      
+      Stmp2 = Ss * Ss * S[1][1];
+      Stmp3 = Ss * Ss * S[2][2];
+      Stmp4 = Sch * Sch;
+      S[1][1] = S[1][1] * Stmp4 + Stmp3;
+      S[2][2] = S[2][2] * Stmp4 + Stmp2;
+      Stmp4 = Stmp4 - Ss * Ss;
+      S[2][1] = S[2][1] * Stmp4 - Stmp5 * Ss * Ss;
+      S[1][1] += S[2][1] * 2.0f * Sch * Ssh;
+      S[2][2] -= S[2][1] * 2.0f * Sch * Ssh;
+      S[2][1] *= Sch * Sch - Ss * Ss;
+
+      Stmp1 = Ssh * Sqvvx;
+      Stmp2 = Ssh * Sqvvy;
+      Stmp3 = Ssh * Sqvvz;
+      Ssh *= Sqvs;
+
+      Sqvs = Sch * Sqvs - Stmp3;
+      Sqvvx = Sch * Sqvvx + Stmp2;
+      Sqvvy = Sch * Sqvvy - Stmp1;
+      Sqvvz = Sch * Sqvvz + Ssh;
+
+      // Third rotation (zero out Ss31)
+      Ssh = S[2][0] * 0.5f;
+      Stmp5 = S[0][0] - S[1][1];
+      Stmp2 = Ssh * Ssh;
+      Stmp1 = (Stmp2 >= Tiny_Number) ? 1.0f : 0.0f;
+      Ssh = Stmp1 * Ssh;
+
+      Sch = Stmp1 * Stmp5 + (1.0f - Stmp1);
+      Stmp1 = Ssh * Ssh;
+      Stmp2 = Sch * Sch;
+
+      Stmp3 = Stmp1 + Stmp2;
+      Stmp4 = rsqrt(Stmp3);
+      Ssh *= Stmp4;
+      Sch *= Stmp4;
+
+      Stmp1 = Four_Gamma_Squared * Stmp1;
+      Stmp1 = (Stmp2 <= Stmp1) ? 1.0f : 0.0f;
+      Ssh = Ssh * (1.0f - Stmp1) + Stmp1 * Sine_Pi_Over_Eight;
+      Sch = Sch * (1.0f - Stmp1) + Stmp1 * Cosine_Pi_Over_Eight;
+
+      Stmp1 = Ssh * Ssh;
+      Stmp2 = Sch * Sch;
+      Sc = Stmp2 - Stmp1;
+      Ss = 2.0f * Sch * Ssh;
+
+      Stmp1 = Ss * S[1][1];
+      Stmp2 = Ss * S[1][2];
+      S[1][1] = Sc * S[1][1] + Stmp2;
+      S[1][2] = Sc * S[1][2] - Stmp1;
+
+      Stmp2 = Ss * Ss * S[0][0];
+      Stmp3 = Ss * Ss * S[2][2];
+      Stmp4 = Sch * Sch;
+      S[0][0] = S[0][0] * Stmp4 + Stmp3;
+      S[2][2] = S[2][2] * Stmp4 + Stmp2;
+      Stmp4 = Stmp4 - Ss * Ss;
+      S[2][0] = S[2][0] * Stmp4 - Stmp5 * Ss * Ss;
+      S[0][0] += S[2][0] * 2.0f * Sch * Ssh;
+      S[2][2] -= S[2][0] * 2.0f * Sch * Ssh;
+      S[2][0] *= Sch * Sch - Ss * Ss;
+
+      Stmp1 = Ssh * Sqvvx;
+      Stmp2 = Ssh * Sqvvy;
+      Stmp3 = Ssh * Sqvvz;
+      Ssh *= Sqvs;
+
+      Sqvs = Sch * Sqvs - Stmp3;
+      Sqvvx = Sch * Sqvvx + Stmp2;
+      Sqvvy = Sch * Sqvvy - Stmp1;
+      Sqvvz = Sch * Sqvvz + Ssh;
+  }
+
+  // Sorting singular values and ensuring non-negative values
+  daxa_f32 sigma1 = S[0][0], sigma2 = S[1][1], sigma3 = S[2][2];
+  if (sigma1 < sigma2)
+  {
+      swap(sigma1, sigma2);
+      swapColumns(U, 0, 1);
+      swapColumns(V, 0, 1);
+  }
+  if (sigma1 < sigma3)
+  {
+      swap(sigma1, sigma3);
+      swapColumns(U, 0, 2);
+      swapColumns(V, 0, 2);
+  }
+  if (sigma2 < sigma3)
+  {
+      swap(sigma2, sigma3);
+      swapColumns(U, 1, 2);
+      swapColumns(V, 1, 2);
+  }
+  if (sigma1 < 0.0f)
+  {
+      sigma1 = -sigma1;
+      U[0] = -U[0];
+  }
+  if (sigma2 < 0.0f)
+  {
+      sigma2 = -sigma2;
+      U[1] = -U[1];
+  }
+  if (sigma3 < 0.0f)
+  {
+      sigma3 = -sigma3;
+      U[2] = -U[2];
+  }
+#endif // DAXA_SHADERLANG
 
   // Construct diagonal matrix S
   S = daxa_f32mat3x3(sigma1, 0.0f, 0.0f,
@@ -1139,24 +1368,63 @@ void svd(daxa_f32mat3x3 A, out daxa_f32mat3x3 U, out daxa_f32mat3x3 S, out daxa_
 
 daxa_f32mat3x3 element_wise_mul(daxa_f32mat3x3 a, daxa_f32mat3x3 b)
 {
-  return daxa_f32mat3x3(a[0] * b[0], a[1] * b[1], a[2] * b[2]);
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
+    return daxa_f32mat3x3(
+        a[0][0] * b[0][0], a[0][1] * b[0][1], a[0][2] * b[0][2],
+        a[1][0] * b[1][0], a[1][1] * b[1][1], a[1][2] * b[1][2],
+        a[2][0] * b[2][0], a[2][1] * b[2][1], a[2][2] * b[2][2]
+    );
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+    return daxa_f32mat3x3(
+        a[0][0] * b[0][0], a[1][0] * b[1][0], a[2][0] * b[2][0],
+        a[0][1] * b[0][1], a[1][1] * b[1][1], a[2][1] * b[2][1],
+        a[0][2] * b[0][2], a[1][2] * b[1][2], a[2][2] * b[2][2]
+    );
+#endif // DAXA_SHADERLANG
+}
+
+daxa_f32vec3 mat3_vec3_mul(daxa_f32mat3x3 m, daxa_f32vec3 v)
+{
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
+    return daxa_f32vec3(
+        dot(m[0], v),
+        dot(m[1], v),
+        dot(m[2], v)
+    );
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+    return daxa_f32vec3(
+        dot(v, daxa_f32vec3(m[0][0], m[1][0], m[2][0])),
+        dot(v, daxa_f32vec3(m[0][1], m[1][1], m[2][1])),
+        dot(v, daxa_f32vec3(m[0][2], m[1][2], m[2][2]))
+    );
+#endif // DAXA_SHADERLANG
 }
 
 daxa_f32mat3x3 mat3_mul(daxa_f32mat3x3 a, daxa_f32mat3x3 b) {
     daxa_f32mat3x3 result;
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
     for (int i = 0; i < 3; i++) {
         for (int j = 0; j < 3; j++) {
             result[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j];
         }
     }
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+    for (int i = 0; i < 3; i++) {
+        result[i] = daxa_f32vec3(
+            dot(daxa_f32vec3(a[i][0], a[i][1], a[i][2]), daxa_f32vec3(b[0][0], b[1][0], b[2][0])),
+            dot(daxa_f32vec3(a[i][0], a[i][1], a[i][2]), daxa_f32vec3(b[0][1], b[1][1], b[2][1])),
+            dot(daxa_f32vec3(a[i][0], a[i][1], a[i][2]), daxa_f32vec3(b[0][2], b[1][2], b[2][2]))
+        );
+    }
+#endif // DAXA_SHADERLANG
     return result;
 }
 
 daxa_f32vec4 mat4_vec4_mul(daxa_f32mat4x4 m, daxa_f32vec4 v) {
     return 
-#if defined(GL_core_profile) // GLSL
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
       (m * v);
-#else // HLSL
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
       mul(m, v);
 #endif
 }
@@ -1167,15 +1435,13 @@ daxa_f32mat3x3 calculate_stress(daxa_f32mat3x3 F, daxa_f32mat3x3 U, daxa_f32mat3
     daxa_f32mat3x3 F_T = transpose(F); // Transpuesta de F_dg[p]
 
     daxa_f32mat3x3 term1 = 2.0 * mu * mat3_mul((F - U_V_T), F_T); // 2 * mu * (F_dg[p] - U @ V.transpose()) @ F_dg[p].transpose()
-    daxa_f32mat3x3 identity = daxa_f32mat3x3(1.0); // Matriz de identidad
-    daxa_f32mat3x3 term2 = identity * la * J * (J - 1.0); // ti.Matrix.identity(daxa_f32, 3) * la * J * (J - 1)
+    daxa_f32mat3x3 term2 = indentity_matrix() * la * J * (J - 1.0); // ti.Matrix.identity(daxa_f32, 3) * la * J * (J - 1)
 
     return term1 + term2;
 }
 
 daxa_f32mat3x3 update_deformation_gradient(daxa_f32mat3x3 F, daxa_f32mat3x3 C, daxa_f32 dt) {
-    daxa_f32mat3x3 identity = daxa_f32mat3x3(1.0); // Matriz de identidad
-    return element_wise_mul(identity + dt * C, F); // deformation gradient update
+    return element_wise_mul(indentity_matrix() + dt * C, F); // deformation gradient update
 }
 
 daxa_i32vec3 calculate_particle_grid_pos(Aabb aabb, daxa_f32 inv_dx) {
@@ -1215,9 +1481,7 @@ daxa_i32vec3 calculate_particle_status(Aabb aabb, daxa_f32 inv_dx, out daxa_f32v
 
 
 
-daxa_f32mat3x3 calculate_p2g(inout Particle particle, daxa_f32 dt, daxa_f32 p_vol, daxa_f32 mu_0, daxa_f32 lambda_0, daxa_f32 inv_dx) {
-
-  daxa_f32mat3x3 identity_matrix = daxa_f32mat3x3(1); // Identity matrix
+daxa_f32vec3 calculate_p2g(inout Particle particle, daxa_f32 dt, daxa_f32 p_vol, daxa_f32 mu_0, daxa_f32 lambda_0, daxa_f32 inv_dx, daxa_f32 p_mass, inout daxa_f32mat3x3 affine) {
 
   particle.F = update_deformation_gradient(particle.F, particle.C, dt); // deformation gradient update
 
@@ -1226,8 +1490,6 @@ daxa_f32mat3x3 calculate_p2g(inout Particle particle, daxa_f32 dt, daxa_f32 p_vo
   if(particle.type == MAT_JELLY)
       h = 1.0f;
 
-
-
   daxa_f32 mu = mu_0 * h;
   daxa_f32 la = lambda_0 * h;
   // WATER
@@ -1235,7 +1497,8 @@ daxa_f32mat3x3 calculate_p2g(inout Particle particle, daxa_f32 dt, daxa_f32 p_vo
       mu = 0.0f;
 
   daxa_f32mat3x3 U, sig, V;
-  svd(particle.F, U, sig, V, 5);
+  svd(particle.F, U, sig, V, 5); // Singular Value Decomposition
+
   daxa_f32 J = 1.0f;
   // Calculate J
   for (uint i = 0; i < 3; ++i)
@@ -1253,13 +1516,13 @@ daxa_f32mat3x3 calculate_p2g(inout Particle particle, daxa_f32 dt, daxa_f32 p_vo
   // WATER
   if (particle.type == MAT_WATER)
   {
-      daxa_f32mat3x3 new_F = identity_matrix;
+      daxa_f32mat3x3 new_F = indentity_matrix();
       new_F[0][0] = J;
       particle.F = new_F;
   }
   else if (particle.type == MAT_SNOW)
   {
-      particle.F = U * sig * transpose(V);
+      particle.F = mat3_mul(U, mat3_mul(sig, transpose(V)));
   }
 
   // Fixed Corotated
@@ -1267,7 +1530,12 @@ daxa_f32mat3x3 calculate_p2g(inout Particle particle, daxa_f32 dt, daxa_f32 p_vo
   // S = ∆t * Vp * Mp-1 * @I/@F * (Fp)
   daxa_f32mat3x3 stress = calculate_stress(particle.F, U, V, mu, la, J); // Stress tensor
 
-  return (-dt * p_vol * (4 * inv_dx * inv_dx)) * stress;
+  stress = (-dt * p_vol * (4 * inv_dx * inv_dx)) * stress;
+
+  affine = stress + p_mass * particle.C;
+
+  // Transactional momentum
+  return daxa_f32vec3(p_mass * particle.v);
 }
 
 
@@ -1276,6 +1544,18 @@ daxa_f32 calculate_p2g_water(inout Particle particle, daxa_f32 p_vol, daxa_f32 w
   return -p_vol * (4 * inv_dx * inv_dx) * stress;
 }
 
+
+daxa_f32vec3 calculate_weighted_p2g_velocity(daxa_f32vec3 dpos, daxa_f32 weight, daxa_f32vec3 mv, daxa_f32mat3x3 affine) {
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
+  return weight * (mv + mat3_vec3_mul(affine, dpos));
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+  return weight * (mv + mat3_vec3_mul(affine, dpos));
+#endif // DAXA_SHADERLANG
+}
+
+daxa_f32mat3x3 calculate_weighted_g2p_deformation(daxa_f32vec3 dpos, daxa_f32 weight, daxa_f32vec3 vel_value) {
+  return weight * outer_product(vel_value, dpos);
+}
 
 Ray get_ray_from_current_pixel(daxa_f32vec2 index, daxa_f32vec2 rt_size,
                                daxa_f32mat4x4 inv_view, daxa_f32mat4x4 inv_proj) {
