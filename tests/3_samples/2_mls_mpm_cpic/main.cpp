@@ -80,7 +80,6 @@ struct App : BaseApp<App>
     u32 sim_loop_count = SIM_LOOP_COUNT;
 #if defined(_DEBUG)
     bool print_rigid_cells = false;
-    bool print_level_set_cells = false;
     bool stop_when_detected = false;
     bool slow_down = false;
     bool step_by_step = false;
@@ -577,6 +576,7 @@ struct App : BaseApp<App>
             MAX_VELOCITY,
 #if defined(DAXA_RIGID_BODY_FLAG)
         .applied_force = APPLIED_FORCE_RIGID_BODY,
+        .max_rigid_velocity = MAX_RIGID_VELOCITY,
 #endif // DAXA_RIGID_BODY_FLAG
     };
 
@@ -956,6 +956,7 @@ struct App : BaseApp<App>
     void on_key(i32 key, i32 action) {
         if(key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
             simulate = !simulate;
+            std::cout << "SIMULATE: " << simulate << std::endl;
         } else if(key == GLFW_KEY_E  && action == GLFW_PRESS) {
             simulate_mpm = !simulate_mpm;
             std::cout << "SIMULATE MPM: " << simulate_mpm << std::endl;
@@ -979,7 +980,7 @@ struct App : BaseApp<App>
             gpu_status->flags &= ~(
             PARTICLE_FORCE_ENABLED_FLAG
 #if defined(DAXA_RIGID_BODY_FLAG) 
-                | RIGID_BODY_PICK_UP_ENABLED_FLAG | RIGID_BODY_IMPULSE_ENABLED_FLAG
+                | RIGID_BODY_FORCE_ENABLED_FLAG
 #endif // DAXA_RIGID_BODY_FLAG
                 );
             std::cout << "ALL FORCES DISABLED" << std::endl;
@@ -987,20 +988,29 @@ struct App : BaseApp<App>
             gpu_status->flags |= PARTICLE_FORCE_ENABLED_FLAG;
 #if defined(DAXA_RIGID_BODY_FLAG)   
             gpu_status->flags &= ~RIGID_BODY_PICK_UP_ENABLED_FLAG;
-            gpu_status->flags &= ~RIGID_BODY_IMPULSE_ENABLED_FLAG;
+            gpu_status->flags &= ~RIGID_BODY_PUSHING_ENABLED_FLAG;
+            gpu_status->flags &= ~RIGID_BODY_REST_POS_ENABLED_FLAG;
 #endif // DAXA_RIGID_BODY_FLAG
             std::cout << "PARTICLE FORCE ENABLED" << std::endl;
 #if defined(DAXA_RIGID_BODY_FLAG)   
         } else if(key == GLFW_KEY_2 && action == GLFW_PRESS) {
             gpu_status->flags |= RIGID_BODY_PICK_UP_ENABLED_FLAG;
-            gpu_status->flags &= ~RIGID_BODY_IMPULSE_ENABLED_FLAG;
+            gpu_status->flags &= ~RIGID_BODY_PUSHING_ENABLED_FLAG;
             gpu_status->flags &= ~PARTICLE_FORCE_ENABLED_FLAG;
+            gpu_status->flags &= ~RIGID_BODY_REST_POS_ENABLED_FLAG;
             std::cout << "RIGID BODY PICK UP ENABLED" << std::endl;
         } else if(key == GLFW_KEY_3 && action == GLFW_PRESS) {
-            gpu_status->flags |= RIGID_BODY_IMPULSE_ENABLED_FLAG;
+            gpu_status->flags |= RIGID_BODY_PUSHING_ENABLED_FLAG;
             gpu_status->flags &= ~RIGID_BODY_PICK_UP_ENABLED_FLAG;
             gpu_status->flags &= ~PARTICLE_FORCE_ENABLED_FLAG;
-            std::cout << "RIGID BODY IMPULSE ENABLED" << std::endl;
+            gpu_status->flags &= ~RIGID_BODY_REST_POS_ENABLED_FLAG;
+            std::cout << "RIGID BODY PUSH ENABLED" << std::endl;
+        } else if(key == GLFW_KEY_4 && action == GLFW_PRESS) {
+            gpu_status->flags |= RIGID_BODY_REST_POS_ENABLED_FLAG;
+            gpu_status->flags &= ~RIGID_BODY_PICK_UP_ENABLED_FLAG;
+            gpu_status->flags &= ~PARTICLE_FORCE_ENABLED_FLAG;
+            gpu_status->flags &= ~RIGID_BODY_PUSHING_ENABLED_FLAG;
+            std::cout << "RIGID BODY PUSH ENABLED" << std::endl;
             
 #endif
 #if defined(_DEBUG)
@@ -1023,9 +1033,6 @@ struct App : BaseApp<App>
         } else if(key == GLFW_KEY_Y && action == GLFW_PRESS) {
             print_CDF_particles = true;
             std::cout << "PRINT CDF PARTICLES" << std::endl;
-        } else if(key == GLFW_KEY_L && action == GLFW_PRESS) {
-            print_level_set_cells = true;
-            std::cout << "PRINT LEVEL SET CELLS" << std::endl;
         } else if(key == GLFW_KEY_F && action == GLFW_PRESS) {
             print_grid_cell = !print_grid_cell;
             std::cout << "PRINT CELLS" << std::endl;
@@ -1314,17 +1321,27 @@ struct App : BaseApp<App>
                             }
                         }
                     }
+
+                    auto get_inertia_tensor = [&] (daxa_f32vec3 min, daxa_f32vec3 max, daxa_f32 mass) -> daxa_f32mat3x3 {
+                        daxa_f32vec3 size = max - min;
+                        daxa_f32vec3 half_size = size * 0.5f;
+                        daxa_f32vec3 half_size_squared = half_size * half_size;
+                        daxa_f32vec3 half_size_squared_times_mass = half_size_squared * mass;
+                        daxa_f32mat3x3 inertia = make_zero();
+                        inertia.x.x = half_size_squared_times_mass.y + half_size_squared_times_mass.z;
+                        inertia.y.y = half_size_squared_times_mass.x + half_size_squared_times_mass.z;
+                        inertia.z.z = half_size_squared_times_mass.x + half_size_squared_times_mass.y;
+                        return inertia;
+                    };
+
                     
                     // TODO: check parameters of the rigid body
-                    daxa_f32mat3x3 inertia = daxa_f32mat3x3{daxa_f32vec3{1.0f, 0.0f, 0.0f},
-                        daxa_f32vec3{0.0f, 1.0f, 0.0f}, 
-                        daxa_f32vec3{0.0f, 0.0f, 1.0f},
-                    };
+                    daxa_f32mat3x3 inertia = get_inertia_tensor(min, max, rigid_body_densities[i] * BOX_VOLUME);
 
                     rigid_body_ptr[i] = {
                         .type = RIGID_BODY_BOX,
-                        .min = min,
-                        .max = max,
+                        .min = min - center,
+                        .max = max - center,
                         .p_count = r_p_count,
                         .p_offset = r_p_offset,
                         .triangle_count = BOX_TRIANGLE_COUNT,
@@ -1345,7 +1362,7 @@ struct App : BaseApp<App>
                         .rotation_axis = {0.0f, 0.0f, 0.0f},
                         .linear_damping = 1.0f,
                         .angular_damping = 1.0f,
-                        .restitution = 0.0f,
+                        .restitution = rigid_body_restitutions[i],
                     };
 
 
@@ -1499,6 +1516,7 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_WRITE, task_grid_buffer),
 #if defined(DAXA_RIGID_BODY_FLAG)
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
 #endif // DAXA_RIGID_BODY_FLAG
             },
@@ -1541,6 +1559,7 @@ struct App : BaseApp<App>
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ, task_gpu_input_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::TRANSFER_WRITE, task_grid_buffer),
 #if defined(DAXA_RIGID_BODY_FLAG)
+                daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_body_buffer),
                 daxa::inl_attachment(daxa::TaskBufferAccess::COMPUTE_SHADER_READ_WRITE, task_rigid_grid_buffer),
 #endif // DAXA_RIGID_BODY_FLAG
             },
@@ -2400,8 +2419,7 @@ struct App : BaseApp<App>
 
         for(u32 i = 0; i < gpu_input.rigid_body_count; i++) {
             auto rigid_body = rigid_body_ptr[i];
-            std::cout << "  Rigid body " << i << " position (" << rigid_body.position.x << ", " << rigid_body.position.y << ", " << rigid_body.position.z << ")" << ", velocity (" << rigid_body.velocity.x << ", " << rigid_body.velocity.y << ", " << rigid_body.velocity.z << ")" 
-            << ", angular velocity (" << rigid_body.omega.x << ", " << rigid_body.omega.y << ", " << rigid_body.omega.z << ")" << ", orientation (" << rigid_body.rotation.x << ", " << rigid_body.rotation.y << ", " << rigid_body.rotation.z << ", " << rigid_body.rotation.w << ")" << std::endl;
+            std::cout << "  Rigid body " << i << " position (" << rigid_body.position.x << ", " << rigid_body.position.y << ", " << rigid_body.position.z << ")" << ", min (" << rigid_body.min.x << ", " << rigid_body.min.y << ", " << rigid_body.min.z << ")" << ", max (" << rigid_body.max.x << ", " << rigid_body.max.y << ", " << rigid_body.max.z << ")" << ", velocity (" << rigid_body.velocity.x << ", " << rigid_body.velocity.y << ", " << rigid_body.velocity.z << ")" << ", angular velocity (" << rigid_body.omega.x << ", " << rigid_body.omega.y << ", " << rigid_body.omega.z << ")" << ", orientation (" << rigid_body.rotation.x << ", " << rigid_body.rotation.y << ", " << rigid_body.rotation.z << ", " << rigid_body.rotation.w << ")" << std::endl;
         }
 
         std::cout << std::endl << std::endl;
@@ -2439,10 +2457,6 @@ struct App : BaseApp<App>
             }
             std::cout << "  Rigid cells count: " << rigid_cells_count << std::endl << std::endl;
 
-        }
-
-        if(print_level_set_cells) {
-            print_level_set_cells = false;
         }
 
 
@@ -2505,7 +2519,7 @@ auto main() -> int
     app.first_upload_task();
     app.gpu_status->flags = 0;
 #if defined(DAXA_RIGID_BODY_FLAG)
-    app.gpu_status->flags |= RIGID_BODY_ADD_GRAVITY_FLAG;
+    // app.gpu_status->flags |= RIGID_BODY_ADD_GRAVITY_FLAG;
 #endif
     while (true)
     {

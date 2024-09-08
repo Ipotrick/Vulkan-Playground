@@ -1,7 +1,4 @@
 #include "shared.inl"
-import "custom file!!";
-
-[[vk::push_constant]] ComputePush p;
 
 struct Test
 {
@@ -10,9 +7,10 @@ struct Test
     Cell* cells;
 };
 
+
 [shader("compute")]
     [numthreads(MPM_GRID_COMPUTE_X, MPM_GRID_COMPUTE_Y, MPM_GRID_COMPUTE_Z)] void
-    entry_MPM_reset_grid(daxa_u32vec3 pixel_i : SV_DispatchThreadID)
+    entry_MPM_reset_rigid_boundary(daxa_u32vec3 pixel_i : SV_DispatchThreadID)
 {
     GpuInput* config = p.input_ptr;
 
@@ -21,16 +19,46 @@ struct Test
     return;
   }
 
-  Cell* cells = p.cells;
+  daxa_u32 index = pixel_i.x + pixel_i.y * config->grid_dim.x + pixel_i.z * config->grid_dim.x * config->grid_dim.y;
 
-  uint cell_index = pixel_i.x + pixel_i.y * config->grid_dim.x + pixel_i.z * config->grid_dim.x * config->grid_dim.y;
-
-  Ptr<Cell> cell = &Ptr<Cell>(cells)[cell_index];
-
-  cell->v = daxa_f32vec3(0, 0, 0);
-  cell->m = 0;
+  zeroed_out_node_cdf_by_index(index);
 }
 
+[shader("compute")]
+    [numthreads(MPM_CPIC_COMPUTE_X, 1, 1)] void
+    entry_MPM_rigid_body_check_boundaries(daxa_u32vec3 pixel_i : SV_DispatchThreadID)
+{
+  GpuInput* config = p.input_ptr;
+
+  if (pixel_i.x >= config->rigid_body_count)
+  {
+    return;
+  }
+
+  daxa_f32 dx = config->dx;
+  daxa_f32 dt = config->dt;
+
+  GpuStatus* status = p.status_ptr;
+
+  rigid_body_check_boundaries(dt, dx, status, config, pixel_i.x);
+}
+
+
+[shader("compute")]
+    [numthreads(MPM_P2G_COMPUTE_X, 1, 1)] void
+    entry_MPM_raster_rigid_boundary(daxa_u32vec3 pixel_i : SV_DispatchThreadID)
+{
+  GpuInput* config = p.input_ptr;
+
+  if (pixel_i.x >= config->r_p_count)
+  {
+    return;
+  }
+  daxa_f32 dx = config->dx;
+  daxa_f32 inv_dx = config->inv_dx;
+
+  rigid_body_raster_rigid_bound(dx, inv_dx, pixel_i.x, config);
+}
         
 [shader("compute")]
     [numthreads(MPM_P2G_COMPUTE_X, 1, 1)] void
@@ -67,6 +95,11 @@ struct Test
       return;
   }
 
+#if defined(DAXA_RIGID_BODY_FLAG)
+  gather_CDF_compute(pixel_i.x, aabb, config);
+  ParticleCDF particle_CDF = get_rigid_particle_CDF_by_index(pixel_i.x);
+#endif // DAXA_RIGID_BODY_FLAG
+
   daxa_f32vec3 w[3];
   daxa_f32vec3 fx;
   daxa_i32vec3 base_coord = calculate_particle_status(aabb, inv_dx, fx, w);
@@ -77,13 +110,26 @@ struct Test
   daxa_u32vec3 array_grid = daxa_u32vec3(base_coord);
 
   // Scatter to grid
-  for(uint i = 0; i < 3; ++i) {
-    for(uint j = 0; j < 3; ++j) {
-      for(uint k = 0; k < 3; ++k) {
+  for(daxa_u32 i = 0; i < 3; ++i) {
+    for(daxa_u32 j = 0; j < 3; ++j) {
+      for(daxa_u32 k = 0; k < 3; ++k) {
         daxa_u32vec3 coord = array_grid + daxa_u32vec3(i, j, k);
         if(coord.x >= config->grid_dim.x || coord.y >= config->grid_dim.y || coord.z >= config->grid_dim.z) {
           continue;
         }
+
+        daxa_u32 index = (coord.x + coord.y * config->grid_dim.x + coord.z * config->grid_dim.x * config->grid_dim.y);
+        
+#if defined(DAXA_RIGID_BODY_FLAG)
+        daxa_u32 grid_color = get_node_cdf_color_by_index(index);
+
+        daxa_u32 particle_color = get_rigid_particle_CDF_color_by_index(pixel_i.x);
+
+        // only update compatible particles
+        if(!cdf_is_compatible(grid_color, particle_color)) {
+            continue;
+        }
+#endif // DAXA_RIGID_BODY_FLAG
 
         daxa_f32vec3 dpos = (daxa_f32vec3(i, j, k) - fx) * dx;
 
@@ -91,8 +137,6 @@ struct Test
 
         float m = weight * p_mass;
         daxa_f32vec3 velocity_mass = calculate_weighted_p2g_velocity(dpos, weight, mv, affine);
-
-        uint index = (coord.x + coord.y * config->grid_dim.x + coord.z * config->grid_dim.x * config->grid_dim.y);
 
         atomicAdd(cells[index].v.x, velocity_mass.x);
         atomicAdd(cells[index].v.y, velocity_mass.y);
@@ -121,9 +165,9 @@ struct Test
 
   float dt = config->dt;
   float gravity = config->gravity;
-  uint bound = 3;
+  daxa_u32 bound = BOUNDARY;
 
-  uint cell_index = pixel_i.x + pixel_i.y * config->grid_dim.x + pixel_i.z * config->grid_dim.x * config->grid_dim.y;
+  daxa_u32 cell_index = pixel_i.x + pixel_i.y * config->grid_dim.x + pixel_i.z * config->grid_dim.x * config->grid_dim.y;
 
   Ptr<Cell> cell = &Ptr<Cell>(cells)[cell_index];
 
@@ -155,7 +199,7 @@ struct Test
     entry_MPM_G2P(daxa_u32vec3 pixel_i : SV_DispatchThreadID)
 {
 
-  GpuInput* config = p.input_ptr;
+  Ptr<GpuInput> config = p.input_ptr;
 
   if (pixel_i.x >= config->p_count)
   {
@@ -166,6 +210,10 @@ struct Test
   float dx = config->dx;
   float inv_dx = config->inv_dx;
   float dt = config->dt;
+  // float p_rho = 1;
+  // float p_vol = (dx * 0.5f) * (dx * 0.5f) * (dx * 0.5f); // Particle volume (cube)
+  // float p_mass = p_vol * p_rho;
+  float p_mass = 1.0;
 
   Particle* particles = p.particles;
   Cell* cells = p.cells;
@@ -180,6 +228,10 @@ struct Test
       return;
   }
 
+#if defined(DAXA_RIGID_BODY_FLAG)
+  ParticleCDF particle_CDF = get_rigid_particle_CDF_by_index(pixel_i.x);
+#endif // DAXA_RIGID_BODY_FLAG
+
   daxa_f32vec3 w[3];
   daxa_f32vec3 fx;
   daxa_i32vec3 base_coord = calculate_particle_status(*aabb, inv_dx, fx, w);
@@ -190,22 +242,27 @@ struct Test
   
   daxa_u32vec3 array_grid = daxa_u32vec3(base_coord);
 
-  for(uint i = 0; i < 3; ++i) {
-    for(uint j = 0; j < 3; ++j) {
-      for(uint k = 0; k < 3; ++k) {
-        int3 coord = array_grid + int3(i, j, k);
+  for(daxa_u32 i = 0; i < 3; ++i) {
+    for(daxa_u32 j = 0; j < 3; ++j) {
+      for(daxa_u32 k = 0; k < 3; ++k) {
+        daxa_u32vec3 coord = array_grid + daxa_u32vec3(i, j, k);
         
         if(coord.x >= config->grid_dim.x || coord.y >= config->grid_dim.y || coord.z >= config->grid_dim.z) {
           continue;
         }
 
+        daxa_u32 index = coord.x + coord.y * config->grid_dim.x + coord.z * config->grid_dim.x * config->grid_dim.y;
+
         daxa_f32vec3 dpos = (daxa_f32vec3(i, j, k) - fx) * dx;
 
         float weight = w[i].x * w[j].y * w[k].z;
 
-        uint index = coord.x + coord.y * config->grid_dim.x + coord.z * config->grid_dim.x * config->grid_dim.y;
-
-        daxa_f32vec3 vel_value = cells[index].v;
+        daxa_f32vec3 vel_value;
+#if defined(DAXA_RIGID_BODY_FLAG)
+              rigid_body_g2p_check_particle_interaction(vel_value, index, particle_CDF.color, center, particle.v, particle_CDF.normal, weight, p_mass, dt, dx);
+#else
+              vel_value = get_cell_by_index(index).v;
+#endif // DAXA_RIGID_BODY_FLAG
 
         daxa_f32vec3 w_grid = daxa_f32vec3(vel_value * weight);
 
@@ -217,6 +274,14 @@ struct Test
 
   particle.C = 4 * inv_dx * inv_dx * particle_C;
   particle.v = particle_velocity;
+  
+    // Apply penalty force to particle if it is in collision with a rigid body
+#if defined(DAXA_RIGID_BODY_FLAG)
+  if(particle_CDF.difference != 0) {
+      daxa_f32vec3 f_penalty = abs(particle_CDF.distance) * particle_CDF.normal * PENALTY_FORCE;
+      particle.v += dt * f_penalty / p_mass;
+  }
+#endif // DAXA_RIGID_BODY_FLAG
 
   aabb->min += particle.v * dt;
   aabb->max += particle.v * dt;
@@ -246,4 +311,24 @@ struct Test
 
   particles[pixel_i.x].v = particle.v;
   particles[pixel_i.x].C = particle.C;
+}
+
+
+[shader("compute")]
+    [numthreads(MPM_CPIC_COMPUTE_X, 1, 1)] void
+    entry_MPM_advect_rigid_bodies(daxa_u32vec3 pixel_i : SV_DispatchThreadID)
+{
+  GpuInput* config = p.input_ptr;
+
+  if (pixel_i.x >= config->rigid_body_count)
+  {
+    return;
+  }
+
+  daxa_f32 dt = config->dt;
+  daxa_f32 gravity = config->gravity;
+
+  GpuStatus* status = p.status_ptr;
+
+  rigid_body_advect(dt, gravity, status->flags, pixel_i.x);
 }
