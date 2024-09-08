@@ -314,7 +314,7 @@ void intersection_shader()
 
     daxa_u32 prim_index = PrimitiveIndex() +  GeometryIndex();
 
-    // Obtener el AABB del objeto
+    // Get Aabb
     Aabb aabb = deref(p.aabb_buffer).aabbs[prim_index];
 
     THit = aabb_get_hit(aabb, WorldRayOrigin(), WorldRayDirection(), WorldToObject4x3());

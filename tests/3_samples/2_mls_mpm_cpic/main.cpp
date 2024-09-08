@@ -1,4 +1,5 @@
-#define DAXA_SHADERLANG DAXA_SHADERLANG_GLSL
+// #define DAXA_SHADERLANG DAXA_SHADERLANG_GLSL
+#define DAXA_SHADERLANG DAXA_SHADERLANG_SLANG
 #define DAXA_ATOMIC_FLOAT_FLAG
 #define DAXA_RAY_TRACING_FLAG
 #define APPNAME "Daxa Sample: MPM MLS"
@@ -380,7 +381,7 @@ struct App : BaseApp<App>
 #elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
             .source = daxa::ShaderFile{"raytracing.slang"},
             .compile_options = {
-                .entry_point = "rayGenShader",
+                .entry_point = "ray_generation",
             },
 #endif
         };
@@ -391,7 +392,7 @@ struct App : BaseApp<App>
 #elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
             .source = daxa::ShaderFile{"raytracing.slang"},
             .compile_options = {
-                .entry_point = "missShader",
+                .entry_point = "miss",
             },
 #endif
         };
@@ -405,7 +406,7 @@ struct App : BaseApp<App>
 #elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
             .source = daxa::ShaderFile{"raytracing.slang"},
             .compile_options = {
-                .entry_point = "missShadowShader",
+                .entry_point = "miss_shadows",
             },
 #endif
         };
@@ -416,7 +417,7 @@ struct App : BaseApp<App>
 #elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
             .source = daxa::ShaderFile{"raytracing.slang"},
             .compile_options = {
-                .entry_point = "closestHitShader",
+                .entry_point = "closest_hit",
             },
 #endif
         };
@@ -431,7 +432,7 @@ struct App : BaseApp<App>
 #elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
             .source = daxa::ShaderFile{"raytracing.slang"},
             .compile_options = {
-                .entry_point = "rigidClosestHitShader",
+                .entry_point = "closest_hit_rigids",
             },
 #endif
         };
@@ -454,7 +455,9 @@ struct App : BaseApp<App>
             MISS,
             MISS2,
             CLOSE_HIT,
+#if defined(DAXA_RIGID_BODY_FLAG)
             CLOSE_HIT2,
+#endif
             INTERSECTION,
             STAGES_COUNT,
         };
@@ -465,7 +468,9 @@ struct App : BaseApp<App>
             HIT_MISS,
             SHADOW_MISS,
             PROCEDURAL_HIT,
+#if defined(DAXA_RIGID_BODY_FLAG)
             TRIANGLE_HIT,
+#endif
             GROUPS_COUNT,
         };
 
@@ -798,6 +803,7 @@ struct App : BaseApp<App>
         device.wait_idle();
         device.collect_garbage();
         device.destroy_buffer(sbt_pair.buffer);
+        device.destroy_buffer(sbt_pair.entries.buffer);
         device.destroy_tlas(tlas);
         device.destroy_blas(blas);
         device.destroy_sampler(sampler);
@@ -848,6 +854,15 @@ struct App : BaseApp<App>
         ImGui::End();
         ImGui::Render();
     }
+
+    void reload_sbt() {
+        if(!sbt_pair.buffer.is_empty()) {
+            device.destroy_buffer(sbt_pair.buffer);
+            device.destroy_buffer(sbt_pair.entries.buffer);
+        }
+        sbt_pair = rt_pipeline->create_default_sbt();
+    }
+
     void on_update()
     {
         ++gpu_input.frame_number;
@@ -855,8 +870,10 @@ struct App : BaseApp<App>
         auto reloaded_result = pipeline_manager.reload_all();
         if (auto reload_err = daxa::get_if<daxa::PipelineReloadError>(&reloaded_result))
             std::cout << "Failed to reload " << reload_err->message << std::endl;
-        if (daxa::get_if<daxa::PipelineReloadSuccess>(&reloaded_result))
+        if (daxa::get_if<daxa::PipelineReloadSuccess>(&reloaded_result)) {
+            reload_sbt();
             std::cout << "Successfully reloaded!"<< std::endl;
+        }
 
         ui_update();
 
@@ -1464,10 +1481,15 @@ struct App : BaseApp<App>
 #if defined(DAXA_RIGID_BODY_FLAG)
                     ti.recorder.set_pipeline(*reset_rigid_grid_compute_pipeline);
                     ti.recorder.push_constant(ComputePush{
-                        .image_id = render_image.default_view(),
+                        .swapchain = render_image.default_view(),
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
                         .input_buffer_id = gpu_input_buffer,
-                        .input_ptr = device.device_address(gpu_input_buffer).value(),
                         .status_buffer_id = gpu_status_buffer,
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
+                        .status_ptr = device.device_address(gpu_status_buffer).value(),
+#endif // DAXA_SHADERLANG
                         .particles = device.device_address(particles_buffer).value(),
                         .rigid_bodies = device.device_address(rigid_body_buffer).value(),
                         .indices = device.device_address(rigid_body_index_buffer).value(),
@@ -1500,10 +1522,15 @@ struct App : BaseApp<App>
 #if defined(DAXA_RIGID_BODY_FLAG)
                 ti.recorder.set_pipeline(*rigid_body_check_boundaries_compute_pipeline);
                 ti.recorder.push_constant(ComputePush{
-                    .image_id = render_image.default_view(),
+                    .swapchain = render_image.default_view(),
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
                     .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.device_address(gpu_input_buffer).value(),
                     .status_buffer_id = gpu_status_buffer,
+                    .input_ptr = device.device_address(gpu_input_buffer).value(),
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+                    .input_ptr = device.device_address(gpu_input_buffer).value(),
+                    .status_ptr = device.device_address(gpu_status_buffer).value(),
+#endif // DAXA_SHADERLANG
                     .particles = device.device_address(particles_buffer).value(),
                     .rigid_bodies = device.device_address(rigid_body_buffer).value(),
                     .indices = device.device_address(rigid_body_index_buffer).value(),
@@ -1540,10 +1567,15 @@ struct App : BaseApp<App>
                 if(simulate_mpm) {
                     ti.recorder.set_pipeline(*rasterize_rigid_boundary_compute_pipeline);
                     ti.recorder.push_constant(ComputePush{
-                        .image_id = render_image.default_view(),
+                        .swapchain = render_image.default_view(),
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
                         .input_buffer_id = gpu_input_buffer,
-                        .input_ptr = device.device_address(gpu_input_buffer).value(),
                         .status_buffer_id = gpu_status_buffer,
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
+                        .status_ptr = device.device_address(gpu_status_buffer).value(),
+#endif // DAXA_SHADERLANG
                         .particles = device.device_address(particles_buffer).value(),
                         .rigid_bodies = device.device_address(rigid_body_buffer).value(),
                         .indices = device.device_address(rigid_body_index_buffer).value(),
@@ -1583,10 +1615,15 @@ struct App : BaseApp<App>
                 if(simulate_mpm) {
                     ti.recorder.set_pipeline(*p2g_compute_pipeline);
                     ti.recorder.push_constant(ComputePush{
-                        .image_id = render_image.default_view(),
+                        .swapchain = render_image.default_view(),
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
                         .input_buffer_id = gpu_input_buffer,
-                        .input_ptr = device.device_address(gpu_input_buffer).value(),
                         .status_buffer_id = gpu_status_buffer,
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
+                        .status_ptr = device.device_address(gpu_status_buffer).value(),
+#endif // DAXA_SHADERLANG
                         .particles = device.device_address(particles_buffer).value(),
 #if defined(DAXA_RIGID_BODY_FLAG)
                         .rigid_bodies = device.device_address(rigid_body_buffer).value(),
@@ -1627,10 +1664,15 @@ struct App : BaseApp<App>
                 if(simulate_mpm) {
                     ti.recorder.set_pipeline(*p2g_second_compute_pipeline);
                     ti.recorder.push_constant(ComputePush{
-                        .image_id = render_image.default_view(),
+                        .swapchain = render_image.default_view(),
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
                         .input_buffer_id = gpu_input_buffer,
-                        .input_ptr = device.device_address(gpu_input_buffer).value(),
                         .status_buffer_id = gpu_status_buffer,
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
+                        .status_ptr = device.device_address(gpu_status_buffer).value(),
+#endif // DAXA_SHADERLANG
                         .particles = device.device_address(particles_buffer).value(),
 #if defined(DAXA_RIGID_BODY_FLAG)
                         .rigid_bodies = device.device_address(rigid_body_buffer).value(),
@@ -1671,10 +1713,15 @@ struct App : BaseApp<App>
                 if(simulate_mpm) {
                     ti.recorder.set_pipeline(*grid_compute_pipeline);
                     ti.recorder.push_constant(ComputePush{
-                        .image_id = render_image.default_view(),
+                        .swapchain = render_image.default_view(),
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
                         .input_buffer_id = gpu_input_buffer,
-                        .input_ptr = device.device_address(gpu_input_buffer).value(),
                         .status_buffer_id = gpu_status_buffer,
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
+                        .status_ptr = device.device_address(gpu_status_buffer).value(),
+#endif // DAXA_SHADERLANG
                         .particles = device.device_address(particles_buffer).value(),
 #if defined(DAXA_RIGID_BODY_FLAG)
                         .rigid_bodies = device.device_address(rigid_body_buffer).value(),
@@ -1716,10 +1763,15 @@ struct App : BaseApp<App>
                 if(simulate_mpm) {
                     ti.recorder.set_pipeline(*g2p_compute_pipeline);
                     ti.recorder.push_constant(ComputePush{
-                        .image_id = render_image.default_view(),
+                        .swapchain = render_image.default_view(),
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
                         .input_buffer_id = gpu_input_buffer,
-                        .input_ptr = device.device_address(gpu_input_buffer).value(),
                         .status_buffer_id = gpu_status_buffer,
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
+                        .status_ptr = device.device_address(gpu_status_buffer).value(),
+#endif // DAXA_SHADERLANG
                         .particles = device.device_address(particles_buffer).value(),
 #if defined(DAXA_RIGID_BODY_FLAG)
                         .rigid_bodies = device.device_address(rigid_body_buffer).value(),
@@ -1759,10 +1811,15 @@ struct App : BaseApp<App>
             {
                 ti.recorder.set_pipeline(*advecting_rigid_bodies_compute_pipeline);
                 ti.recorder.push_constant(ComputePush{
-                    .image_id = render_image.default_view(),
+                    .swapchain = render_image.default_view(),
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
                     .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.device_address(gpu_input_buffer).value(),
                     .status_buffer_id = gpu_status_buffer,
+                        .input_ptr = device.device_address(gpu_input_buffer).value(),
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+                    .input_ptr = device.device_address(gpu_input_buffer).value(),
+                    .status_ptr = device.device_address(gpu_status_buffer).value(),
+#endif // DAXA_SHADERLANG
                     .particles = device.device_address(particles_buffer).value(),
                     .rigid_bodies = device.device_address(rigid_body_buffer).value(),
                     .indices = device.device_address(rigid_body_index_buffer).value(),
@@ -2151,10 +2208,15 @@ struct App : BaseApp<App>
                 ti.recorder.set_pipeline(*rt_pipeline);
 
                 ti.recorder.push_constant(ComputePush{
-                    .image_id = render_image.default_view(),
+                    .swapchain = render_image.default_view(),
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
                     .input_buffer_id = gpu_input_buffer,
-                    .input_ptr = device.device_address(gpu_input_buffer).value(),
                     .status_buffer_id = gpu_status_buffer,
+                    .input_ptr = device.device_address(gpu_input_buffer).value(),
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+                    .input_ptr = device.device_address(gpu_input_buffer).value(),
+                    .status_ptr = device.device_address(gpu_status_buffer).value(),
+#endif // DAXA_SHADERLANG
                     .particles = device.device_address(particles_buffer).value(),
 #if defined(DAXA_RIGID_BODY_FLAG)
                     .rigid_bodies = device.device_address(rigid_body_buffer).value(),

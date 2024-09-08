@@ -7,12 +7,11 @@
 #extension GL_ARB_gpu_shader_int64 : enable
 #endif // GL_core_profile
 
-
 #include "daxa/daxa.inl"
 
 // #define DAXA_SIMULATION_WATER_MPM_MLS
 #if !defined(DAXA_SIMULATION_WATER_MPM_MLS)
-#define DAXA_RIGID_BODY_FLAG
+// #define DAXA_RIGID_BODY_FLAG
 // #define DAXA_SIMULATION_MANY_MATERIALS
 #if defined(DAXA_RIGID_BODY_FLAG)
 // WARN: rigid bodies don't collide with each other
@@ -239,10 +238,16 @@ DAXA_DECL_BUFFER_PTR(Aabb)
 
 struct ComputePush
 {
-    daxa_ImageViewId image_id;
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
+    daxa_ImageViewId swapchain;
     daxa_BufferId input_buffer_id;
-    daxa_RWBufferPtr(GpuInput) input_ptr;
     daxa_BufferId status_buffer_id;
+    daxa_RWBufferPtr(GpuInput) input_ptr;
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+    daxa::RWTexture2DId<daxa_f32vec4> swapchain;
+    daxa_RWBufferPtr(GpuInput) input_ptr;
+    daxa_RWBufferPtr(GpuStatus) status_ptr;
+#endif // DAXA_SHADERLANG
     daxa_RWBufferPtr(Particle) particles;
 #if defined(DAXA_RIGID_BODY_FLAG)
     daxa_BufferPtr(RigidBody) rigid_bodies;
@@ -292,6 +297,58 @@ const daxa_f32vec3 JELLY_LOW_SPEED_COLOR = daxa_f32vec3(0.7f, 0.2f, 0.2f);
 
 
 
+// RT structs
+struct hitPayload
+{
+  daxa_f32vec3 hit_value;
+  daxa_u32 seed;
+  daxa_f32vec3 hit_pos;
+  daxa_u32 rigid_body_index;
+  daxa_u32 rigid_element_index;
+};
+
+struct ShadowRayPayload
+{
+  daxa_f32 shadow;
+};
+
+
+
+daxa_f32 aabb_get_hit(Aabb aabb, daxa_f32vec3 ray_origin, daxa_f32vec3 ray_direction, daxa_f32mat3x4 worldToObject) 
+{
+    // Convertir la matriz de transformación del objeto al espacio del objeto
+    daxa_f32mat4x4 worldToObject = transpose(Convert3x4To4x4(worldToObject));
+
+    // Transformar el origen y la dirección del rayo al espacio del objeto
+    daxa_f32vec3 origin = (mul(worldToObject, daxa_f32vec4(ray_origin, 1.0f))).xyz;
+    
+    // Aquí se transforma la dirección sin normalización
+    daxa_f32vec3 direction = (mul((daxa_f32mat3x3)worldToObject, ray_direction)).xyz;
+    
+    // Normalizar la dirección después de la transformación
+    direction = normalize(direction);
+
+    // Crear el rayo transformado
+    Ray r = {origin, direction};
+
+    // Calcular la intersección con el AABB
+    return hitAabb(aabb, r);
+}
+
+daxa_f32mat4x4 Convert3x4To4x4(daxa_f32mat3x4 objectToWorld4x3)
+{
+    daxa_f32mat4x4 objectToWorld4x4;
+
+    objectToWorld4x4[0] = float4(objectToWorld4x3[0], 0.0f);
+    objectToWorld4x4[1] = float4(objectToWorld4x3[1], 0.0f);
+    objectToWorld4x4[2] = float4(objectToWorld4x3[2], 0.0f);
+    objectToWorld4x4[3] = float4(objectToWorld4x3[3], 1.0f);
+
+    return objectToWorld4x4;
+}
+
+
+
 void check_boundaries(inout daxa_f32vec3 pos, inout Particle particle, daxa_f32 wall_min, daxa_f32 wall_max) {
   // Check boundaries
   if (pos.x < wall_min)
@@ -334,9 +391,15 @@ void particle_apply_external_force(inout Particle particle, daxa_f32vec3 pos, da
   if (((flags & MOUSE_TARGET_FLAG) == MOUSE_TARGET_FLAG) &&
   ((flags & PARTICLE_FORCE_ENABLED_FLAG) == PARTICLE_FORCE_ENABLED_FLAG))
   {
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL   
       if (all(greaterThan(mouse_target, daxa_f32vec3(wall_min))) &&
           all(lessThan(mouse_target, daxa_f32vec3(wall_max))))
-      {
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+      if(all(mouse_target > daxa_f32vec3(wall_min)) &&
+          all(mouse_target < daxa_f32vec3(wall_max)))
+#endif // DAXA_SHADERLANG
+      {          
+
           daxa_f32vec3 dist = pos - mouse_target;
           if (dot(dist, dist) < mouse_radius * mouse_radius)
           {
@@ -701,25 +764,25 @@ daxa_f32 set_atomic_cell_mass_by_index(daxa_u32 cell_index, daxa_f32 w) {
   return atomicAdd(cell_buffer.cells[cell_index].m, w);
 }
 
-// daxa_f32 set_atomic_cell_force_x_by_index(daxa_u32 cell_index, daxa_f32 f) {
-//   CELL_BUFFER cell_buffer = CELL_BUFFER(p.cells);
-//   return atomicAdd(cell_buffer.cells[cell_index].f.x, f);
-// }
-
-// daxa_f32 set_atomic_cell_force_y_by_index(daxa_u32 cell_index, daxa_f32 f) {
-//   CELL_BUFFER cell_buffer = CELL_BUFFER(p.cells);
-//   return atomicAdd(cell_buffer.cells[cell_index].f.y, f);
-// }
-
-// daxa_f32 set_atomic_cell_force_z_by_index(daxa_u32 cell_index, daxa_f32 f) {
-//   CELL_BUFFER cell_buffer = CELL_BUFFER(p.cells);
-//   return atomicAdd(cell_buffer.cells[cell_index].f.z, f);
-// }
-
 void set_aabb_by_index(daxa_u32 aabb_index, Aabb aabb) {
   AABB_BUFFER aabb_buffer = AABB_BUFFER(p.aabbs);
   aabb_buffer.aabbs[aabb_index] = aabb;
 }
+#else 
+
+float atomicAdd(__ref float value, float amount)
+{
+    __target_switch
+    {
+    case cpp:
+        __requirePrelude("#include <atomic>");
+        __intrinsic_asm "std::atomic_ref(*$0).fetch_add($1)";
+    case spirv:
+        return __atomicAdd(value, amount);
+    }
+    return 0;
+}
+
 
 #endif // GL_core_profile
 

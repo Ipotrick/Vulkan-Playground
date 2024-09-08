@@ -1,14 +1,5 @@
 #include <shared.inl>
 
-struct hitPayload
-{
-  daxa_f32vec3 hit_value;
-  daxa_u32 seed;
-  daxa_f32vec3 hit_pos;
-  daxa_u32 rigid_body_index;
-  daxa_u32 rigid_element_index;
-};
-
 #if DAXA_SHADER_STAGE == DAXA_SHADER_STAGE_RAYGEN
 
 layout(location = 0) rayPayloadEXT hitPayload prd;
@@ -28,13 +19,14 @@ void main()
   const daxa_u32 ray_flags = gl_RayFlagsNoneEXT;
 
   const daxa_i32vec2 rt_size = daxa_i32vec2(gl_LaunchSizeEXT.xy);
+  const daxa_u32vec2 pixel_coords = daxa_u32vec2(gl_LaunchIDEXT.xy);
 
   // Camera setup
   daxa_f32mat4x4 inv_view = deref(p.camera).inv_view;
   daxa_f32mat4x4 inv_proj = deref(p.camera).inv_proj;
 
   Ray ray =
-      get_ray_from_current_pixel(daxa_f32vec2(gl_LaunchIDEXT.xy), daxa_f32vec2(rt_size), inv_view, inv_proj);
+      get_ray_from_current_pixel(daxa_f32vec2(pixel_coords), daxa_f32vec2(rt_size), inv_view, inv_proj);
 
   traceRayEXT(
       daxa_accelerationStructureEXT(p.tlas), // topLevelAccelerationStructure
@@ -52,8 +44,8 @@ void main()
 
   daxa_f32vec3 color = prd.hit_value;
 
-  imageStore(daxa_image2D(p.image_id), daxa_i32vec2(gl_LaunchIDEXT.xy), vec4(color, 1.0));
-  if (gl_LaunchIDEXT.x == uint(deref(config).mouse_pos.x) && gl_LaunchIDEXT.y == uint(deref(config).mouse_pos.y))
+  imageStore(daxa_image2D(p.swapchain), daxa_i32vec2(pixel_coords), vec4(color, 1.0));
+  if (pixel_coords.x == uint(deref(config).mouse_pos.x) && pixel_coords.y == uint(deref(config).mouse_pos.y))
   {
     if ((deref(status).flags & MOUSE_DOWN_FLAG) == MOUSE_DOWN_FLAG) {
         if (prd.hit_pos != daxa_f32vec3(MAX_DIST))
@@ -229,14 +221,6 @@ void main()
   // Computing the normal at hit position
   vec3 normal = normalize(world_pos - center);
 
-#if defined(VOXEL_PARTICLES)
-  vec3 absN = abs(normal);
-  float maxC = max(max(absN.x, absN.y), absN.z);
-  normal     = (maxC == absN.x) ?
-                 vec3(sign(normal.x), 0, 0) :
-                 (maxC == absN.y) ? vec3(0, sign(normal.y), 0) : vec3(0, 0, sign(normal.z));
-#endif // VOXEL_PARTICLES 
-
   // Vector toward the light
   vec3 L = normalize(light_position - vec3(0));
   
@@ -259,7 +243,7 @@ void main()
     
   vec3 diffuse = dotNL * material_color;
   vec3 specular = vec3(0);
-  float attenuation = 0.3;
+  float attenuation = 0.5;
 
   // Tracing shadow ray only if the light is visible from the surface
   if (dot(normal, L) > 0)
@@ -361,14 +345,11 @@ void main()
   }
 #endif
 
-#if defined(VOXEL_PARTICLES)
-  tHit = hitAabb(aabb, ray);
-#else
+
   vec3 center = (aabb.min + aabb.max) * 0.5;
   // radius inside the AABB
   float radius = (aabb.max.x - aabb.min.x) * 0.5 * 0.9;
   tHit = hitSphere(center, radius, ray);
-#endif
 
   // Report hit point
   if (tHit > 0)

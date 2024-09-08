@@ -560,7 +560,7 @@ void main()
   daxa_f32vec3 fx;
   daxa_i32vec3 base_coord = calculate_particle_status(aabb, inv_dx, fx, w);
 
-  mat3 affine = particle.C;
+  daxa_f32mat3x3 affine = particle.C;
 
   uvec3 array_grid = uvec3(base_coord);
 
@@ -669,9 +669,9 @@ void main()
   float pressure = max(-0.1f, eos_stiffness * (pow(density / rest_density, eos_power) - 1));
 
   // velocity gradient - CPIC eq. 17, where deriv of quadratic polynomial is linear
-  mat3 stress = mat3(-pressure) + dynamic_viscosity * (particle.C + transpose(particle.C));
+  daxa_f32mat3x3 stress = daxa_f32mat3x3(-pressure) + dynamic_viscosity * (particle.C + transpose(particle.C));
 
-  mat3 eq_16_term_0 = -p_vol * 4 * stress * dt;
+  daxa_f32mat3x3 eq_16_term_0 = -p_vol * 4 * stress * dt;
 
   for (uint i = 0; i < 3; ++i)
   {
@@ -746,9 +746,9 @@ void main()
   daxa_f32vec3 fx;
   daxa_i32vec3 base_coord = calculate_particle_status(aabb, inv_dx, fx, w);
 
-  mat3 stress = calculate_p2g(particle, dt, p_vol, mu_0, lambda_0, inv_dx);
+  daxa_f32mat3x3 stress = calculate_p2g(particle, dt, p_vol, mu_0, lambda_0, inv_dx);
 
-  mat3 affine = stress + p_mass * particle.C;
+  daxa_f32mat3x3 affine = stress + p_mass * particle.C;
 
   // Transactional momentum
   vec3 mv = vec3(p_mass * particle.v);
@@ -875,7 +875,7 @@ void main()
   daxa_f32vec3 fx;
   daxa_i32vec3 base_coord = calculate_particle_status(aabb, inv_dx, fx, w);
 
-  particle.C = mat3(0);
+  particle.C = daxa_f32mat3x3(0);
   particle.v = vec3(0.f);
 
   uvec3 array_grid = uvec3(base_coord);
@@ -968,7 +968,7 @@ void main()
   daxa_f32vec3 fx;
   daxa_i32vec3 base_coord = calculate_particle_status(aabb, inv_dx, fx, w);
 
-  daxa_f32mat3x3 particle_C = mat3(0);
+  daxa_f32mat3x3 particle_C = daxa_f32mat3x3(0);
   daxa_f32vec3 particle_velocity = daxa_f32vec3(0);
 
   uvec3 array_grid = uvec3(base_coord);
