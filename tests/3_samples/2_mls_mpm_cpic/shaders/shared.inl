@@ -313,40 +313,74 @@ struct ShadowRayPayload
 };
 
 
-
-daxa_f32 aabb_get_hit(Aabb aabb, daxa_f32vec3 ray_origin, daxa_f32vec3 ray_direction, daxa_f32mat3x4 worldToObject) 
+#if defined(GL_core_profile) // GLSL
+daxa_f32vec4 mul(daxa_f32mat4x4 m, daxa_f32vec4 v)
 {
-    // Convertir la matriz de transformación del objeto al espacio del objeto
-    daxa_f32mat4x4 worldToObject = transpose(Convert3x4To4x4(worldToObject));
+    return m * v;
+}
+#endif // GL_core_profile
 
-    // Transformar el origen y la dirección del rayo al espacio del objeto
-    daxa_f32vec3 origin = (mul(worldToObject, daxa_f32vec4(ray_origin, 1.0f))).xyz;
-    
-    // Aquí se transforma la dirección sin normalización
-    daxa_f32vec3 direction = (mul((daxa_f32mat3x3)worldToObject, ray_direction)).xyz;
-    
-    // Normalizar la dirección después de la transformación
-    direction = normalize(direction);
 
-    // Crear el rayo transformado
-    Ray r = {origin, direction};
-
-    // Calcular la intersección con el AABB
-    return hitAabb(aabb, r);
+daxa_f32 hitAabb(const Aabb aabb, const Ray r)
+{
+  daxa_f32vec3  invDir = 1.0 / r.direction;
+  daxa_f32vec3  tbot   = invDir * (aabb.min - r.origin);
+  daxa_f32vec3  ttop   = invDir * (aabb.max - r.origin);
+  daxa_f32vec3  tmin   = min(ttop, tbot);
+  daxa_f32vec3  tmax   = max(ttop, tbot);
+  daxa_f32 t0     = max(tmin.x, max(tmin.y, tmin.z));
+  daxa_f32 t1     = min(tmax.x, min(tmax.y, tmax.z));
+  return t1 > max(t0, 0.0) ? t0 : -1.0;
 }
 
-daxa_f32mat4x4 Convert3x4To4x4(daxa_f32mat3x4 objectToWorld4x3)
+daxa_f32mat4x4 Convert3x4To4x4(
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
+  daxa_f32mat4x3
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+  daxa_f32mat3x4 
+#endif // DAXA_SHADERLANG
+  objectToWorld4x3)
 {
     daxa_f32mat4x4 objectToWorld4x4;
 
-    objectToWorld4x4[0] = float4(objectToWorld4x3[0], 0.0f);
-    objectToWorld4x4[1] = float4(objectToWorld4x3[1], 0.0f);
-    objectToWorld4x4[2] = float4(objectToWorld4x3[2], 0.0f);
-    objectToWorld4x4[3] = float4(objectToWorld4x3[3], 1.0f);
+    objectToWorld4x4[0] = daxa_f32vec4(objectToWorld4x3[0], 0.0f);
+    objectToWorld4x4[1] = daxa_f32vec4(objectToWorld4x3[1], 0.0f);
+    objectToWorld4x4[2] = daxa_f32vec4(objectToWorld4x3[2], 0.0f);
+    objectToWorld4x4[3] = daxa_f32vec4(objectToWorld4x3[3], 1.0f);
 
     return objectToWorld4x4;
 }
 
+
+daxa_f32 aabb_get_hit(Aabb aabb, daxa_f32vec3 ray_origin, daxa_f32vec3 ray_direction, 
+#if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
+  daxa_f32mat4x3
+#elif DAXA_SHADERLANG == DAXA_SHADERLANG_SLANG
+  daxa_f32mat3x4 
+#endif // DAXA_SHADERLANG
+  objectToWorld4x3) 
+{
+  // Convert object to world matrix to 4x4
+  daxa_f32mat4x4 worldToObject = transpose(Convert3x4To4x4(objectToWorld4x3));
+
+  // Transform origin
+  daxa_f32vec4 ray_origin4 = mul(worldToObject, daxa_f32vec4(ray_origin, 1.0f));
+
+  daxa_f32vec3 origin = ray_origin4.xyz;
+  
+  // Transform direction
+  daxa_f32vec4 ray_direction4 = mul(worldToObject, daxa_f32vec4(ray_direction, 0.0f));
+
+  daxa_f32vec3 direction = ray_direction4.xyz;
+  
+  // Normalize direction
+  direction = normalize(direction);
+
+  // Create ray
+  Ray r = {origin, direction};
+  
+  return hitAabb(aabb, r);
+}
 
 
 void check_boundaries(inout daxa_f32vec3 pos, inout Particle particle, daxa_f32 wall_min, daxa_f32 wall_max) {
@@ -1283,18 +1317,6 @@ daxa_f32 hitSphere(daxa_f32vec3 center, daxa_f32 radius, Ray r)
   {
     return (-b - sqrt(discriminant)) / (2.0 * a);
   }
-}
-
-daxa_f32 hitAabb(const Aabb aabb, const Ray r)
-{
-  daxa_f32vec3  invDir = 1.0 / r.direction;
-  daxa_f32vec3  tbot   = invDir * (aabb.min - r.origin);
-  daxa_f32vec3  ttop   = invDir * (aabb.max - r.origin);
-  daxa_f32vec3  tmin   = min(ttop, tbot);
-  daxa_f32vec3  tmax   = max(ttop, tbot);
-  daxa_f32 t0     = max(tmin.x, max(tmin.y, tmin.z));
-  daxa_f32 t1     = min(tmax.x, min(tmax.y, tmax.z));
-  return t1 > max(t0, 0.0) ? t0 : -1.0;
 }
 
 
