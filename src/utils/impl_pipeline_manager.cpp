@@ -534,6 +534,7 @@ namespace daxa
                 }
                 spv_results->push_back(std::move(spv_result));
                 final_shader_info->push_back(daxa::RayTracingShaderInfo{
+                    .type = shader_compile_info.type,
                     .info = {
                         .byte_code = spv_results->back().value().data(),
                         .byte_code_size = static_cast<u32>(spv_results->back().value().size()),
@@ -543,7 +544,6 @@ namespace daxa
                             Optional{shader_compile_info.shader_info.compile_options.required_subgroup_size.value()} : 
                             daxa::None,
                     },
-                    .type = shader_compile_info.type,
                 });
                 if (shader_compile_info.shader_info.compile_options.entry_point.has_value() && (shader_compile_info.shader_info.compile_options.language != ShaderLanguage::SLANG))
                 {
