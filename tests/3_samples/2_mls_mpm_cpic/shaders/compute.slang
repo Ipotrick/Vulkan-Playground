@@ -8,6 +8,8 @@ struct Test
 };
 
 
+
+#if defined(DAXA_RIGID_BODY_FLAG)
 [shader("compute")]
     [numthreads(MPM_GRID_COMPUTE_X, MPM_GRID_COMPUTE_Y, MPM_GRID_COMPUTE_Z)] void
     entry_MPM_reset_rigid_boundary(daxa_u32vec3 pixel_i : SV_DispatchThreadID)
@@ -56,9 +58,9 @@ struct Test
   }
   daxa_f32 dx = config->dx;
   daxa_f32 inv_dx = config->inv_dx;
-
   rigid_body_raster_rigid_bound(dx, inv_dx, pixel_i.x, config);
 }
+#endif // DAXA_RIGID_BODY_FLAG
         
 [shader("compute")]
     [numthreads(MPM_P2G_COMPUTE_X, 1, 1)] void
@@ -314,6 +316,8 @@ struct Test
 }
 
 
+
+#if defined(DAXA_RIGID_BODY_FLAG)
 [shader("compute")]
     [numthreads(MPM_CPIC_COMPUTE_X, 1, 1)] void
     entry_MPM_advect_rigid_bodies(daxa_u32vec3 pixel_i : SV_DispatchThreadID)
@@ -332,3 +336,4 @@ struct Test
 
   rigid_body_advect(dt, gravity, status->flags, pixel_i.x);
 }
+#endif // DAXA_RIGID_BODY_FLAG

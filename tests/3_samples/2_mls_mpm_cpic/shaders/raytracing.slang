@@ -141,6 +141,7 @@ in MyAttributes attr)
   payload.hit_value = daxa_f32vec3(light_intensity * attenuation * (diffuse + specular));
 }
 
+#if defined(DAXA_RIGID_BODY_FLAG)
 [shader("closesthit")]
 void closest_hit_rigids(inout hitPayload payload, 
 in MyAttributes attr)
@@ -209,6 +210,7 @@ in MyAttributes attr)
 
   payload.hit_value = daxa_f32vec3(light_intensity * attenuation * (diffuse + specular));
 }
+#endif // DAXA_RIGID_BODY_FLAG
 
 [shader("intersection")]
 void intersectionShader()

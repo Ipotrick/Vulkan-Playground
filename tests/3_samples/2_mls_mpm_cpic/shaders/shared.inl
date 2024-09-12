@@ -117,7 +117,7 @@ const daxa_f32 rigid_body_restitutions[NUM_RIGID_BOX_COUNT] = {0.1f};
 // #define STATE_MASK 0xAAAAAAAAU
 // #define SIGN_MASK 0x55555555U
 #define TAG_DISPLACEMENT MAX_RIGID_BODY_COUNT
-#define RECONSTRUCTION_GUARD 1e-10f
+#define RECONSTRUCTION_GUARD 1e-20f
 #define COLLISION_GUARD 1e-7f
 #define EPSILON 1e-6f
 
@@ -899,7 +899,6 @@ daxa_f32vec3 get_rigid_body_color_by_index(daxa_u32 rigid_body_index) {
   return p.rigid_bodies[rigid_body_index].color;
 #endif // DAXA_SHADERLANG
 }
-#endif // DAXA_RIGID_BODY_FLAG
 
 daxa_u32 get_first_index_by_triangle_index(daxa_u32 triangle_index) {
 #if DAXA_SHADERLANG == DAXA_SHADERLANG_GLSL
@@ -959,6 +958,7 @@ daxa_f32mat3x3 get_vertices_by_triangle_index(daxa_u32 triangle_index) {
   daxa_u32vec3 indices = get_indices_by_triangle_index(triangle_index);
   return daxa_f32mat3x3(get_vertex_by_index(indices.x), get_vertex_by_index(indices.y), get_vertex_by_index(indices.z));
 }
+#endif // DAXA_RIGID_BODY_FLAG
 
 
 
