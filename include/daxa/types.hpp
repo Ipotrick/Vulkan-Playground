@@ -338,6 +338,21 @@ namespace daxa
         }
         SmallString(SmallString const & other) = default;
         SmallString & operator=(SmallString const & other) = default;
+        bool operator<(SmallString const & other) const
+        {
+            for (FixedListSizeT i = 0; i < std::min(this->m_size, other.m_size); ++i)
+            {
+                if (this->m_data[i] < other.m_data[i])
+                {
+                    return true;
+                }
+                if (this->m_data[i] > other.m_data[i])
+                {
+                    return false;
+                }
+            }
+            return this->m_size < other.m_size;
+        }
         [[nodiscard]] auto view() const -> std::string_view
         {
             return {this->m_data.data(), static_cast<usize>(this->m_size)};
