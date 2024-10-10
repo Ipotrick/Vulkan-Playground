@@ -2,6 +2,8 @@
 
 #include <daxa/utils/pipeline_manager.hpp>
 
+#undef Bool
+
 #if DAXA_BUILT_WITH_UTILS_PIPELINE_MANAGER_SLANG
 #include <slang.h>
 #include <slang-com-ptr.h>

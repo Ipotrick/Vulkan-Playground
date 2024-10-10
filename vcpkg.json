@@ -1,6 +1,6 @@
 {
   "name": "daxa",
-  "version": "2.0.0",
+  "version": "3.0.2",
   "description": "Daxa C++ Vulkan Abstraction",
   "homepage": "https://github.com/Ipotrick/Daxa",
   "dependencies": [
@@ -80,10 +80,9 @@
       ]
     }
   },
-  "builtin-baseline": "78ba9711d30c64a6b40462c72f356c681e2255f3",
+  "builtin-baseline": "2960d7d80e8d09c84ae8abf15c12196c2ca7d39a",
   "vcpkg-configuration": {
     "overlay-ports": [
-      "./cmake/vcpkg-overlay-ports/shader-slang",
       "./cmake/vcpkg-overlay-ports/fsr2",
       "./cmake/vcpkg-overlay-ports/glfw3"
     ]

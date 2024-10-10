@@ -329,7 +329,7 @@ namespace daxa
 
     struct TaskBufferAttachment
     {
-        using INDEX_TYPE = typename TaskBufferAttachmentIndex;
+        using INDEX_TYPE = TaskBufferAttachmentIndex;
         char const * name = {};
         TaskBufferAccess access = {};
         u8 shader_array_size = {};
@@ -338,14 +338,14 @@ namespace daxa
 
     struct TaskBlasAttachment
     {
-        using INDEX_TYPE = typename TaskBlasAttachmentIndex;
+        using INDEX_TYPE = TaskBlasAttachmentIndex;
         char const * name = {};
         TaskBlasAccess access = {};
     };
 
     struct TaskTlasAttachment
     {
-        using INDEX_TYPE = typename TaskTlasAttachmentIndex;
+        using INDEX_TYPE = TaskTlasAttachmentIndex;
         char const * name = {};
         TaskTlasAccess access = {};
         bool shader_as_address = {};
@@ -353,7 +353,7 @@ namespace daxa
 
     struct TaskImageAttachment
     {
-        using INDEX_TYPE = typename TaskImageAttachmentIndex;
+        using INDEX_TYPE = TaskImageAttachmentIndex;
         char const * name = {};
         TaskImageAccess access = {};
         ImageViewType view_type = ImageViewType::MAX_ENUM;

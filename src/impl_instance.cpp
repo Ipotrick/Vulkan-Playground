@@ -3,6 +3,7 @@
 #include "impl_device.hpp"
 #include "impl_features.hpp"
 
+#include <algorithm>
 #include <vector>
 
 // --- Begin API Functions ---

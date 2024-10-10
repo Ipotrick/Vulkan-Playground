@@ -37,11 +37,6 @@ find_package(glslang CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 ]=])
 endif()
-if(DAXA_ENABLE_UTILS_PIPELINE_MANAGER_SLANG)
-    file(APPEND ${CMAKE_BINARY_DIR}/config.cmake.in [=[
-find_package(shader-slang CONFIG REQUIRED)
-]=])
-endif()
 if(DAXA_ENABLE_UTILS_PIPELINE_MANAGER_SPIRV_VALIDATION)
     file(APPEND ${CMAKE_BINARY_DIR}/config.cmake.in [=[
 find_package(SPIRV-Tools CONFIG REQUIRED)
