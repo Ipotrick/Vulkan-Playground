@@ -527,7 +527,7 @@ void main()
 auto main() -> int
 {
     daxa::Instance daxa_ctx = daxa::create_instance({});
-    daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({}, daxa::DeviceInfo2{}))
+    daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({}, daxa::DeviceInfo2{}));
 
     daxa::PipelineManager pipeline_manager = daxa::PipelineManager({
         .device = device,
