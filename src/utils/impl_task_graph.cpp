@@ -48,7 +48,7 @@ namespace daxa
 
         return iter->value.blas;
     }
-    
+
     auto TaskInterface::get(TaskTlasAttachmentIndex index) const -> TaskTlasAttachmentInfo const &
     {
         return attachment_infos[index.value].value.tlas;
@@ -338,8 +338,8 @@ namespace daxa
 
     auto TaskGPUResourceView::is_null() const -> bool
     {
-        return 
-            task_graph_index == std::numeric_limits<u32>::max() && 
+        return
+            task_graph_index == std::numeric_limits<u32>::max() &&
             index == std::numeric_limits<u32>::max();
     }
 
@@ -511,13 +511,13 @@ namespace daxa
         delete self;
     }
 
-    // --- TaskBuffer --- 
+    // --- TaskBuffer ---
 
     TaskBuffer::TaskBuffer(TaskBufferInfo const & info)
     {
         this->object = new ImplPersistentTaskBufferBlasTlas(info);
     }
-    
+
     TaskBuffer::TaskBuffer(daxa::Device & device, BufferInfo const & info)
     {
         this->object = new ImplPersistentTaskBufferBlasTlas(device, info);
@@ -548,7 +548,7 @@ namespace daxa
             .latest_access = impl.latest_access,
         };
     }
-    
+
     auto TaskBuffer::is_owning() const -> bool
     {
         auto const & impl = *r_cast<ImplPersistentTaskBufferBlasTlas const *>(this->object);
@@ -586,10 +586,9 @@ namespace daxa
             nullptr);
     }
 
-    // --- TaskBuffer End --- 
+    // --- TaskBuffer End ---
 
-
-    // --- TaskBlas --- 
+    // --- TaskBlas ---
 
     TaskBlas::TaskBlas(TaskBlasInfo const & info)
     {
@@ -653,10 +652,9 @@ namespace daxa
             nullptr);
     }
 
-    // --- TaskBlas End --- 
+    // --- TaskBlas End ---
 
-
-    // --- TaskTlas --- 
+    // --- TaskTlas ---
 
     TaskTlas::TaskTlas(TaskTlasInfo const & info)
     {
@@ -720,7 +718,7 @@ namespace daxa
             nullptr);
     }
 
-    // --- TaskTlas End --- 
+    // --- TaskTlas End ---
 
     TaskImage::TaskImage(TaskImageInfo const & a_info)
     {
@@ -832,8 +830,8 @@ namespace daxa
         impl.global_buffer_infos.emplace_back(PermIndepTaskBufferInfo{
             .task_buffer_data = PermIndepTaskBufferInfo::Persistent{
                 .buffer_blas_tlas = buffer,
-                },
-            });
+            },
+        });
         impl.persistent_buffer_index_to_local_index[buffer.view().index] = task_buffer_id.index;
         impl.buffer_name_to_id[buffer.info().name] = task_buffer_id;
     }
@@ -855,8 +853,8 @@ namespace daxa
         impl.global_buffer_infos.emplace_back(PermIndepTaskBufferInfo{
             .task_buffer_data = PermIndepTaskBufferInfo::Persistent{
                 .buffer_blas_tlas = blas,
-                },
-            });
+            },
+        });
         impl.persistent_buffer_index_to_local_index[blas.view().index] = task_blas_id.index;
         impl.blas_name_to_id[blas.info().name] = task_blas_id;
     }
@@ -878,8 +876,8 @@ namespace daxa
         impl.global_buffer_infos.emplace_back(PermIndepTaskBufferInfo{
             .task_buffer_data = PermIndepTaskBufferInfo::Persistent{
                 .buffer_blas_tlas = tlas,
-                },
-            });
+            },
+        });
         impl.persistent_buffer_index_to_local_index[tlas.view().index] = task_tlas_id.index;
         impl.tlas_name_to_id[tlas.info().name] = task_tlas_id;
     }
@@ -1216,7 +1214,7 @@ namespace daxa
                 continue;
             }
             auto const & runtime_ids = impl.global_buffer_infos.at(local_buffer_i).get_persistent().actual_ids;
-            std::visit([&](auto const & runtime_ids){
+            std::visit([&](auto const & runtime_ids) {
                 DAXA_DBG_ASSERT_TRUE_M(
                     !runtime_ids.empty(),
                     fmt::format(
@@ -1321,7 +1319,7 @@ namespace daxa
                 if constexpr (std::is_same_v<std::decay_t<decltype(attach)>, TaskTlasAttachmentInfo>)
                 {
                     TaskTlasAttachmentInfo const & tlas_attach = attach;
-                    if(tlas_attach.shader_as_address)
+                    if (tlas_attach.shader_as_address)
                     {
                         upalign(sizeof(DeviceAddress));
                         TlasId const tlas_id = attach.ids[0];
@@ -1330,7 +1328,7 @@ namespace daxa
                         std::memcpy(attachment_shader_blob.data() + shader_byte_blob_offset, &mini_blob, sizeof(DeviceAddress));
                         shader_byte_blob_offset += sizeof(DeviceAddress);
                     }
-                    else 
+                    else
                     {
                         upalign(sizeof(daxa_TlasId));
                         TlasId const tlas_id = tlas_attach.ids[0];
@@ -2979,7 +2977,7 @@ namespace daxa
                                 .dst_access = split_barrier.dst_access,
                             });
                             tl_split_barrier_wait_infos.push_back(EventWaitInfo{
-                                .memory_barriers = std::span{&tl_memory_barrier_infos.back(), 1},
+                                .memory_barriers = daxa::Span<daxa::MemoryBarrierInfo const>{&tl_memory_barrier_infos.back(), 1},
                                 .event = split_barrier.split_barrier_state,
                             });
                         }
@@ -3000,7 +2998,7 @@ namespace daxa
                             usize const img_bar_vec_end_size = tl_image_barrier_infos.size();
                             usize const img_bar_count = img_bar_vec_end_size - img_bar_vec_start_size;
                             tl_split_barrier_wait_infos.push_back(EventWaitInfo{
-                                .image_barriers = std::span{tl_image_barrier_infos.data() + img_bar_vec_start_size, img_bar_count},
+                                .image_barriers = daxa::Span<daxa::ImageMemoryBarrierInfo const>{tl_image_barrier_infos.data() + img_bar_vec_start_size, img_bar_count},
                                 .event = split_barrier.split_barrier_state,
                             });
                         }
@@ -3044,7 +3042,7 @@ namespace daxa
                                 .dst_access = task_split_barrier.dst_access,
                             };
                             impl_runtime.recorder.signal_event({
-                                .memory_barriers = std::span{&memory_barrier, 1},
+                                .memory_barriers = daxa::Span<daxa::MemoryBarrierInfo const>{&memory_barrier, 1},
                                 .event = task_split_barrier.split_barrier_state,
                             });
                         }
@@ -3250,7 +3248,7 @@ namespace daxa
             {
                 auto const & global_buffer = global_buffer_infos.at(buffer_info_idx);
                 PerPermTaskBuffer const & perm_buffer = permutation.buffer_infos.at(buffer_info_idx);
-                if (!global_buffer.is_persistent() && 
+                if (!global_buffer.is_persistent() &&
                     perm_buffer.valid)
                 {
                     if (auto const * id = std::get_if<BufferId>(&perm_buffer.actual_id))

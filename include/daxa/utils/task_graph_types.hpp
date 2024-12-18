@@ -14,6 +14,7 @@
 #include <cstring>
 #include <type_traits>
 #include <span>
+#include <algorithm>
 
 #include <daxa/core.hpp>
 #include <daxa/device.hpp>

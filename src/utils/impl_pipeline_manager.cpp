@@ -131,6 +131,7 @@ static constexpr TBuiltInResource DAXA_DEFAULT_BUILTIN_RESOURCE = {
 #include <sstream>
 #include <iostream>
 #include <string>
+#include <algorithm>
 // for std::hash<std::string>
 #include <unordered_map>
 

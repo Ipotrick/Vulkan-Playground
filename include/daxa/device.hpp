@@ -371,16 +371,16 @@ namespace daxa
     {
         Queue queue = daxa::QUEUE_MAIN;
         PipelineStageFlags wait_stages = {};
-        std::span<ExecutableCommandList const> command_lists = {};
-        std::span<BinarySemaphore const> wait_binary_semaphores = {};
-        std::span<BinarySemaphore const> signal_binary_semaphores = {};
-        std::span<std::pair<TimelineSemaphore, u64> const> wait_timeline_semaphores = {};
-        std::span<std::pair<TimelineSemaphore, u64> const> signal_timeline_semaphores = {};
+        daxa::Span<ExecutableCommandList const> command_lists = {};
+        daxa::Span<BinarySemaphore const> wait_binary_semaphores = {};
+        daxa::Span<BinarySemaphore const> signal_binary_semaphores = {};
+        daxa::Span<std::pair<TimelineSemaphore, u64> const> wait_timeline_semaphores = {};
+        daxa::Span<std::pair<TimelineSemaphore, u64> const> signal_timeline_semaphores = {};
     };
 
     struct PresentInfo
     {
-        std::span<BinarySemaphore const> wait_binary_semaphores = {};
+        daxa::Span<BinarySemaphore const> wait_binary_semaphores = {};
         Swapchain swapchain;
         Queue queue = QUEUE_MAIN;
     };

@@ -9,6 +9,7 @@ using namespace std::chrono_literals;
 
 #include <daxa/utils/pipeline_manager.hpp>
 
+#include <daxa/utils/task_graph.hpp>
 #include <daxa/utils/imgui.hpp>
 #include <imgui_impl_glfw.h>
 

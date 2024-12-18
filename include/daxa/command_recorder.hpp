@@ -227,7 +227,7 @@ namespace daxa
 
     struct WaitEventInfo
     {
-        std::span<Event const> events = {};
+        daxa::Span<Event const> events = {};
     };
 
     struct WriteTimestampInfo
@@ -275,8 +275,8 @@ namespace daxa
 
     struct BuildAccelerationStructuresInfo
     {
-        std::span<TlasBuildInfo const> tlas_build_infos = {};
-        std::span<BlasBuildInfo const> blas_build_infos = {};
+        daxa::Span<TlasBuildInfo const> tlas_build_infos = {};
+        daxa::Span<BlasBuildInfo const> blas_build_infos = {};
     };
 
     struct DAXA_EXPORT_CXX ExecutableCommandList : ManagedPtr<ExecutableCommandList, daxa_ExecutableCommandList>
@@ -387,7 +387,7 @@ namespace daxa
         /// @param info parameters.
         void pipeline_barrier_image_transition(ImageMemoryBarrierInfo const & info);
         void signal_event(EventSignalInfo const & info);
-        void wait_events(std::span<EventWaitInfo const> const & infos);
+        void wait_events(daxa::Span<EventWaitInfo const> const & infos);
         void wait_event(EventWaitInfo const & info);
         void reset_event(ResetEventInfo const & info);
 

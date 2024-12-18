@@ -97,8 +97,8 @@ namespace daxa
 
     struct EventSignalInfo
     {
-        std::span<MemoryBarrierInfo const> memory_barriers = {};
-        std::span<ImageMemoryBarrierInfo const> image_barriers = {};
+        daxa::Span<MemoryBarrierInfo const> memory_barriers = {};
+        daxa::Span<ImageMemoryBarrierInfo const> image_barriers = {};
         Event & event;
     };
 

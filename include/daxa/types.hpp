@@ -94,6 +94,9 @@ namespace daxa
     struct NoneT
     {
     };
+#if defined(None)
+#undef None
+#endif
     static inline constexpr NoneT None = NoneT{};
 
     template <typename T>
@@ -190,11 +193,12 @@ namespace daxa
         [[nodiscard]] auto at(FixedListSizeT i) -> T &
         {
             DAXA_DBG_ASSERT_TRUE_M(i < m_size, "INDEX OUT OF RANGE");
-            return this->m_data.at(i);
+            return this->m_data[i];
         }
         [[nodiscard]] auto at(FixedListSizeT i) const -> T const &
         {
-            return this->m_data.at(i);
+            DAXA_DBG_ASSERT_TRUE_M(i < m_size, "INDEX OUT OF RANGE");
+            return this->m_data[i];
         }
         [[nodiscard]] auto operator[](FixedListSizeT i) -> T &
         {
@@ -262,6 +266,16 @@ namespace daxa
         Span(std::array<T2, IN_SIZE> const & in) : m_data{in.data()}, m_size{in.size()}
         {
         }
+        template <typename T2>
+            requires std::same_as<T2, std::remove_cv_t<T>>
+        Span(std::vector<T2> const & in) : m_data{in.data()}, m_size{in.size()}
+        {
+        }
+        template <typename T2>
+            requires std::same_as<T2, std::remove_cv_t<T>>
+        Span(std::span<T2> const & in) : m_data{in.data()}, m_size{in.size()}
+        {
+        }
         [[nodiscard]] auto at(usize i) -> T &
         {
             DAXA_DBG_ASSERT_TRUE_M(i < m_size, "INDEX OUT OF RANGE");
@@ -269,7 +283,8 @@ namespace daxa
         }
         [[nodiscard]] auto at(usize i) const -> T const &
         {
-            return this->m_data.at(i);
+            DAXA_DBG_ASSERT_TRUE_M(i < m_size, "INDEX OUT OF RANGE");
+            return this->m_data[i];
         }
         [[nodiscard]] auto operator[](usize i) -> T &
         {
@@ -285,11 +300,19 @@ namespace daxa
         }
         [[nodiscard]] auto data() const -> T const *
         {
-            return this->m_data.data();
+            return this->m_data;
         }
         [[nodiscard]] auto data() -> T *
         {
-            return this->m_data.data();
+            return this->m_data;
+        }
+        [[nodiscard]] auto begin() -> T *
+        {
+            return this->m_data;
+        }
+        [[nodiscard]] auto end() -> T *
+        {
+            return this->m_data + this->m_size;
         }
         [[nodiscard]] auto empty() const -> bool
         {
@@ -302,7 +325,7 @@ namespace daxa
         }
         [[nodiscard]] auto span() const -> std::span<T const>
         {
-            return {this->m_data.data(), static_cast<usize>(this->m_size)};
+            return {this->m_data, static_cast<usize>(this->m_size)};
         }
     };
 

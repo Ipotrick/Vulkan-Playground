@@ -70,8 +70,8 @@ auto main() -> int
     // The device info contains explicit data.
     // These are settings of the choosen gpu, what resource limits, explicit features, name etc you want for the device.
     daxa::DeviceInfo2 device_info = {
-        .max_allowed_buffers = 1024,
         .explicit_features = {},
+        .max_allowed_buffers = 1024,
         .name = "my device",
     };
 

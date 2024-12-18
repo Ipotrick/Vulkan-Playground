@@ -199,7 +199,7 @@ namespace daxa
         return ret;
     }
 
-    auto Instance::choose_device(ImplicitFeatureFlags desired_features, DeviceInfo2 const& p_info) -> DeviceInfo2
+    auto Instance::choose_device(ImplicitFeatureFlags desired_features, DeviceInfo2 const & p_info) -> DeviceInfo2
     {
         auto info = p_info;
         check_result(daxa_instance_choose_device(
@@ -209,12 +209,12 @@ namespace daxa
                      "failed to find fitting device");
         return info;
     }
-    
+
     auto Instance::list_devices_properties() -> std::span<DeviceProperties const>
     {
         DeviceProperties const * data = {};
         u32 size = {};
-        daxa_instance_list_devices_properties(r_cast<daxa_Instance>(this->object), r_cast<daxa_DeviceProperties const**>(&data), &size);
+        daxa_instance_list_devices_properties(r_cast<daxa_Instance>(this->object), r_cast<daxa_DeviceProperties const **>(&data), &size);
         return {data, size};
     }
 
@@ -1088,7 +1088,7 @@ namespace daxa
     DAXA_DECL_COMMAND_LIST_WRAPPER_CHECK_RESULT(TransferCommandRecorder, pipeline_barrier_image_transition, ImageMemoryBarrierInfo)
     DAXA_DECL_COMMAND_LIST_WRAPPER(TransferCommandRecorder, signal_event, EventSignalInfo)
 
-    void TransferCommandRecorder::wait_events(std::span<EventWaitInfo const> const & infos)
+    void TransferCommandRecorder::wait_events(daxa::Span<EventWaitInfo const> const & infos)
     {
         daxa_cmd_wait_events(
             this->internal, r_cast<daxa_EventSignalInfo const *>(infos.data()), infos.size());
