@@ -186,13 +186,14 @@ auto daxa_instance_create_device(daxa_Instance self, daxa_DeviceInfo const * leg
             .rating = rating,
         });
     }
-    
+
     if (rated_devices.empty())
     {
         _DAXA_RETURN_IF_ERROR(DAXA_RESULT_NO_SUITABLE_DEVICE_FOUND, DAXA_RESULT_NO_SUITABLE_DEVICE_FOUND)
     }
 
-    std::sort(rated_devices.begin(), rated_devices.end(), [](auto a, auto b){ return a.rating > b.rating; });
+    std::sort(rated_devices.begin(), rated_devices.end(), [](auto a, auto b)
+              { return a.rating > b.rating; });
 
     u32 chosen_device = rated_devices[0].physical_device_index;
     info.physical_device_index = chosen_device;

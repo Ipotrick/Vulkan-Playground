@@ -320,7 +320,8 @@ auto daxa_ImplSwapchain::recreate() -> daxa_Result
         &this->vk_swapchain));
     _DAXA_RETURN_IF_ERROR(result, result)
 
-    defer{
+    defer
+    {
         if (result != DAXA_RESULT_SUCCESS)
         {
             if (this->vk_swapchain)
@@ -341,11 +342,11 @@ auto daxa_ImplSwapchain::recreate() -> daxa_Result
     std::vector<VkImage> swapchain_images = {};
     result = static_cast<daxa_Result>(vkGetSwapchainImagesKHR(this->device->vk_device, vk_swapchain, &image_count, nullptr));
     _DAXA_RETURN_IF_ERROR(result, result)
-    
+
     swapchain_images.resize(image_count);
     result = static_cast<daxa_Result>(vkGetSwapchainImagesKHR(this->device->vk_device, vk_swapchain, &image_count, swapchain_images.data()));
     _DAXA_RETURN_IF_ERROR(result, result)
-    
+
     this->images.resize(image_count);
     for (u32 i = 0; i < images.size(); i++)
     {
@@ -358,7 +359,7 @@ auto daxa_ImplSwapchain::recreate() -> daxa_Result
         ImageId id = {};
         auto result = this->device->new_swapchain_image(swapchain_images[i], vk_surface_format.format, i, usage, image_info, &id);
         _DAXA_RETURN_IF_ERROR(result, result)
-        
+
         this->images[i] = id;
     }
 
@@ -378,7 +379,7 @@ auto daxa_ImplSwapchain::recreate() -> daxa_Result
     {
         vkDestroySwapchainKHR(this->device->vk_device, old_swapchain, nullptr);
     }
-    
+
     return DAXA_RESULT_SUCCESS;
 }
 
@@ -433,7 +434,7 @@ auto daxa_ImplSwapchain::recreate_surface() -> daxa_Result
 void daxa_ImplSwapchain::zero_ref_callback(ImplHandle const * handle)
 {
     _DAXA_TEST_PRINT("      daxa_ImplSwapchain::zero_ref_callback\n");
-    auto *self = rc_cast<daxa_Swapchain>(handle);
+    auto * self = rc_cast<daxa_Swapchain>(handle);
     if (self->device != nullptr)
     {
         self->full_cleanup();

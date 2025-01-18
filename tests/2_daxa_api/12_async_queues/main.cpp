@@ -137,8 +137,8 @@ namespace tests
             rec.pipeline_barrier({daxa::AccessConsts::TRANSFER_WRITE, daxa::AccessConsts::TRANSFER_READ_WRITE});
             rec.copy_buffer_to_buffer({
                 .src_buffer = buffer,
-                .src_offset = sizeof(daxa::u32) * 0,
                 .dst_buffer = buffer,
+                .src_offset = sizeof(daxa::u32) * 0,
                 .dst_offset = sizeof(daxa::u32) * 1,
                 .size = sizeof(daxa::u32),
             });
@@ -160,8 +160,8 @@ namespace tests
             rec.pipeline_barrier({daxa::AccessConsts::TRANSFER_READ_WRITE, daxa::AccessConsts::TRANSFER_READ_WRITE});
             rec.copy_buffer_to_buffer({
                 .src_buffer = buffer,
-                .src_offset = sizeof(daxa::u32) * 1,
                 .dst_buffer = buffer,
+                .src_offset = sizeof(daxa::u32) * 1,
                 .dst_offset = sizeof(daxa::u32) * 2,
                 .size = sizeof(daxa::u32),
             });
@@ -170,8 +170,8 @@ namespace tests
             device.submit_commands({
                 .queue = daxa::QUEUE_COMPUTE_1,
                 .command_lists = std::array{commands},
-                .signal_binary_semaphores = std::array{sema1},
                 .wait_binary_semaphores = std::array{sema0},
+                .signal_binary_semaphores = std::array{sema1},
             });
         }  
         
@@ -185,8 +185,8 @@ namespace tests
             rec.pipeline_barrier({daxa::AccessConsts::TRANSFER_READ_WRITE, daxa::AccessConsts::TRANSFER_READ_WRITE});
             rec.copy_buffer_to_buffer({
                 .src_buffer = buffer,
-                .src_offset = sizeof(daxa::u32) * 2,
                 .dst_buffer = buffer,
+                .src_offset = sizeof(daxa::u32) * 2,
                 .dst_offset = sizeof(daxa::u32) * 3,
                 .size = sizeof(daxa::u32),
             });

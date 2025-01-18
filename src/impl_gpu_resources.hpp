@@ -247,12 +247,12 @@ namespace daxa
         std::array<VkPipelineLayout, PIPELINE_LAYOUT_COUNT> pipeline_layouts = {};
 
         auto initialize(
-            u32 max_buffers, 
-            u32 max_images, 
-            u32 max_samplers, 
+            u32 max_buffers,
+            u32 max_images,
+            u32 max_samplers,
             u32 max_acceleration_structures,
-            VkDevice device, 
-            VkBuffer device_address_buffer, 
+            VkDevice device,
+            VkBuffer device_address_buffer,
             PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectNameEXT) -> daxa_Result;
         void cleanup(VkDevice device);
     };

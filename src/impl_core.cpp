@@ -266,7 +266,7 @@ auto construct_daxa_physical_device_properties(VkPhysicalDevice physical_device)
     {
         ret.transfer_queue_count = 0u;
     }
-    
+
     return ret;
 }
 
@@ -330,8 +330,9 @@ void daxa_as_build_info_to_vk(
             .pNext = nullptr,
             .type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
             .flags = static_cast<VkBuildAccelerationStructureFlagsKHR>(info.flags),
-            .mode = info.update ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR  : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
-            .srcAccelerationStructure = info.src_tlas.value != 0
+            .mode = info.update ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+            .srcAccelerationStructure =
+                info.src_tlas.value != 0
                     ? device->slot(info.src_tlas).vk_acceleration_structure
                     : nullptr,
             .dstAccelerationStructure =
@@ -394,8 +395,9 @@ void daxa_as_build_info_to_vk(
             .pNext = nullptr,
             .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
             .flags = static_cast<VkBuildAccelerationStructureFlagsKHR>(info.flags),
-            .mode = info.update ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR  : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
-            .srcAccelerationStructure = info.src_blas.value != 0
+            .mode = info.update ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+            .srcAccelerationStructure =
+                info.src_blas.value != 0
                     ? device->slot(info.src_blas).vk_acceleration_structure
                     : nullptr,
             .dstAccelerationStructure =

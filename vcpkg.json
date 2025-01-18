@@ -7,7 +7,6 @@
     "vulkan-memory-allocator",
     "vulkan-headers",
     "vulkan",
-    "fmt",
     {
       "name": "wayland",
       "default-features": false,

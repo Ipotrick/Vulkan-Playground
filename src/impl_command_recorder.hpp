@@ -31,7 +31,7 @@ struct CommandPoolPool
     void cleanup(daxa_Device device);
 
     std::vector<VkCommandPool> pools_and_buffers = {};
-    u32 queue_family_index = { ~0u };
+    u32 queue_family_index = {~0u};
     std::mutex mtx = {};
 };
 
@@ -70,13 +70,15 @@ struct daxa_ImplCommandRecorder final : ImplHandle
     usize image_barrier_batch_count = {};
     usize memory_barrier_batch_count = {};
     usize split_barrier_batch_count = {};
-    struct NoPipeline {};
+    struct NoPipeline
+    {
+    };
     Variant<NoPipeline, daxa_ComputePipeline, daxa_RasterPipeline, daxa_RayTracingPipeline> current_pipeline = NoPipeline{};
 
     ExecutableCommandListData current_command_data = {};
 
     auto generate_new_current_command_data() -> daxa_Result;
-    
+
     static void zero_ref_callback(ImplHandle const * handle);
 };
 

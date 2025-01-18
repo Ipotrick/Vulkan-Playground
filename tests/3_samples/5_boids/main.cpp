@@ -13,24 +13,24 @@ using Clock = std::chrono::high_resolution_clock;
 
 // Update task:
 
-    DAXA_DECL_TASK_HEAD_BEGIN(UpdateBoids)
-    DAXA_TH_BUFFER(COMPUTE_SHADER_READ_WRITE, current)
-    DAXA_TH_BUFFER(COMPUTE_SHADER_READ, previous)
-    DAXA_DECL_TASK_HEAD_END
-    struct UpdateBoidsTask : UpdateBoids::Task
+DAXA_DECL_TASK_HEAD_BEGIN(UpdateBoids)
+DAXA_TH_BUFFER(COMPUTE_SHADER_READ_WRITE, current)
+DAXA_TH_BUFFER(COMPUTE_SHADER_READ, previous)
+DAXA_DECL_TASK_HEAD_END
+struct UpdateBoidsTask : UpdateBoids::Task
+{
+    AttachmentViews views = {};
+    std::shared_ptr<daxa::ComputePipeline> update_boids_pipeline = {};
+    void callback(daxa::TaskInterface ti)
     {
-        AttachmentViews views = {};
-        std::shared_ptr<daxa::ComputePipeline> update_boids_pipeline = {};
-        void callback(daxa::TaskInterface ti)
-        {
-            ti.recorder.set_pipeline(*update_boids_pipeline);
-            ti.recorder.push_constant(UpdateBoidsPushConstant{
-                .boids_buffer = ti.device_address(AT.current).value(),
-                .old_boids_buffer = ti.device_address(AT.previous).value(),
-            });
-            ti.recorder.dispatch({(MAX_BOIDS + 63) / 64, 1, 1});
-        }
-    };
+        ti.recorder.set_pipeline(*update_boids_pipeline);
+        ti.recorder.push_constant(UpdateBoidsPushConstant{
+            .boids_buffer = ti.device_address(AT.current).value(),
+            .old_boids_buffer = ti.device_address(AT.previous).value(),
+        });
+        ti.recorder.dispatch({(MAX_BOIDS + 63) / 64, 1, 1});
+    }
+};
 
 struct Test
 {
@@ -40,7 +40,7 @@ struct Test
 struct App : AppWindow<App>
 {
     daxa::Instance daxa_ctx = daxa::create_instance({});
-    daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({},{}));
+    daxa::Device device = daxa_ctx.create_device_2(daxa_ctx.choose_device({}, {}));
 
     daxa::Swapchain swapchain = device.create_swapchain({
         .native_window = get_native_handle(),
@@ -231,15 +231,15 @@ struct App : AppWindow<App>
         using namespace UpdateBoids;
         new_task_graph.add_task(UpdateBoidsTask{
             .views = std::array{
-                daxa::attachment_view( UpdateBoids::AT.current, task_boids_current ),
-                daxa::attachment_view( UpdateBoids::AT.previous, task_boids_old ),
+                daxa::attachment_view(UpdateBoids::AT.current, task_boids_current),
+                daxa::attachment_view(UpdateBoids::AT.previous, task_boids_old),
             },
             .update_boids_pipeline = update_boids_pipeline,
         });
         new_task_graph.add_task(DrawBoidsTask{
             .views = std::array{
-                daxa::attachment_view( DrawBoidsTask::boids, task_boids_current ),
-                daxa::attachment_view( DrawBoidsTask::render_image, task_swapchain_image ),
+                daxa::attachment_view(DrawBoidsTask::boids, task_boids_current),
+                daxa::attachment_view(DrawBoidsTask::render_image, task_swapchain_image),
             },
             .draw_pipeline = draw_pipeline,
             .size_x = &size_x,

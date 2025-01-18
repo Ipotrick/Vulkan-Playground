@@ -184,16 +184,16 @@ namespace daxa
         std::variant<
             std::vector<BufferId>,
             std::vector<BlasId>,
-            std::vector<TlasId>
-        > actual_ids = {};
+            std::vector<TlasId>>
+            actual_ids = {};
 
         Access latest_access = {};
 
         std::variant<
             TaskBufferInfo,
             TaskBlasInfo,
-            TaskTlasInfo
-        > info = {};
+            TaskTlasInfo>
+            info = {};
 
         Optional<Device> owned_buffer_device = {};
         Optional<BufferInfo> owned_buffer_info = {};
@@ -237,13 +237,15 @@ namespace daxa
             auto get() -> ImplPersistentTaskBufferBlasTlas &
             {
                 ImplPersistentTaskBufferBlasTlas * ret = {};
-                std::visit([&](auto & ptr){ ret = ptr.get();}, buffer_blas_tlas);
+                std::visit([&](auto & ptr)
+                           { ret = ptr.get(); }, buffer_blas_tlas);
                 return *ret;
             }
             auto get() const -> ImplPersistentTaskBufferBlasTlas const &
             {
-                ImplPersistentTaskBufferBlasTlas const* ret = {};
-                std::visit([&](auto & ptr){ ret = ptr.get();}, buffer_blas_tlas);
+                ImplPersistentTaskBufferBlasTlas const * ret = {};
+                std::visit([&](auto & ptr)
+                           { ret = ptr.get(); }, buffer_blas_tlas);
                 return *ret;
             }
         };
@@ -259,7 +261,8 @@ namespace daxa
             if (is_persistent())
             {
                 std::string_view ret = {};
-                std::visit([&](auto const & info){ ret = info.name; }, get_persistent().info);
+                std::visit([&](auto const & info)
+                           { ret = info.name; }, get_persistent().info);
                 return ret;
             }
             else
@@ -380,7 +383,7 @@ namespace daxa
         u32 prev_frame_permutation_index = {};
         std::stringstream debug_string_stream = {};
 
-        template<typename TaskIdT>
+        template <typename TaskIdT>
         auto get_actual_buffer_blas_tlas(TaskIdT id, TaskGraphPermutation const & perm) const -> std::span<typename TaskIdT::ID_T const>
         {
             static constexpr std::array<typename TaskIdT::ID_T, 64> NULL_ID_ARRAY = {};
@@ -407,8 +410,7 @@ namespace daxa
         using GetActualIdsVariant = std::variant<
             std::span<BufferId const>,
             std::span<BlasId const>,
-            std::span<TlasId const>
-        >;
+            std::span<TlasId const>>;
         auto get_actual_buffer_blas_tlas_generic(TaskGPUResourceView id, TaskGraphPermutation const & perm) const -> GetActualIdsVariant
         {
             static constexpr std::array<BufferId const, 64> NULL_ID_ARRAY = {};
@@ -420,9 +422,8 @@ namespace daxa
             if (global_buffer.is_persistent())
             {
                 GetActualIdsVariant ret = std::span{NULL_ID_ARRAY.data(), NULL_ID_ARRAY.size()};
-                std::visit([&](auto const & ids){
-                    ret = std::span{ids.data(), ids.size()};
-                }, global_buffer.get_persistent().actual_ids);
+                std::visit([&](auto const & ids)
+                           { ret = std::span{ids.data(), ids.size()}; }, global_buffer.get_persistent().actual_ids);
                 return ret;
             }
             else
@@ -430,9 +431,8 @@ namespace daxa
                 auto const & perm_buffer = perm.buffer_infos.at(id.index);
                 DAXA_DBG_ASSERT_TRUE_M(perm_buffer.valid, "Can not get actual buffer - buffer is not valid in this permutation");
                 GetActualIdsVariant ret = std::span{NULL_ID_ARRAY.data(), NULL_ID_ARRAY.size()};
-                std::visit([&](auto const & id){
-                    ret = std::span{&id, 1};
-                }, perm_buffer.actual_id);
+                std::visit([&](auto const & id)
+                           { ret = std::span{&id, 1}; }, perm_buffer.actual_id);
                 return ret;
             }
         }
@@ -457,16 +457,17 @@ namespace daxa
             }
         }
 
-        template<typename TaskIdT>
+        template <typename TaskIdT>
         auto buffer_blas_tlas_id_to_local_id(TaskIdT id) const -> TaskIdT
         {
-            if (id.is_null()) return id;
+            if (id.is_null())
+                return id;
             DAXA_DBG_ASSERT_TRUE_M(!id.is_empty(), "Detected empty task buffer id. Please make sure to only use initialized task buffer ids.");
             if (id.is_persistent())
             {
                 DAXA_DBG_ASSERT_TRUE_M(
                     persistent_buffer_index_to_local_index.contains(id.index),
-                    fmt::format("Detected invalid access of persistent task buffer id ({}) in task graph \"{}\"; "
+                    std::format("Detected invalid access of persistent task buffer id ({}) in task graph \"{}\"; "
                                 "please make sure to declare persistent resource use to each task graph that uses this buffer with the function use_persistent_buffer!",
                                 id.index, info.name));
                 return TaskIdT{{.task_graph_index = this->unique_index, .index = persistent_buffer_index_to_local_index.at(id.index)}};
@@ -475,7 +476,7 @@ namespace daxa
             {
                 DAXA_DBG_ASSERT_TRUE_M(
                     id.task_graph_index == this->unique_index,
-                    fmt::format("Detected invalid access of transient task buffer id ({}) in task graph \"{}\"; "
+                    std::format("Detected invalid access of transient task buffer id ({}) in task graph \"{}\"; "
                                 "please make sure that you only use transient buffers within the list they are created in!",
                                 id.index, info.name));
                 return TaskIdT{{.task_graph_index = this->unique_index, .index = id.index}};

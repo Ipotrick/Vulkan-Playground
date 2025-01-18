@@ -1,7 +1,6 @@
 #include <daxa/daxa.hpp>
 #include <iostream>
 #include <chrono>
-#include <fmt/format.h>
 #include "../../0_common/shared.hpp"
 
 struct App

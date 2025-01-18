@@ -12,7 +12,7 @@
 #include <deque>
 #include <cstring>
 #include <memory>
-#include <fmt/format.h>
+#include <format>
 
 #if DAXA_VALIDATION
 #include <iostream>

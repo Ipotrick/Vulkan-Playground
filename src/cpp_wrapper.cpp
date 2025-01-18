@@ -6,7 +6,7 @@
 #include <chrono>
 #include <iostream>
 #include <utility>
-#include <fmt/format.h>
+#include <format>
 #include <bit>
 
 #include "impl_instance.hpp"
@@ -151,12 +151,14 @@ void check_result(daxa_Result result, char const * message, std::array<daxa_Resu
     }
     if (!result_allowed)
     {
-        std::cout << fmt::format(
+#if DAXA_VALIDATION
+        std::cout << std::format(
                          "[[DAXA ASSERT FAILURE]]: error code: {}({}), {}.\n\n",
                          daxa_result_to_string(result),
                          std::bit_cast<i32>(result),
                          message)
                   << std::flush;
+#endif
         throw std::runtime_error({});
     }
 }
@@ -295,43 +297,43 @@ namespace daxa
         return ret;
     }
 
-#define DAXA_DECL_GPU_RES_FN(Name, name)                                \
-    auto Device::create_##name(Name##Info const & info) -> Name##Id     \
-    {                                                                   \
-        Name##Id id = {};                                               \
-        check_result(                                                   \
-            daxa_dvc_create_##name(                                     \
-                r_cast<daxa_Device>(this->object),                      \
-                r_cast<daxa_##Name##Info const *>(&info),               \
-                r_cast<daxa_##Name##Id *>(&id)),                        \
-            "failed to create " #name);                                 \
-        return id;                                                      \
-    }                                                                   \
-    void Device::destroy_##name(Name##Id id)                            \
-    {                                                                   \
-        auto result = daxa_dvc_destroy_##name(                          \
-            r_cast<daxa_Device>(this->object),                          \
-            static_cast<daxa_##Name##Id>(id));                          \
-        check_result(result, "invalid resource id");                    \
-    }                                                                   \
-    auto Device::is_##name##_id_valid(Name##Id id) const -> bool        \
-    {                                                                   \
-        return daxa_dvc_is_##name##_valid(                              \
-            rc_cast<daxa_Device>(this->object),                         \
-            static_cast<daxa_##Name##Id>(id));                          \
-    }                                                                   \
-    auto Device::name##_info(Name##Id id) const -> Optional<Name##Info> \
-    {                                                                   \
-        Name##Info info = {};                                           \
-        auto result = daxa_dvc_info_##name(                             \
-            rc_cast<daxa_Device>(this->object),                         \
-            static_cast<daxa_##Name##Id>(id),                           \
-            r_cast<daxa_##Name##Info *>(&info));                        \
-        if (result == DAXA_RESULT_SUCCESS)                              \
-        {                                                               \
-            return {info};                                              \
-        }                                                               \
-        return {};                                                      \
+#define DAXA_DECL_GPU_RES_FN(Name, name)                              \
+    auto Device::create_##name(Name##Info const & info)->Name##Id     \
+    {                                                                 \
+        Name##Id id = {};                                             \
+        check_result(                                                 \
+            daxa_dvc_create_##name(                                   \
+                r_cast<daxa_Device>(this->object),                    \
+                r_cast<daxa_##Name##Info const *>(&info),             \
+                r_cast<daxa_##Name##Id *>(&id)),                      \
+            "failed to create " #name);                               \
+        return id;                                                    \
+    }                                                                 \
+    void Device::destroy_##name(Name##Id id)                          \
+    {                                                                 \
+        auto result = daxa_dvc_destroy_##name(                        \
+            r_cast<daxa_Device>(this->object),                        \
+            static_cast<daxa_##Name##Id>(id));                        \
+        check_result(result, "invalid resource id");                  \
+    }                                                                 \
+    auto Device::is_##name##_id_valid(Name##Id id) const->bool        \
+    {                                                                 \
+        return daxa_dvc_is_##name##_valid(                            \
+            rc_cast<daxa_Device>(this->object),                       \
+            static_cast<daxa_##Name##Id>(id));                        \
+    }                                                                 \
+    auto Device::name##_info(Name##Id id) const->Optional<Name##Info> \
+    {                                                                 \
+        Name##Info info = {};                                         \
+        auto result = daxa_dvc_info_##name(                           \
+            rc_cast<daxa_Device>(this->object),                       \
+            static_cast<daxa_##Name##Id>(id),                         \
+            r_cast<daxa_##Name##Info *>(&info));                      \
+        if (result == DAXA_RESULT_SUCCESS)                            \
+        {                                                             \
+            return {info};                                            \
+        }                                                             \
+        return {};                                                    \
     }
 
     auto Device::create_buffer_from_memory_block(MemoryBlockBufferInfo const & info) -> BufferId
@@ -446,7 +448,7 @@ namespace daxa
     }
 
 #define DAXA_DECL_DVC_CREATE_FN(Name, name)                        \
-    auto Device::create_##name(Name##Info const & info) -> Name    \
+    auto Device::create_##name(Name##Info const & info)->Name      \
     {                                                              \
         Name ret = {};                                             \
         check_result(daxa_dvc_create_##name(                       \
@@ -1208,12 +1210,12 @@ namespace daxa
 
     auto to_string(MemoryBarrierInfo const & info) -> std::string
     {
-        return fmt::format("access: ({}) -> ({})", to_string(info.src_access), to_string(info.dst_access));
+        return std::format("access: ({}) -> ({})", to_string(info.src_access), to_string(info.dst_access));
     }
 
     auto to_string(ImageMemoryBarrierInfo const & info) -> std::string
     {
-        return fmt::format("access: ({}) -> ({}), layout: ({}) -> ({}), slice: {}, id: {}",
+        return std::format("access: ({}) -> ({}), layout: ({}) -> ({}), slice: {}, id: {}",
                            to_string(info.src_access),
                            to_string(info.dst_access),
                            to_string(info.src_layout),
@@ -1614,7 +1616,7 @@ namespace daxa
 
     auto to_string(ImageMipArraySlice slice) -> std::string
     {
-        return fmt::format("mips: {}-{}, layers: {}-{}",
+        return std::format("mips: {}-{}, layers: {}-{}",
                            slice.base_mip_level,
                            slice.base_mip_level + slice.level_count - 1,
                            slice.base_array_layer,
@@ -1623,7 +1625,7 @@ namespace daxa
 
     auto to_string(ImageArraySlice slice) -> std::string
     {
-        return fmt::format("mip: {}, layers: {}-{}",
+        return std::format("mip: {}, layers: {}-{}",
                            slice.mip_level,
                            slice.base_array_layer,
                            slice.base_array_layer + slice.layer_count - 1);
@@ -1631,7 +1633,7 @@ namespace daxa
 
     auto to_string(ImageSlice slice) -> std::string
     {
-        return fmt::format(" mip: {}, layer: {}",
+        return std::format(" mip: {}, layer: {}",
                            slice.mip_level,
                            slice.array_layer);
     }
@@ -1846,7 +1848,7 @@ namespace daxa
 
     auto to_string(Access access) -> std::string
     {
-        return fmt::format("stages: {}, type: {}", to_string(access.stages), to_string(access.type));
+        return std::format("stages: {}, type: {}", to_string(access.stages), to_string(access.type));
     }
 
     auto to_string(QueueFamily family) -> std::string_view
@@ -1856,6 +1858,7 @@ namespace daxa
         case QueueFamily::MAIN: return "MAIN";
         case QueueFamily::COMPUTE: return "COMPUTE";
         case QueueFamily::TRANSFER: return "TRANSFER";
+        default: return "UNKNOWN";
         };
     }
 

@@ -14,7 +14,6 @@
 #include <cstring>
 #include <type_traits>
 #include <span>
-#include <algorithm>
 
 #include <daxa/core.hpp>
 #include <daxa/device.hpp>
@@ -28,6 +27,7 @@ namespace daxa
         READ,
         WRITE,
         READ_WRITE,
+        READ_WRITE_CONCURRENT,
         GRAPHICS_SHADER_READ,
         GRAPHICS_SHADER_WRITE,
         GRAPHICS_SHADER_READ_WRITE,
@@ -72,8 +72,10 @@ namespace daxa
         DRAW_INDIRECT_INFO_READ,
         TRANSFER_READ,
         TRANSFER_WRITE,
+        TRANSFER_READ_WRITE,
         HOST_TRANSFER_READ,
         HOST_TRANSFER_WRITE,
+        HOST_TRANSFER_READ_WRITE,
         ACCELERATION_STRUCTURE_BUILD_READ,
         ACCELERATION_STRUCTURE_BUILD_WRITE,
         ACCELERATION_STRUCTURE_BUILD_READ_WRITE,
@@ -317,13 +319,6 @@ namespace daxa
     template <typename T>
     concept TaskBufferBlasOrTlasIndexOrView = TaskBufferIndexOrView<T> || TaskBlasIndexOrView<T> || TaskTlasIndexOrView<T>;
 
-    template <typename T>
-    concept TaskAttachmentIndex =
-        std::is_same_v<T, TaskBufferAttachmentIndex> ||
-        std::is_same_v<T, TaskBlasAttachmentIndex> ||
-        std::is_same_v<T, TaskTlasAttachmentIndex> ||
-        std::is_same_v<T, TaskImageAttachmentIndex>;
-
     struct UndefinedAttachment
     {
     };
@@ -395,6 +390,13 @@ namespace daxa
         TaskHeadImageArrayType shader_array_type = {};
         TaskImageView view = {};
     };
+
+    template <typename T>
+    concept IsTaskResourceAttachment =
+        std::is_same_v<T, TaskBufferAttachment> ||
+        std::is_same_v<T, TaskBlasAttachment> ||
+        std::is_same_v<T, TaskTlasAttachment> ||
+        std::is_same_v<T, TaskImageAttachment>;
 
     struct TaskAttachment
     {
@@ -586,6 +588,7 @@ namespace daxa
         // optional:
         TransferMemoryPool * allocator = {};
         std::span<std::byte const> attachment_shader_blob = {};
+        std::string_view task_name = {};
 
         [[deprecated("Use AttachmentBlob(std::span<std::byte const>) constructor instead")]] void assign_attachment_shader_blob(std::span<std::byte> arr) const
         {
@@ -605,19 +608,19 @@ namespace daxa
         auto get(TaskImageView view) const -> TaskImageAttachmentInfo const &;
         auto get(usize index) const -> TaskAttachmentInfo const &;
 
-        auto info(TaskIndexOrView auto tresource, u32 array_index = 0)
+        auto info(TaskIndexOrView auto tresource, u32 array_index = 0) const
         {
             return this->device.info(this->get(tresource).ids[array_index]);
         }
-        auto image_view_info(TaskImageIndexOrView auto timage, u32 array_index = 0) -> Optional<ImageViewInfo>
+        auto image_view_info(TaskImageIndexOrView auto timage, u32 array_index = 0) const -> Optional<ImageViewInfo>
         {
             return this->device.image_view_info(this->get(timage).view_ids[array_index]);
         }
-        auto device_address(TaskBufferBlasOrTlasIndexOrView auto tresource, u32 array_index = 0) -> Optional<DeviceAddress>
+        auto device_address(TaskBufferBlasOrTlasIndexOrView auto tresource, u32 array_index = 0) const -> Optional<DeviceAddress>
         {
             return this->device.device_address(this->get(tresource).ids[array_index]);
         }
-        auto buffer_host_address(TaskBufferIndexOrView auto tbuffer, u32 array_index = 0) -> Optional<std::byte *>
+        auto buffer_host_address(TaskBufferIndexOrView auto tbuffer, u32 array_index = 0) const -> Optional<std::byte *>
         {
             return this->device.buffer_host_address(this->get(tbuffer).ids[array_index]);
         }
@@ -727,8 +730,8 @@ namespace daxa
     template <usize ATTACHMENT_COUNT, StringLiteral NAME>
     struct PartialTask : IPartialTask
     {
-        /// NOTE: Used to add attachments and declate named constant indices to the added attachment.
-        template <TaskAttachmentIndex IndexT>
+        /// NOTE: Used to add attachments and declare named constant indices to the added attachment.
+        template <IsTaskResourceAttachment IndexT>
         static auto add_attachment(IndexT const & attach) -> IndexT::INDEX_TYPE
         {
             declared_attachments.at(cur_attach_index) = attach;
@@ -790,20 +793,20 @@ namespace daxa
     ⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢈⡙⠓⠻⠶⠽⢮⣶⣥⣷⣭⣾⣥⣯⡵⠯⠼⠗⠛⠋⣉⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
     */
 
-#define DAXA_DECL_TASK_HEAD_BEGIN(HEAD_NAME)                                                    \
-    namespace HEAD_NAME                                                                         \
-    {                                                                                           \
-        static inline constexpr char NAME[] = #HEAD_NAME;                                       \
-        template <daxa::usize ATTACHMENT_COUNT>                                                 \
-        struct AttachmentsStruct                                                                \
-        {                                                                                       \
-            daxa::u32 declared_attachments_count = {};                                          \
+#define DAXA_DECL_TASK_HEAD_BEGIN(HEAD_NAME)                                              \
+    namespace HEAD_NAME                                                                   \
+    {                                                                                     \
+        static inline constexpr char NAME[] = #HEAD_NAME;                                 \
+        template <daxa::usize ATTACHMENT_COUNT>                                           \
+        struct AttachmentsStruct                                                          \
+        {                                                                                 \
+            daxa::u32 declared_attachments_count = {};                                    \
             std::array<daxa::TaskAttachment, ATTACHMENT_COUNT> declared_attachments = {}; \
-                                                                                                \
-            auto constexpr add_attachment(auto attachment) -> daxa::u32                         \
-            {                                                                                   \
+                                                                                          \
+            auto constexpr add_attachment(auto attachment) -> daxa::u32                   \
+            {                                                                             \
                 declared_attachments.at(declared_attachments_count) = attachment;         \
-                return declared_attachments_count++;                                            \
+                return declared_attachments_count++;                                      \
             }
 
 #define _DAXA_HELPER_TH_BUFFER(NAME, TASK_ACCESS, ...)     \
@@ -861,7 +864,7 @@ namespace daxa
         static auto name() -> std::string_view { return std::string_view{NAME}; }                                    \
         static auto attachments() -> std::span<daxa::TaskAttachment const>                                           \
         {                                                                                                            \
-            return AT.declared_attachments;                                                                    \
+            return AT.declared_attachments;                                                                          \
         }                                                                                                            \
     };                                                                                                               \
     }                                                                                                                \

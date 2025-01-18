@@ -52,6 +52,10 @@ auto daxa_timeline_query_pool_info(daxa_TimelineQueryPool self) -> daxa_Timeline
 
 auto daxa_timeline_query_pool_query_results(daxa_TimelineQueryPool self, u32 start, u32 count, u64 * out_results) -> daxa_Result
 {
+    if (count == 0)
+    {
+        return DAXA_RESULT_SUCCESS;
+    }
     if (!(start + count - 1 < self->info.query_count))
     {
         return DAXA_RESULT_RANGE_OUT_OF_BOUNDS;

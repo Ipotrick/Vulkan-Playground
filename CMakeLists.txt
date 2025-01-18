@@ -104,7 +104,6 @@ target_compile_features(daxa PUBLIC cxx_std_20)
 
 find_package(Vulkan REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
-find_package(fmt CONFIG REQUIRED)
 
 include(GNUInstallDirs)
 
@@ -170,10 +169,12 @@ if(DAXA_ENABLE_UTILS_PIPELINE_MANAGER_SLANG)
     if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
         # NOTE(grundlett): Really hacky. It appears there's no way to create plugin dll dependencies...
         # see https://gitlab.kitware.com/cmake/cmake/-/issues/22993
-        # add_custom_command(TARGET daxa POST_BUILD
-        #     COMMAND ${CMAKE_COMMAND} -E copy ${SLANG_DLL} $<TARGET_FILE_DIR:daxa>
-        #     COMMAND ${CMAKE_COMMAND} -E copy ${SLANG_GLSLANG_DLL} $<TARGET_FILE_DIR:daxa>
-        # )
+        find_program(SLANG_DLL slang.dll)
+        find_program(SLANG_GLSLANG_DLL slang-glslang.dll)
+        add_custom_command(TARGET daxa POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy ${SLANG_DLL} $<TARGET_FILE_DIR:daxa>
+            COMMAND ${CMAKE_COMMAND} -E copy ${SLANG_GLSLANG_DLL} $<TARGET_FILE_DIR:daxa>
+        )
     else()
         # TODO(grundlett) ...
         # find_file(SLANG_DLL libslang.so)
@@ -202,7 +203,6 @@ target_link_libraries(daxa
     PRIVATE
     GPUOpen::VulkanMemoryAllocator
     Vulkan::Vulkan
-    fmt::fmt
 )
 
 target_include_directories(daxa
@@ -246,7 +246,7 @@ endif()
 if(DAXA_ENABLE_TOOLS)
     add_executable(daxa_tools_compile_imgui_shaders "src/utils/impl_imgui.cpp")
     target_compile_definitions(daxa_tools_compile_imgui_shaders PRIVATE DAXA_COMPILE_IMGUI_SHADERS=true)
-    target_link_libraries(daxa_tools_compile_imgui_shaders PRIVATE daxa::daxa fmt::fmt)
+    target_link_libraries(daxa_tools_compile_imgui_shaders PRIVATE daxa::daxa)
 endif()
 
 if(DAXA_INSTALL)

@@ -5,7 +5,6 @@
 
 #include "impl_core.hpp"
 
-#include "cpp_wrapper.hpp"
 #include <daxa/c/device.h>
 
 // Adding a new vulkan feature bool to daxa:
@@ -98,6 +97,8 @@ namespace daxa
         VkPhysicalDeviceVariablePointerFeatures physical_device_variable_pointer_features = {};
         VkPhysicalDeviceExtendedDynamicState3FeaturesEXT physical_device_extended_dynamic_state3_features_ext = {};
         VkPhysicalDeviceShaderFloat16Int8Features physical_device_shader_float16_int8_features = {};
+        VkPhysicalDevice8BitStorageFeatures physical_device_8bit_storage_features = {};
+        VkPhysicalDevice16BitStorageFeatures physical_device_16bit_storage_features = {};
         VkPhysicalDeviceRobustness2FeaturesEXT physical_device_robustness2_features_ext = {};
         VkPhysicalDeviceVulkanMemoryModelFeatures physical_device_vulkan_memory_model_features = {};
         VkPhysicalDeviceShaderAtomicInt64Features physical_device_shader_atomic_int64_features = {};
@@ -132,6 +133,6 @@ namespace daxa
 
         void initialize(daxa_DeviceImplicitFeatureFlagBits implicit_features);
     };
-    
+
     void fill_daxa_device_properties(PhysicalDeviceExtensionsStruct const & extensions, PhysicalDeviceFeaturesStruct const & features, VkPhysicalDevice physical_device, daxa_DeviceProperties * out);
 } // namespace daxa

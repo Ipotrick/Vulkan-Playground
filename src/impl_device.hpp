@@ -137,7 +137,7 @@ struct daxa_ImplDevice final : public ImplHandle
         ImplQueue{DAXA_QUEUE_FAMILY_TRANSFER, 1},
     };
 
-    auto get_queue(daxa_Queue queue) -> ImplQueue&;
+    auto get_queue(daxa_Queue queue) -> ImplQueue &;
     auto valid_queue(daxa_Queue queue) -> bool;
 
     struct ImplQueueFamily
@@ -147,7 +147,7 @@ struct daxa_ImplDevice final : public ImplHandle
     };
     std::array<ImplQueueFamily, 3> queue_families = {};
 
-    std::array<u32,3> valid_vk_queue_families = {};
+    std::array<u32, 3> valid_vk_queue_families = {};
     u32 valid_vk_queue_family_count = {};
 
     auto validate_image_slice(daxa_ImageMipArraySlice const & slice, daxa_ImageId id) -> daxa_ImageMipArraySlice;
@@ -175,7 +175,7 @@ struct daxa_ImplDevice final : public ImplHandle
     void zombify_tlas(TlasId id);
     void zombify_blas(BlasId id);
 
-    static auto create_2(daxa_Instance instance, daxa_DeviceInfo2 const& info, ImplPhysicalDevice const & physical_device, daxa_DeviceProperties const & properties, daxa_Device device) -> daxa_Result;
+    static auto create_2(daxa_Instance instance, daxa_DeviceInfo2 const & info, ImplPhysicalDevice const & physical_device, daxa_DeviceProperties const & properties, daxa_Device device) -> daxa_Result;
     static auto create(daxa_Instance instance, daxa_DeviceInfo const & info, VkPhysicalDevice physical_device, daxa_Device device) -> daxa_Result;
     static void zero_ref_callback(ImplHandle const * handle);
 };

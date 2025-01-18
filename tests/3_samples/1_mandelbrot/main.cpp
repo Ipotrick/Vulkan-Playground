@@ -1,5 +1,5 @@
 #define DAXA_SHADERLANG DAXA_SHADERLANG_SLANG
-#define APPNAME "Daxa Sample: Sphere tracing"
+#define APPNAME "Daxa Sample: Mandelbrot"
 #include <0_common/base_app.hpp>
 
 using namespace daxa::types;

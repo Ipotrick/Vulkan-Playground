@@ -7,7 +7,7 @@
 void main(uint3 pixel_i : SV_DispatchThreadID)
 // clang-format on
 {
-    RWTexture2D<float4> render_image = daxa_RWTexture2D<float4>(p.image);
+    RWTexture2D<float4> render_image = RWTexture2D<float4>.get(p.image);
     if (pixel_i.x >= p.frame_dim.x || pixel_i.y >= p.frame_dim.y)
         return;
 

@@ -16,7 +16,7 @@ namespace daxa
 
     auto to_string(GPUResourceId const & id) -> std::string
     {
-        return fmt::format("index: {}, version: {}", static_cast<u32>(id.index), static_cast<u32>(id.version));
+        return std::format("index: {}, version: {}", static_cast<u32>(id.index), static_cast<u32>(id.version));
     }
 
     auto to_string(ImageViewType const & type) -> std::string_view
@@ -293,7 +293,7 @@ namespace daxa
 
             if (vkSetDebugUtilsObjectNameEXT != nullptr)
             {
-                auto name = fmt::format("pipeline layout (push constant size {})", i * 4);
+                auto name = std::format("pipeline layout (push constant size {})", i * 4);
                 VkDebugUtilsObjectNameInfoEXT const name_info{
                     .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
                     .pNext = nullptr,
@@ -355,7 +355,7 @@ namespace daxa
                         }
                         if (!handle_invalid)
                         {
-                            ret += fmt::format("debug name : \"{}\"", r_cast<SmallString const *>(&slot.first.info.name)->view());
+                            ret += std::format("debug name : \"{}\"", r_cast<SmallString const *>(&slot.first.info.name)->view());
                             ret += "\n";
                         }
                     }

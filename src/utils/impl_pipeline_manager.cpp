@@ -598,12 +598,12 @@ namespace daxa
         (*pipe_result.pipeline_ptr) = this->info.device.create_compute_pipeline({
             .shader_info = {
                 .byte_code = spirv_result.value().data(),
-                .byte_code_size = static_cast<u32>(spirv_result.value().size()),                    
+                .byte_code_size = static_cast<u32>(spirv_result.value().size()),
                 .create_flags = a_info.shader_info.compile_options.create_flags.value_or(ShaderCreateFlagBits::NONE),
-                .required_subgroup_size = 
-                    a_info.shader_info.compile_options.required_subgroup_size.has_value() ? 
-                    Optional{a_info.shader_info.compile_options.required_subgroup_size.value()} : 
-                    daxa::None,
+                .required_subgroup_size =
+                    a_info.shader_info.compile_options.required_subgroup_size.has_value()
+                        ? Optional{a_info.shader_info.compile_options.required_subgroup_size.value()}
+                        : daxa::None,
                 .entry_point = entry_point,
             },
             .push_constant_size = a_info.push_constant_size,
@@ -672,12 +672,12 @@ namespace daxa
                 }
                 *final_shader_info = daxa::ShaderInfo{
                     .byte_code = spv_result->value().data(),
-                    .byte_code_size = static_cast<u32>(spv_result->value().size()),                    
+                    .byte_code_size = static_cast<u32>(spv_result->value().size()),
                     .create_flags = pipe_result_shader_info->value().compile_options.create_flags.value_or(ShaderCreateFlagBits::NONE),
-                    .required_subgroup_size = 
-                        pipe_result_shader_info->value().compile_options.required_subgroup_size.has_value() ? 
-                        Optional{pipe_result_shader_info->value().compile_options.required_subgroup_size.value()} : 
-                        daxa::None,
+                    .required_subgroup_size =
+                        pipe_result_shader_info->value().compile_options.required_subgroup_size.has_value()
+                            ? Optional{pipe_result_shader_info->value().compile_options.required_subgroup_size.value()}
+                            : daxa::None,
                 };
                 if (pipe_result_shader_info->value().compile_options.language != ShaderLanguage::SLANG)
                 {
@@ -1331,7 +1331,7 @@ namespace daxa
 #if DAXA_BUILT_WITH_UTILS_PIPELINE_MANAGER_SPIRV_VALIDATION
         spirv_tools.SetMessageConsumer(
             [&](spv_message_level_t level, [[maybe_unused]] char const * source, [[maybe_unused]] spv_position_t const & position, char const * message)
-            { DAXA_DBG_ASSERT_TRUE_M(level > SPV_MSG_WARNING, fmt::format("SPIR-V Validation error after compiling {}:\n - {}", debug_name_opt, message)); });
+            { DAXA_DBG_ASSERT_TRUE_M(level > SPV_MSG_WARNING, std::format("SPIR-V Validation error after compiling {}:\n - {}", debug_name_opt, message)); });
         spvtools::ValidatorOptions options{};
         options.SetScalarBlockLayout(true);
         // spirv_tools.Validate(spirv.data(), spirv.size(), options);

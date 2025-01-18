@@ -158,7 +158,6 @@ typedef struct
     uint32_t min_acceleration_structure_scratch_offset_alignment;
 } daxa_AccelerationStructureProperties;
 
-
 // MUST BE ABI COMPATIBLE WITH VkPhysicalDeviceRayTracingInvocationReorderPropertiesNV!
 typedef struct
 {
@@ -256,19 +255,20 @@ typedef daxa_DeviceExplicitFeatureFlagBits daxa_ExplicitFeatureFlags;
 typedef enum
 {
     DAXA_IMPLICIT_FEATURE_FLAG_NONE = 0,
-    DAXA_IMPLICIT_FEATURE_FLAG_MESH_SHADER =  0x1 << 0,
-    DAXA_IMPLICIT_FEATURE_FLAG_BASIC_RAY_TRACING =  0x1 << 1,
-    DAXA_IMPLICIT_FEATURE_FLAG_RAY_TRACING_PIPELINE =  0x1 << 2,
-    DAXA_IMPLICIT_FEATURE_FLAG_RAY_TRACING_INVOCATION_REORDER =  0x1 << 3,
-    DAXA_IMPLICIT_FEATURE_FLAG_RAY_TRACING_POSITION_FETCH =  0x1 << 4,
-    DAXA_IMPLICIT_FEATURE_FLAG_CONSERVATIVE_RASTERIZATION =  0x1 << 5,
-    DAXA_IMPLICIT_FEATURE_FLAG_SHADER_ATOMIC_INT64 =  0x1 << 6,
-    DAXA_IMPLICIT_FEATURE_FLAG_IMAGE_ATOMIC64 =  0x1 << 7,
-    DAXA_IMPLICIT_FEATURE_FLAG_SHADER_FLOAT16 =  0x1 << 8,
-    DAXA_IMPLICIT_FEATURE_FLAG_SHADER_INT8 =  0x1 << 9,
-    DAXA_IMPLICIT_FEATURE_FLAG_DYNAMIC_STATE_3 =  0x1 << 10,
-    DAXA_IMPLICIT_FEATURE_FLAG_SHADER_ATOMIC_FLOAT =  0x1 << 11,
-    DAXA_IMPLICIT_FEATURE_FLAG_SWAPCHAIN =  0x1 << 12,
+    DAXA_IMPLICIT_FEATURE_FLAG_MESH_SHADER = 0x1 << 0,
+    DAXA_IMPLICIT_FEATURE_FLAG_BASIC_RAY_TRACING = 0x1 << 1,
+    DAXA_IMPLICIT_FEATURE_FLAG_RAY_TRACING_PIPELINE = 0x1 << 2,
+    DAXA_IMPLICIT_FEATURE_FLAG_RAY_TRACING_INVOCATION_REORDER = 0x1 << 3,
+    DAXA_IMPLICIT_FEATURE_FLAG_RAY_TRACING_POSITION_FETCH = 0x1 << 4,
+    DAXA_IMPLICIT_FEATURE_FLAG_CONSERVATIVE_RASTERIZATION = 0x1 << 5,
+    DAXA_IMPLICIT_FEATURE_FLAG_SHADER_ATOMIC_INT64 = 0x1 << 6,
+    DAXA_IMPLICIT_FEATURE_FLAG_IMAGE_ATOMIC64 = 0x1 << 7,
+    DAXA_IMPLICIT_FEATURE_FLAG_SHADER_FLOAT16 = 0x1 << 8,
+    DAXA_IMPLICIT_FEATURE_FLAG_SHADER_INT8 = 0x1 << 9,
+    DAXA_IMPLICIT_FEATURE_FLAG_DYNAMIC_STATE_3 = 0x1 << 10,
+    DAXA_IMPLICIT_FEATURE_FLAG_SHADER_ATOMIC_FLOAT = 0x1 << 11,
+    DAXA_IMPLICIT_FEATURE_FLAG_SWAPCHAIN = 0x1 << 12,
+    DAXA_IMPLICIT_FEATURE_FLAG_SHADER_INT16 = 0x1 << 13,
 } daxa_DeviceImplicitFeatureFlagBits;
 
 typedef daxa_DeviceImplicitFeatureFlagBits daxa_ImplicitFeatureFlags;
@@ -344,8 +344,8 @@ static daxa_DeviceInfo const DAXA_DEFAULT_DEVICE_INFO = {
 
 typedef struct
 {
-    daxa_u32 physical_device_index;                     // Index into list of devices returned from daxa_instance_list_devices_properties.
-    daxa_ExplicitFeatureFlags explicit_features;  // Explicit features must be manually enabled.
+    daxa_u32 physical_device_index;              // Index into list of devices returned from daxa_instance_list_devices_properties.
+    daxa_ExplicitFeatureFlags explicit_features; // Explicit features must be manually enabled.
     uint32_t max_allowed_images;
     uint32_t max_allowed_buffers;
     uint32_t max_allowed_samplers;
@@ -369,17 +369,17 @@ typedef struct
     daxa_u32 index;
 } daxa_Queue;
 
-static daxa_Queue const DAXA_QUEUE_MAIN = { DAXA_QUEUE_FAMILY_MAIN, 0 };
-static daxa_Queue const DAXA_QUEUE_COMPUTE_0 = { DAXA_QUEUE_FAMILY_COMPUTE, 0 };
-static daxa_Queue const DAXA_QUEUE_COMPUTE_1 = { DAXA_QUEUE_FAMILY_COMPUTE, 1 };
-static daxa_Queue const DAXA_QUEUE_COMPUTE_2 = { DAXA_QUEUE_FAMILY_COMPUTE, 2 };
-static daxa_Queue const DAXA_QUEUE_COMPUTE_3 = { DAXA_QUEUE_FAMILY_COMPUTE, 3 };
-static daxa_Queue const DAXA_QUEUE_COMPUTE_4 = { DAXA_QUEUE_FAMILY_COMPUTE, 4 };
-static daxa_Queue const DAXA_QUEUE_COMPUTE_5 = { DAXA_QUEUE_FAMILY_COMPUTE, 5 };
-static daxa_Queue const DAXA_QUEUE_COMPUTE_6 = { DAXA_QUEUE_FAMILY_COMPUTE, 6 };
-static daxa_Queue const DAXA_QUEUE_COMPUTE_7 = { DAXA_QUEUE_FAMILY_COMPUTE, 7 };
-static daxa_Queue const DAXA_QUEUE_TRANSFER_0 = { DAXA_QUEUE_FAMILY_TRANSFER, 0 };
-static daxa_Queue const DAXA_QUEUE_TRANSFER_1 = { DAXA_QUEUE_FAMILY_TRANSFER, 1 };
+static daxa_Queue const DAXA_QUEUE_MAIN = {DAXA_QUEUE_FAMILY_MAIN, 0};
+static daxa_Queue const DAXA_QUEUE_COMPUTE_0 = {DAXA_QUEUE_FAMILY_COMPUTE, 0};
+static daxa_Queue const DAXA_QUEUE_COMPUTE_1 = {DAXA_QUEUE_FAMILY_COMPUTE, 1};
+static daxa_Queue const DAXA_QUEUE_COMPUTE_2 = {DAXA_QUEUE_FAMILY_COMPUTE, 2};
+static daxa_Queue const DAXA_QUEUE_COMPUTE_3 = {DAXA_QUEUE_FAMILY_COMPUTE, 3};
+static daxa_Queue const DAXA_QUEUE_COMPUTE_4 = {DAXA_QUEUE_FAMILY_COMPUTE, 4};
+static daxa_Queue const DAXA_QUEUE_COMPUTE_5 = {DAXA_QUEUE_FAMILY_COMPUTE, 5};
+static daxa_Queue const DAXA_QUEUE_COMPUTE_6 = {DAXA_QUEUE_FAMILY_COMPUTE, 6};
+static daxa_Queue const DAXA_QUEUE_COMPUTE_7 = {DAXA_QUEUE_FAMILY_COMPUTE, 7};
+static daxa_Queue const DAXA_QUEUE_TRANSFER_0 = {DAXA_QUEUE_FAMILY_TRANSFER, 0};
+static daxa_Queue const DAXA_QUEUE_TRANSFER_1 = {DAXA_QUEUE_FAMILY_TRANSFER, 1};
 
 typedef struct
 {
@@ -524,17 +524,17 @@ DAXA_EXPORT daxa_Bool8
 daxa_dvc_is_blas_valid(daxa_Device device, daxa_BlasId blas);
 
 DAXA_EXPORT DAXA_NO_DISCARD daxa_Result
-daxa_dvc_get_vk_buffer(daxa_Device device, daxa_BufferId buffer, VkBuffer* out_vk_handle);
+daxa_dvc_get_vk_buffer(daxa_Device device, daxa_BufferId buffer, VkBuffer * out_vk_handle);
 DAXA_EXPORT DAXA_NO_DISCARD daxa_Result
-daxa_dvc_get_vk_image(daxa_Device device, daxa_ImageId image, VkImage* out_vk_handle);
+daxa_dvc_get_vk_image(daxa_Device device, daxa_ImageId image, VkImage * out_vk_handle);
 DAXA_EXPORT DAXA_NO_DISCARD daxa_Result
-daxa_dvc_get_vk_image_view(daxa_Device device, daxa_ImageViewId id, VkImageView* out_vk_handle);
+daxa_dvc_get_vk_image_view(daxa_Device device, daxa_ImageViewId id, VkImageView * out_vk_handle);
 DAXA_EXPORT DAXA_NO_DISCARD daxa_Result
-daxa_dvc_get_vk_sampler(daxa_Device device, daxa_SamplerId sampler, VkSampler* out_vk_handle);
+daxa_dvc_get_vk_sampler(daxa_Device device, daxa_SamplerId sampler, VkSampler * out_vk_handle);
 DAXA_EXPORT DAXA_NO_DISCARD daxa_Result
-daxa_dvc_get_vk_tlas(daxa_Device device, daxa_TlasId tlas, VkAccelerationStructureInstanceKHR* out_vk_handle);
+daxa_dvc_get_vk_tlas(daxa_Device device, daxa_TlasId tlas, VkAccelerationStructureInstanceKHR * out_vk_handle);
 DAXA_EXPORT DAXA_NO_DISCARD daxa_Result
-daxa_dvc_get_vk_blas(daxa_Device device, daxa_BlasId blas, VkAccelerationStructureInstanceKHR* out_vk_handle);
+daxa_dvc_get_vk_blas(daxa_Device device, daxa_BlasId blas, VkAccelerationStructureInstanceKHR * out_vk_handle);
 
 DAXA_EXPORT DAXA_NO_DISCARD daxa_Result
 daxa_dvc_buffer_device_address(daxa_Device device, daxa_BufferId buffer, daxa_DeviceAddress * out_addr);
