@@ -127,10 +127,6 @@ namespace tests
             };
 
             void recreate_sbt() {
-                // if(!sbt_buffer.is_empty()) {
-                //     device.destroy_buffer(sbt_buffer);
-                // }
-
                 u32 region_count = 0;
 
                 auto groups = daxa::BuildShaderBindingTableInfo({
@@ -738,9 +734,10 @@ namespace tests
 
                 // test for get_shader_group_handles
                 usize handle_buffer_size = 0;
-                rt_pipeline->get_shader_group_handles(nullptr, &handle_buffer_size);
+                rt_pipeline->get_all_shader_group_handles(nullptr, &handle_buffer_size);
                 handle_buffer = new u8[handle_buffer_size];
-                rt_pipeline->get_shader_group_handles(handle_buffer, &handle_buffer_size);
+                rt_pipeline->get_all_shader_group_handles(handle_buffer, &handle_buffer_size);
+                rt_pipeline->get_shader_group_handles(handle_buffer, &handle_buffer_size, 0, 4);
 
                 recreate_sbt();
             }

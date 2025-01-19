@@ -1130,7 +1130,7 @@ auto daxa_ray_tracing_pipeline_get_shader_group_handle_size(daxa_RayTracingPipel
     return pipeline->device->properties.ray_tracing_pipeline_properties.value.shader_group_handle_size;
 }
 
-auto daxa_ray_tracing_pipeline_get_shader_group_handles(daxa_RayTracingPipeline pipeline, void * out_blob, usize * buf_size) -> daxa_Result
+auto daxa_ray_tracing_pipeline_get_all_shader_group_handles(daxa_RayTracingPipeline pipeline, void * out_blob, usize * buf_size) -> daxa_Result
 {
     if(!buf_size) {
         return DAXA_RESULT_ERROR_INVALID_ARGUMENT;
@@ -1160,6 +1160,55 @@ auto daxa_ray_tracing_pipeline_get_shader_group_handles(daxa_RayTracingPipeline 
         pipeline->vk_pipeline,
         0,
         handle_count,
+        data_size,
+        out_blob);
+
+    return static_cast<daxa_Result>(vk_result);
+}
+
+auto daxa_ray_tracing_pipeline_get_shader_group_handles(daxa_RayTracingPipeline pipeline, void * out_blob, usize * buf_size, u32 first_group, u32 group_count) -> daxa_Result
+{
+    if(!buf_size) {
+        return DAXA_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    auto handle_count = daxa_ray_tracing_pipeline_get_shader_group_count(pipeline);
+
+    if(first_group >= handle_count) {
+        return DAXA_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    if(group_count == 0) {
+        return DAXA_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    if(first_group + group_count > handle_count) {
+        return DAXA_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    auto handle_size = daxa_ray_tracing_pipeline_get_shader_group_handle_size(pipeline);
+
+    auto & device = pipeline->device;
+
+    auto data_size = group_count * handle_size;
+    auto & size = *buf_size;
+
+    if(size == 0) {
+        size = data_size;
+        return DAXA_RESULT_SUCCESS;
+    } else if(size < data_size) {
+        return DAXA_RESULT_ERROR_INVALID_ARGUMENT;
+    } else if(!out_blob) {
+        return DAXA_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    // Get the shader group handles
+    // https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/vkGetRayTracingShaderGroupHandlesNV.html
+    auto vk_result = device->vkGetRayTracingShaderGroupHandlesKHR(
+        device->vk_device,
+        pipeline->vk_pipeline,
+        first_group,
+        group_count,
         data_size,
         out_blob);
 

@@ -104,7 +104,10 @@ daxa_ray_tracing_pipeline_create_sbt(
 // out_blob must be the size of the group_count * raytracing_properties.shaderGroupHandleSize
 // NOTE: call this methods with blob_size == 0 to get the required size.
 DAXA_EXPORT daxa_Result
-daxa_ray_tracing_pipeline_get_shader_group_handles(daxa_RayTracingPipeline pipeline, void *out_blob, daxa_usize* blob_size);
+daxa_ray_tracing_pipeline_get_all_shader_group_handles(daxa_RayTracingPipeline pipeline, void *out_blob, daxa_usize* blob_size);
+
+DAXA_EXPORT daxa_Result
+daxa_ray_tracing_pipeline_get_shader_group_handles(daxa_RayTracingPipeline pipeline, void *out_blob, daxa_usize* blob_size, uint32_t first_group, uint32_t group_count);
 
 DAXA_EXPORT uint32_t
 daxa_ray_tracing_pipeline_get_shader_group_handle_size(daxa_RayTracingPipeline pipeline);

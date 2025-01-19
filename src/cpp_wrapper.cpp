@@ -875,10 +875,17 @@ namespace daxa
         return daxa_ray_tracing_pipeline_get_shader_group_handle_size(rc_cast<daxa_RayTracingPipeline>(this->object));
     }
 
-    void RayTracingPipeline::get_shader_group_handles(void * out_blob, usize * buf_size) const
+    void RayTracingPipeline::get_all_shader_group_handles(void * out_blob, usize * buf_size) const
+    {
+        auto daxa_res = daxa_ray_tracing_pipeline_get_all_shader_group_handles(
+            rc_cast<daxa_RayTracingPipeline>(this->object), out_blob, buf_size);
+        check_result(daxa_res, "failed in get_all_shader_group_handles");
+    }
+
+    void RayTracingPipeline::get_shader_group_handles(void * out_blob, usize * buf_size, u32 first_group, u32 group_count) const
     {
         auto daxa_res = daxa_ray_tracing_pipeline_get_shader_group_handles(
-            rc_cast<daxa_RayTracingPipeline>(this->object), out_blob, buf_size);
+            rc_cast<daxa_RayTracingPipeline>(this->object), out_blob, buf_size, first_group, group_count);
         check_result(daxa_res, "failed in get_shader_group_handles");
     }
 
