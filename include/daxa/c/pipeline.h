@@ -99,10 +99,7 @@ static daxa_BuildShaderBindingTableInfo const DAXA_DEFAULT_BUILD_SHADER_BINDING_
 
 DAXA_EXPORT daxa_Result
 daxa_ray_tracing_pipeline_create_sbt(
-    daxa_RayTracingPipeline pipeline,
-    uint32_t * region_count,
-    daxa_GroupRegionInfo * out_regions, daxa_BufferId * out_buffer,
-    daxa_BuildShaderBindingTableInfo const * info);
+    daxa_RayTracingPipeline pipeline, uint32_t * region_count, daxa_GroupRegionInfo * out_regions, daxa_usize * out_buffer_size, daxa_BufferId * out_buffer, daxa_BuildShaderBindingTableInfo const * info);
 
 // out_blob must be the size of the group_count * raytracing_properties.shaderGroupHandleSize
 // NOTE: call this methods with blob_size == 0 to get the required size.

@@ -126,7 +126,7 @@ namespace daxa
         //     daxa::BufferId buffer;
         //     // RayTracingShaderBindingTableEntries entries;
         // };
-        void create_sbt(BuildShaderBindingTableInfo const & info, u32* region_count, GroupRegionInfo* out_regions, BufferId* out_buffer) const;
+        void create_sbt(BuildShaderBindingTableInfo const & info, u32* region_count, GroupRegionInfo* out_regions, usize* out_buffer_size, BufferId* out_buffer) const;
         void get_shader_group_handles(void *out_blob, usize *buf_size) const;
         auto get_shader_group_count() const -> u32;
         auto get_shader_group_handle_size() const -> u32;

@@ -832,16 +832,11 @@ inline auto daxa_ray_tracing_pipeline_build_sbt(
     daxa_RayTracingPipeline pipeline,
     u32* region_count,
     daxa_GroupRegionInfo * out_regions,
+    usize* out_buffer_size,
     daxa_BufferId * out_buffer,
     u32 group_count, u32 const * group_indices) -> daxa_Result
 {
-
-    if(!pipeline || !region_count || !out_buffer)
-    {
-        return DAXA_RESULT_ERROR_INVALID_ARGUMENT;
-    }
-
-    if(!out_regions && *region_count > 0)
+    if(!pipeline || !region_count || (!out_buffer && *region_count > 0))
     {
         return DAXA_RESULT_ERROR_INVALID_ARGUMENT;
     }
@@ -995,6 +990,9 @@ inline auto daxa_ray_tracing_pipeline_build_sbt(
 
     if(region_count_ref == 0) {
         region_count_ref = region_size;
+        if(out_buffer_size) {
+            *out_buffer_size = current_offset;
+        }
         return DAXA_RESULT_SUCCESS;
     }
     else if(region_size > region_count_ref) {
@@ -1005,16 +1003,27 @@ inline auto daxa_ray_tracing_pipeline_build_sbt(
     // TODO: same logic as get ray tracing shader group handles
 
     auto name_cstr = info.name.c_str();
-    // Allocate a buffer for storing the SBT.
-    auto sbt_info = daxa_BufferInfo{
-        .size = current_offset,
-        .allocate_info = DAXA_MEMORY_FLAG_HOST_ACCESS_SEQUENTIAL_WRITE,
-        .name = std::bit_cast<daxa_SmallString>(info.name),
-    };
     // NOTE: it is responsibility of the user to destroy the buffer
     auto & sbt_buffer_id = *out_buffer;
-    auto const create_buffer_result = daxa_dvc_create_buffer(device, &sbt_info, r_cast<daxa_BufferId *>(&sbt_buffer_id));
-    _DAXA_RETURN_IF_ERROR(create_buffer_result, create_buffer_result);
+    if(sbt_buffer_id.value == 0) {
+        // Allocate a buffer for storing the SBT.
+        auto sbt_info = daxa_BufferInfo{
+            .size = current_offset,
+            .allocate_info = DAXA_MEMORY_FLAG_HOST_ACCESS_SEQUENTIAL_WRITE,
+            .name = std::bit_cast<daxa_SmallString>(info.name),
+        };
+        auto const create_buffer_result = daxa_dvc_create_buffer(device, &sbt_info, r_cast<daxa_BufferId *>(&sbt_buffer_id));
+        _DAXA_RETURN_IF_ERROR(create_buffer_result, create_buffer_result);
+    } else {
+        daxa_BufferInfo buffer_info = {};
+        auto result = daxa_dvc_info_buffer(device, sbt_buffer_id, &buffer_info);
+        if(result != DAXA_RESULT_SUCCESS) {
+            return result;
+        }
+        if(buffer_info.size < current_offset) {
+            return DAXA_RESULT_ERROR_INVALID_ARGUMENT;
+        }
+    }
 
     u8 * sbt_buffer_ptr = nullptr;
     auto const get_host_address_result = daxa_dvc_buffer_host_address(device, sbt_buffer_id, reinterpret_cast<void **>(&sbt_buffer_ptr));
@@ -1100,6 +1109,7 @@ auto daxa_ray_tracing_pipeline_create_sbt(
     daxa_RayTracingPipeline pipeline,
     u32* region_count,
     daxa_GroupRegionInfo * out_regions,
+    usize* out_buffer_size,
     daxa_BufferId * out_buffer,
     daxa_BuildShaderBindingTableInfo const * info) -> daxa_Result
 {
@@ -1107,7 +1117,7 @@ auto daxa_ray_tracing_pipeline_create_sbt(
     auto group_indices = info->group_indices.data;
     auto group_count = static_cast<u32>(info->group_indices.size);
 
-    return daxa_ray_tracing_pipeline_build_sbt(pipeline, region_count, out_regions, out_buffer, group_count, group_indices);
+    return daxa_ray_tracing_pipeline_build_sbt(pipeline, region_count, out_regions, out_buffer_size, out_buffer, group_count, group_indices);
 }
 
 auto daxa_ray_tracing_pipeline_get_shader_group_count(daxa_RayTracingPipeline pipeline) -> u32

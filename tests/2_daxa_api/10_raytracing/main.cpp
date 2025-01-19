@@ -56,7 +56,6 @@ namespace tests
 
             daxa_u32 frame = 0;
             bool primary_rays = true;
-            bool second_sbt = true;
             daxa_u32 callable_index = 0;
 
             Camera my_camera = {
@@ -83,7 +82,6 @@ namespace tests
                 if (device.is_valid())
                 {
                     device.destroy_buffer(sbt_buffer);
-                    // device.destroy_buffer(sbt_pair.entries.buffer);
                     device.destroy_tlas(tlas);
                     device.destroy_blas(blas);
                     device.destroy_blas(proc_blas);
@@ -129,24 +127,26 @@ namespace tests
             };
 
             void recreate_sbt() {
-                if(!sbt_buffer.is_empty()) {
-                    device.destroy_buffer(sbt_buffer);
-                }
+                // if(!sbt_buffer.is_empty()) {
+                //     device.destroy_buffer(sbt_buffer);
+                // }
 
                 u32 region_count = 0;
 
                 auto groups = daxa::BuildShaderBindingTableInfo({
                                             std::array<u32, 8>{GroupIndex::PRIMARY_RAY, GroupIndex::SECONDARY_RAY, GroupIndex::HIT_MISS, GroupIndex::SHADOW_MISS, GroupIndex::TRIANGLE_HIT, GroupIndex::PROCEDURAL_HIT, GroupIndex::DIRECTIONAL_LIGHT, GroupIndex::SPOT_LIGHT},
                                         });
+                
+                usize sbt_size = 0;
 
                 rt_pipeline->create_sbt(groups,
-                                        &region_count, regions.data(), &sbt_buffer);
+                                        &region_count, nullptr, &sbt_size, nullptr);
 
                 regions.clear();
                 regions.resize(region_count);
 
                 rt_pipeline->create_sbt(groups,
-                                        &region_count, regions.data(), &sbt_buffer);
+                                        &region_count, regions.data(), nullptr, &sbt_buffer);
             }
 
             void initialize()
@@ -942,8 +942,6 @@ namespace tests
             void on_key(i32 key, i32 action) {
                 if(key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
                     primary_rays = !primary_rays;
-                } else if(key == GLFW_KEY_T && action == GLFW_PRESS) {
-                    second_sbt = !second_sbt;
                 } else if(key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
                     glfwSetWindowShouldClose(glfw_window_ptr, GLFW_TRUE);
                 } else if(key == GLFW_KEY_1 && action == GLFW_PRESS) {

@@ -858,12 +858,13 @@ namespace daxa
         return *r_cast<RayTracingPipelineInfo const *>(rc_cast<daxa_RayTracingPipeline>(this->object));
     }
 
-    void RayTracingPipeline::create_sbt(BuildShaderBindingTableInfo const & info, u32* region_count, GroupRegionInfo * out_regions, BufferId * out_buffer) const
+    void RayTracingPipeline::create_sbt(BuildShaderBindingTableInfo const & info, u32* region_count, GroupRegionInfo * out_regions, usize * out_buffer_size, BufferId * out_buffer) const
     {
         auto daxa_res = daxa_ray_tracing_pipeline_create_sbt(
             rc_cast<daxa_RayTracingPipeline>(this->object),
             region_count,
             r_cast<daxa_GroupRegionInfo *>(out_regions),
+            out_buffer_size,
             r_cast<daxa_BufferId *>(out_buffer),
             r_cast<daxa_BuildShaderBindingTableInfo const *>(&info));
         check_result(daxa_res, "failed in create_sbt");
