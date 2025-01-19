@@ -830,10 +830,21 @@ inline auto daxa_ray_tracing_pipeline_fill_sbt_buffer(
 
 inline auto daxa_ray_tracing_pipeline_build_sbt(
     daxa_RayTracingPipeline pipeline,
-    daxa_RayTracingShaderBindingTableEntries * out_entries,
+    u32* region_count,
+    daxa_GroupRegionInfo * out_regions,
     daxa_BufferId * out_buffer,
     u32 group_count, u32 const * group_indices) -> daxa_Result
 {
+
+    if(!pipeline || !region_count || !out_buffer)
+    {
+        return DAXA_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    if(!out_regions && *region_count > 0)
+    {
+        return DAXA_RESULT_ERROR_INVALID_ARGUMENT;
+    }
     
     auto & info = pipeline->info;
     auto * device = pipeline->device;
@@ -851,7 +862,7 @@ inline auto daxa_ray_tracing_pipeline_build_sbt(
         requested_groups.push_back({group_indices[i], &pipeline->groups[group_indices[i]]});
     }
 
-    u32 const group_handle_size = device->properties.ray_tracing_pipeline_properties.value.shader_group_handle_size;
+    u32 const group_handle_size = daxa_ray_tracing_pipeline_get_shader_group_handle_size(pipeline);
     u32 const group_handle_alignment = device->properties.ray_tracing_pipeline_properties.value.shader_group_handle_alignment;
     u32 const group_base_alignment = device->properties.ray_tracing_pipeline_properties.value.shader_group_base_alignment;
 
@@ -979,6 +990,20 @@ inline auto daxa_ray_tracing_pipeline_build_sbt(
         }
     }
 
+    auto &region_count_ref = *region_count;
+    auto const region_size = static_cast<u32>(regions.size());
+
+    if(region_count_ref == 0) {
+        region_count_ref = region_size;
+        return DAXA_RESULT_SUCCESS;
+    }
+    else if(region_size > region_count_ref) {
+        // region_count_ref = region_size;
+        return DAXA_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    // TODO: same logic as get ray tracing shader group handles
+
     auto name_cstr = info.name.c_str();
     // Allocate a buffer for storing the SBT.
     auto sbt_info = daxa_BufferInfo{
@@ -1066,49 +1091,15 @@ inline auto daxa_ray_tracing_pipeline_build_sbt(
         
     };
 
-    auto sbt_handle_size = regions.size() * sizeof(daxa_GroupRegionInfo);
-
-    // TODO: append "_SBT_handler_buffer" to the name
-    auto name_handle_cstr = info.name.c_str();
-    // Allocate a buffer for storing the SBT.
-    auto sbt_handler_info = daxa_BufferInfo{
-        .size = sbt_handle_size,
-        .allocate_info = DAXA_MEMORY_FLAG_HOST_ACCESS_RANDOM,
-        .name = std::bit_cast<daxa_SmallString>(name_handle_cstr),
-    };
-    
-     auto handle_result = daxa_dvc_create_buffer(device, &sbt_handler_info, r_cast<daxa_BufferId *>(&out_entries->buffer));
-     if(handle_result != DAXA_RESULT_SUCCESS) {
-        auto const destroy_buffer_result = daxa_dvc_destroy_buffer(device, sbt_buffer_id);
-        _DAXA_RETURN_IF_ERROR(destroy_buffer_result, destroy_buffer_result);
-
-         return handle_result;
-     }
-
-     void * group_regions_data = nullptr;
-
-     auto const get_host_address_handle_result = daxa_dvc_buffer_host_address(device, out_entries->buffer, reinterpret_cast<void **>(&group_regions_data));
-     if(get_host_address_handle_result != DAXA_RESULT_SUCCESS) {
-        auto const destroy_buffer_result = daxa_dvc_destroy_buffer(device, sbt_buffer_id);
-        auto const destroy_buffer_handle_result = daxa_dvc_destroy_buffer(device, out_entries->buffer);
-        _DAXA_RETURN_IF_ERROR(destroy_buffer_result, destroy_buffer_result);
-        _DAXA_RETURN_IF_ERROR(destroy_buffer_handle_result, destroy_buffer_handle_result);
-
-         return get_host_address_handle_result;
-     }
-
-    // Set group region references
-    out_entries->group_regions.data = r_cast<daxa_GroupRegionInfo *>(group_regions_data);
-    out_entries->group_regions.size = regions.size();
-
-    create_strided_device_address_region_array(regions, raygen_regions, miss_regions, hit_regions, callable_regions, reinterpret_cast<GroupRegionInfo *>(const_cast<daxa_GroupRegionInfo *>(out_entries->group_regions.data)));
+    create_strided_device_address_region_array(regions, raygen_regions, miss_regions, hit_regions, callable_regions, reinterpret_cast<GroupRegionInfo *>(out_regions));
 
     return DAXA_RESULT_SUCCESS;
 }
 
 auto daxa_ray_tracing_pipeline_create_sbt(
     daxa_RayTracingPipeline pipeline,
-    daxa_RayTracingShaderBindingTableEntries * out_entries,
+    u32* region_count,
+    daxa_GroupRegionInfo * out_regions,
     daxa_BufferId * out_buffer,
     daxa_BuildShaderBindingTableInfo const * info) -> daxa_Result
 {
@@ -1116,35 +1107,7 @@ auto daxa_ray_tracing_pipeline_create_sbt(
     auto group_indices = info->group_indices.data;
     auto group_count = static_cast<u32>(info->group_indices.size);
 
-    return daxa_ray_tracing_pipeline_build_sbt(pipeline, out_entries, out_buffer, group_count, group_indices);
-}
-
-auto daxa_ray_tracing_pipeline_create_default_sbt(daxa_RayTracingPipeline pipeline, daxa_RayTracingShaderBindingTableEntries * out_entries, daxa_BufferId * out_buffer) -> daxa_Result
-{
-    u32 const group_count = static_cast<u32>(pipeline->groups.size());
-
-
-    //  access v1 and v2 by reference
-    auto fill_vector = [&] (daxa_u32 *& group_indices, u32 max_index) {
-        for(u32 i = 0; i < max_index; ++i) {
-            group_indices[i] = i;
-        }
-    };
-
-    u32* group_indices = nullptr;
-    // copy the group indices
-    if(group_count > 0) {
-        group_indices = new u32[group_count];
-        fill_vector(group_indices, group_count);
-    } else {
-        return DAXA_RESULT_ERROR_INVALID_SHADER_NV;
-    }
-
-    auto result = daxa_ray_tracing_pipeline_build_sbt(pipeline, out_entries, out_buffer, group_count, group_indices);
-
-    delete[] group_indices;
-
-    return result;
+    return daxa_ray_tracing_pipeline_build_sbt(pipeline, region_count, out_regions, out_buffer, group_count, group_indices);
 }
 
 auto daxa_ray_tracing_pipeline_get_shader_group_count(daxa_RayTracingPipeline pipeline) -> u32
@@ -1152,16 +1115,36 @@ auto daxa_ray_tracing_pipeline_get_shader_group_count(daxa_RayTracingPipeline pi
     return static_cast<u32>(pipeline->groups.size());
 }
 
-auto daxa_ray_tracing_pipeline_get_shader_group_handles(daxa_RayTracingPipeline pipeline, void * out_blob) -> daxa_Result
+auto daxa_ray_tracing_pipeline_get_shader_group_handle_size(daxa_RayTracingPipeline pipeline) -> u32
 {
-    auto * device = pipeline->device;
+    return pipeline->device->properties.ray_tracing_pipeline_properties.value.shader_group_handle_size;
+}
+
+auto daxa_ray_tracing_pipeline_get_shader_group_handles(daxa_RayTracingPipeline pipeline, void * out_blob, usize * buf_size) -> daxa_Result
+{
+    if(!buf_size) {
+        return DAXA_RESULT_ERROR_INVALID_ARGUMENT;
+    }
 
     auto handle_count = daxa_ray_tracing_pipeline_get_shader_group_count(pipeline);
-    auto handle_size = device->properties.ray_tracing_pipeline_properties.value.shader_group_handle_size;
+    auto handle_size = daxa_ray_tracing_pipeline_get_shader_group_handle_size(pipeline);
+
+    auto & device = pipeline->device;
 
     auto data_size = handle_count * handle_size;
+    auto & size = *buf_size;
+
+    if(size == 0) {
+        size = data_size;
+        return DAXA_RESULT_SUCCESS;
+    } else if(size < data_size) {
+        return DAXA_RESULT_ERROR_INVALID_ARGUMENT;
+    } else if(!out_blob) {
+        return DAXA_RESULT_ERROR_INVALID_ARGUMENT;
+    }
 
     // Get the shader group handles
+    // https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/vkGetRayTracingShaderGroupHandlesNV.html
     auto vk_result = device->vkGetRayTracingShaderGroupHandlesKHR(
         device->vk_device,
         pipeline->vk_pipeline,

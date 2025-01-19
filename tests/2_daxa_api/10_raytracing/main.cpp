@@ -36,7 +36,8 @@ namespace tests
             daxa::Device device = {};
             daxa::Swapchain swapchain = {};
             daxa::PipelineManager pipeline_manager = {};
-            std::shared_ptr<daxa::RayTracingPipeline> rt_pipeline = {};daxa::RayTracingPipeline::SbtPair sbt_pair = {}, second_sbt_pair = {};
+            std::shared_ptr<daxa::RayTracingPipeline> rt_pipeline = {};daxa::BufferId sbt_buffer = {};
+            std::vector<daxa::GroupRegionInfo> regions = {};
             daxa::TlasId tlas = {};
             daxa::BlasId blas = {};
             daxa::BlasId proc_blas = {};
@@ -72,16 +73,17 @@ namespace tests
             daxa::BufferId cam_buffer = {};
             u32 cam_buffer_size = sizeof(CameraView);
 
+            // SHADER BINDING TABLE
+            u8 * handle_buffer = nullptr;
+
             App() : AppWindow<App>("ray query test") {}
 
             ~App()
             {
                 if (device.is_valid())
                 {
-                    device.destroy_buffer(sbt_pair.buffer);
-                    device.destroy_buffer(sbt_pair.entries.buffer);
-                    device.destroy_buffer(second_sbt_pair.buffer);
-                    device.destroy_buffer(second_sbt_pair.entries.buffer);
+                    device.destroy_buffer(sbt_buffer);
+                    // device.destroy_buffer(sbt_pair.entries.buffer);
                     device.destroy_tlas(tlas);
                     device.destroy_blas(blas);
                     device.destroy_blas(proc_blas);
@@ -89,6 +91,10 @@ namespace tests
                     device.destroy_buffer(aabb_buffer);
                     device.destroy_buffer(vertex_buffer);
                     device.destroy_buffer(blas_buffer);
+                }
+
+                if(handle_buffer) {
+                    delete[] handle_buffer;
                 }
             }
             
@@ -123,19 +129,24 @@ namespace tests
             };
 
             void recreate_sbt() {
-                if(!sbt_pair.buffer.is_empty()) {
-                    device.destroy_buffer(sbt_pair.buffer);
-                    device.destroy_buffer(sbt_pair.entries.buffer);
+                if(!sbt_buffer.is_empty()) {
+                    device.destroy_buffer(sbt_buffer);
                 }
-                sbt_pair = rt_pipeline->create_default_sbt();
 
-                if(!second_sbt_pair.buffer.is_empty()) {
-                    device.destroy_buffer(second_sbt_pair.buffer);
-                    device.destroy_buffer(second_sbt_pair.entries.buffer);
-                }
-                second_sbt_pair = rt_pipeline->create_sbt({
-                    std::array<u32, 14>{GroupIndex::PRIMARY_RAY, GroupIndex::HIT_MISS, GroupIndex::SHADOW_MISS, GroupIndex::TRIANGLE_HIT, GroupIndex::PROCEDURAL_HIT, GroupIndex::DIRECTIONAL_LIGHT, GroupIndex::SPOT_LIGHT,GroupIndex::SECONDARY_RAY, GroupIndex::HIT_MISS, GroupIndex::SHADOW_MISS, GroupIndex::TRIANGLE_HIT, GroupIndex::PROCEDURAL_HIT, GroupIndex::DIRECTIONAL_LIGHT, GroupIndex::SPOT_LIGHT},
-                });
+                u32 region_count = 0;
+
+                auto groups = daxa::BuildShaderBindingTableInfo({
+                                            std::array<u32, 8>{GroupIndex::PRIMARY_RAY, GroupIndex::SECONDARY_RAY, GroupIndex::HIT_MISS, GroupIndex::SHADOW_MISS, GroupIndex::TRIANGLE_HIT, GroupIndex::PROCEDURAL_HIT, GroupIndex::DIRECTIONAL_LIGHT, GroupIndex::SPOT_LIGHT},
+                                        });
+
+                rt_pipeline->create_sbt(groups,
+                                        &region_count, regions.data(), &sbt_buffer);
+
+                regions.clear();
+                regions.resize(region_count);
+
+                rt_pipeline->create_sbt(groups,
+                                        &region_count, regions.data(), &sbt_buffer);
             }
 
             void initialize()
@@ -724,11 +735,14 @@ namespace tests
                 };
                 rt_pipeline = pipeline_manager.add_ray_tracing_pipeline(ray_tracing_pipe_info).value();
 
-                sbt_pair = rt_pipeline->create_default_sbt();
 
-                second_sbt_pair = rt_pipeline->create_sbt({
-                    std::array<u32, 14>{GroupIndex::PRIMARY_RAY, GroupIndex::HIT_MISS, GroupIndex::SHADOW_MISS, GroupIndex::TRIANGLE_HIT, GroupIndex::PROCEDURAL_HIT, GroupIndex::DIRECTIONAL_LIGHT, GroupIndex::SPOT_LIGHT,GroupIndex::SECONDARY_RAY, GroupIndex::HIT_MISS, GroupIndex::SHADOW_MISS, GroupIndex::TRIANGLE_HIT, GroupIndex::PROCEDURAL_HIT, GroupIndex::DIRECTIONAL_LIGHT, GroupIndex::SPOT_LIGHT},
-                });
+                // test for get_shader_group_handles
+                usize handle_buffer_size = 0;
+                rt_pipeline->get_shader_group_handles(nullptr, &handle_buffer_size);
+                handle_buffer = new u8[handle_buffer_size];
+                rt_pipeline->get_shader_group_handles(handle_buffer, &handle_buffer_size);
+
+                recreate_sbt();
             }
 
             auto update() -> bool
@@ -853,32 +867,15 @@ namespace tests
 
                 daxa::RayTracingShaderBindingTable shader_binding_table;
                 if(primary_rays) {
-                  if(second_sbt) {
-                    shader_binding_table.raygen_region = second_sbt_pair.entries.group_regions.at(0).region;
-                    shader_binding_table.miss_region = second_sbt_pair.entries.group_regions.at(1).region;
-                    shader_binding_table.hit_region = second_sbt_pair.entries.group_regions.at(2).region;
-                    shader_binding_table.callable_region = second_sbt_pair.entries.group_regions.at(3).region;
-                  } else {
-                    shader_binding_table.raygen_region = sbt_pair.entries.group_regions.at(0).region;
-                    shader_binding_table.miss_region = sbt_pair.entries.group_regions.at(2).region;
-                    shader_binding_table.hit_region = sbt_pair.entries.group_regions.at(3).region;
-                    shader_binding_table.callable_region = sbt_pair.entries.group_regions.at(4).region;
-                  }
+                    shader_binding_table.raygen_region = regions.at(0).region;
+                    shader_binding_table.miss_region = regions.at(2).region;
+                    shader_binding_table.hit_region = regions.at(3).region;
+                    shader_binding_table.callable_region = regions.at(4).region;
                 } else {
-                    if (second_sbt)
-                    {
-                      shader_binding_table.raygen_region = second_sbt_pair.entries.group_regions.at(4).region;
-                      shader_binding_table.miss_region = second_sbt_pair.entries.group_regions.at(5).region;
-                      shader_binding_table.hit_region = second_sbt_pair.entries.group_regions.at(6).region;
-                      shader_binding_table.callable_region = second_sbt_pair.entries.group_regions.at(7).region;
-                    }
-                    else
-                    {
-                      shader_binding_table.raygen_region = sbt_pair.entries.group_regions.at(1).region;
-                      shader_binding_table.miss_region = sbt_pair.entries.group_regions.at(2).region;
-                      shader_binding_table.hit_region = sbt_pair.entries.group_regions.at(3).region;
-                      shader_binding_table.callable_region = sbt_pair.entries.group_regions.at(4).region;
-                    }
+                    shader_binding_table.raygen_region = regions.at(1).region;
+                    shader_binding_table.miss_region = regions.at(2).region;
+                    shader_binding_table.hit_region = regions.at(3).region;
+                    shader_binding_table.callable_region = regions.at(4).region;
                 }
 
                 recorder.trace_rays({

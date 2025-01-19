@@ -122,14 +122,14 @@ namespace daxa
         /// @return reference to info of object.
         [[nodiscard]] auto info() const -> RayTracingPipelineInfo const &;
 
-        struct SbtPair {
-            daxa::BufferId buffer;
-            RayTracingShaderBindingTableEntries entries;
-        };
-        [[nodiscard]] auto create_default_sbt() const -> SbtPair;
-        [[nodiscard]] auto create_sbt(BuildShaderBindingTableInfo const & info) const -> SbtPair;
-        void get_shader_group_handles(void *out_blob) const;
+        // struct SbtPair {
+        //     daxa::BufferId buffer;
+        //     // RayTracingShaderBindingTableEntries entries;
+        // };
+        void create_sbt(BuildShaderBindingTableInfo const & info, u32* region_count, GroupRegionInfo* out_regions, BufferId* out_buffer) const;
+        void get_shader_group_handles(void *out_blob, usize *buf_size) const;
         auto get_shader_group_count() const -> u32;
+        auto get_shader_group_handle_size() const -> u32;
 
       protected:
         template <typename T, typename H_T>
