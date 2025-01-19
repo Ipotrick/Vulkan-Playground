@@ -52,6 +52,8 @@ typedef uint64_t daxa_Flags;
 
 typedef char daxa_Bool8;
 
+typedef size_t daxa_usize;
+
 typedef struct
 {
     uint64_t value;

@@ -858,22 +858,40 @@ namespace daxa
         return *r_cast<RayTracingPipelineInfo const *>(rc_cast<daxa_RayTracingPipeline>(this->object));
     }
 
-    auto RayTracingPipeline::create_default_sbt() const -> SbtPair
+    void RayTracingPipeline::create_sbt(BuildShaderBindingTableInfo const & info, u32* region_count, GroupRegionInfo * out_regions, usize * out_buffer_size, BufferId * out_buffer) const
     {
-        auto result = SbtPair{};
-        auto daxa_res = daxa_ray_tracing_pipeline_create_default_sbt(
+        auto daxa_res = daxa_ray_tracing_pipeline_create_sbt(
             rc_cast<daxa_RayTracingPipeline>(this->object),
-            r_cast<daxa_RayTracingShaderBindingTable *>(&result.table),
-            r_cast<daxa_BufferId *>(&result.buffer));
-        check_result(daxa_res, "failed in create_default_sbt");
-        return result;
+            region_count,
+            r_cast<daxa_GroupRegionInfo *>(out_regions),
+            out_buffer_size,
+            r_cast<daxa_BufferId *>(out_buffer),
+            r_cast<daxa_BuildShaderBindingTableInfo const *>(&info));
+        check_result(daxa_res, "failed in create_sbt");
     }
 
-    void RayTracingPipeline::get_shader_group_handles(void * out_blob) const
+    auto RayTracingPipeline::get_shader_group_handle_size() const -> u32
+    {
+        return daxa_ray_tracing_pipeline_get_shader_group_handle_size(rc_cast<daxa_RayTracingPipeline>(this->object));
+    }
+
+    void RayTracingPipeline::get_all_shader_group_handles(void * out_blob, usize * buf_size) const
+    {
+        auto daxa_res = daxa_ray_tracing_pipeline_get_all_shader_group_handles(
+            rc_cast<daxa_RayTracingPipeline>(this->object), out_blob, buf_size);
+        check_result(daxa_res, "failed in get_all_shader_group_handles");
+    }
+
+    void RayTracingPipeline::get_shader_group_handles(void * out_blob, usize * buf_size, u32 first_group, u32 group_count) const
     {
         auto daxa_res = daxa_ray_tracing_pipeline_get_shader_group_handles(
-            rc_cast<daxa_RayTracingPipeline>(this->object), out_blob);
+            rc_cast<daxa_RayTracingPipeline>(this->object), out_blob, buf_size, first_group, group_count);
         check_result(daxa_res, "failed in get_shader_group_handles");
+    }
+
+    auto RayTracingPipeline::get_shader_group_count() const -> u32
+    {
+        return daxa_ray_tracing_pipeline_get_shader_group_count(rc_cast<daxa_RayTracingPipeline>(this->object));
     }
 
     auto RayTracingPipeline::inc_refcnt(ImplHandle const * object) -> u64

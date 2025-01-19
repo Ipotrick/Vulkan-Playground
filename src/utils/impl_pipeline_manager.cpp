@@ -488,44 +488,38 @@ namespace daxa
         };
         this->current_observed_hotload_files = &pipe_result.observed_hotload_files;
         auto ray_tracing_pipeline_info = RayTracingPipelineInfo{
-            .ray_gen_shaders = {},
-            .intersection_shaders = {},
-            .any_hit_shaders = {},
-            .callable_shaders = {},
-            .closest_hit_shaders = {},
-            .miss_hit_shaders = {},
-            .shader_groups = {a_info.shader_groups_infos.data(), a_info.shader_groups_infos.size()},
+            .stages = {},
+            .groups = {a_info.groups.data(), a_info.groups.size()},
             .max_ray_recursion_depth = a_info.max_ray_recursion_depth,
             .push_constant_size = a_info.push_constant_size,
             .name = a_info.name,
         };
-        auto ray_gen_spirv_result = std::vector<daxa::Result<std::vector<unsigned int>>>();
-        auto intersection_spirv_result = std::vector<daxa::Result<std::vector<unsigned int>>>();
-        auto any_hit_spirv_result = std::vector<daxa::Result<std::vector<unsigned int>>>();
-        auto callable_spirv_result = std::vector<daxa::Result<std::vector<unsigned int>>>();
-        auto closest_hit_spirv_result = std::vector<daxa::Result<std::vector<unsigned int>>>();
-        auto miss_hit_spirv_result = std::vector<daxa::Result<std::vector<unsigned int>>>();
-        auto ray_gen_shader_infos = std::vector<ShaderInfo>{};
-        auto intersection_shader_infos = std::vector<ShaderInfo>{};
-        auto any_hit_shader_infos = std::vector<ShaderInfo>{};
-        auto callable_shader_infos = std::vector<ShaderInfo>{};
-        auto closest_hit_shader_infos = std::vector<ShaderInfo>{};
-        auto miss_hit_shader_infos = std::vector<ShaderInfo>{};
-        using ElemT = std::tuple<std::vector<ShaderCompileInfo> *, std::vector<ShaderInfo> *, std::vector<daxa::Result<std::vector<unsigned int>>> *, ShaderStage>;
-        auto const result_shader_compile_infos = std::array<ElemT, 6>{
-            ElemT{&pipe_result.info.ray_gen_infos, &ray_gen_shader_infos, &ray_gen_spirv_result, ShaderStage::RAY_GEN},
-            ElemT{&pipe_result.info.intersection_infos, &intersection_shader_infos, &intersection_spirv_result, ShaderStage::RAY_INTERSECT},
-            ElemT{&pipe_result.info.any_hit_infos, &any_hit_shader_infos, &any_hit_spirv_result, ShaderStage::RAY_ANY_HIT},
-            ElemT{&pipe_result.info.callable_infos, &callable_shader_infos, &callable_spirv_result, ShaderStage::RAY_CALLABLE},
-            ElemT{&pipe_result.info.closest_hit_infos, &closest_hit_shader_infos, &closest_hit_spirv_result, ShaderStage::RAY_CLOSEST_HIT},
-            ElemT{&pipe_result.info.miss_hit_infos, &miss_hit_shader_infos, &miss_hit_spirv_result, ShaderStage::RAY_MISS},
+        auto spirv_result = std::vector<daxa::Result<std::vector<unsigned int>>>();
+        auto shader_infos = std::vector<RayTracingShaderInfo>{};
+        using ElemT = std::tuple<std::vector<RayTracingShaderCompileInfo> *, std::vector<RayTracingShaderInfo> *, std::vector<daxa::Result<std::vector<unsigned int>>> *>;
+        auto const result_shader_compile_infos = std::array<ElemT, 1>{
+            ElemT{&pipe_result.info.stages, &shader_infos, &spirv_result},
         };
 
-        for (auto [pipe_result_shader_info, final_shader_info, spv_results, stage] : result_shader_compile_infos)
+        auto translate_type_for_stage = [](RayTracingShaderType type) -> ShaderStage
+        {
+            switch (type)
+            {
+            case RayTracingShaderType::RAYGEN: return ShaderStage::RAY_GEN;
+            case RayTracingShaderType::MISS: return ShaderStage::RAY_MISS;
+            case RayTracingShaderType::CLOSEST_HIT: return ShaderStage::RAY_CLOSEST_HIT;
+            case RayTracingShaderType::ANY_HIT: return ShaderStage::RAY_ANY_HIT;
+            case RayTracingShaderType::INTERSECTION: return ShaderStage::RAY_INTERSECT;
+            case RayTracingShaderType::CALLABLE: return ShaderStage::RAY_CALLABLE;
+            default: return ShaderStage::RAY_GEN;
+            }
+        };
+
+        for (auto [pipe_result_shader_info, final_shader_info, spv_results] : result_shader_compile_infos)
         {
             for (auto & shader_compile_info : *pipe_result_shader_info)
             {
-                auto spv_result = get_spirv(shader_compile_info, pipe_result.info.name, stage);
+                auto spv_result = get_spirv(shader_compile_info.shader_info, pipe_result.info.name, translate_type_for_stage(shader_compile_info.type));
                 if (spv_result.is_err())
                 {
                     if (this->info.register_null_pipelines_when_first_compile_fails)
@@ -540,26 +534,26 @@ namespace daxa
                     }
                 }
                 spv_results->push_back(std::move(spv_result));
-                final_shader_info->push_back(daxa::ShaderInfo{
-                    .byte_code = spv_results->back().value().data(),
-                    .byte_code_size = static_cast<u32>(spv_results->back().value().size()),
-                    .create_flags = shader_compile_info.compile_options.create_flags.value_or(ShaderCreateFlagBits::NONE),
-                    .required_subgroup_size =
-                        shader_compile_info.compile_options.required_subgroup_size.has_value() ? Optional{shader_compile_info.compile_options.required_subgroup_size.value()} : daxa::None,
+                final_shader_info->push_back(daxa::RayTracingShaderInfo{
+                    .type = shader_compile_info.type,
+                    .info = {
+                        .byte_code = spv_results->back().value().data(),
+                        .byte_code_size = static_cast<u32>(spv_results->back().value().size()),
+                        .create_flags = shader_compile_info.shader_info.compile_options.create_flags.value_or(ShaderCreateFlagBits::NONE),
+                        .required_subgroup_size = 
+                            shader_compile_info.shader_info.compile_options.required_subgroup_size.has_value() ? 
+                            Optional{shader_compile_info.shader_info.compile_options.required_subgroup_size.value()} : 
+                            daxa::None,
+                    },
                 });
-                if (shader_compile_info.compile_options.entry_point.has_value() && (shader_compile_info.compile_options.language != ShaderLanguage::SLANG))
+                if (shader_compile_info.shader_info.compile_options.entry_point.has_value() && (shader_compile_info.shader_info.compile_options.language != ShaderLanguage::SLANG))
                 {
-                    final_shader_info->back().entry_point = {shader_compile_info.compile_options.entry_point.value()};
+                    final_shader_info->back().info.entry_point = {shader_compile_info.shader_info.compile_options.entry_point.value()};
                 }
             }
         }
 
-        ray_tracing_pipeline_info.ray_gen_shaders = {ray_gen_shader_infos.data(), ray_gen_shader_infos.size()};
-        ray_tracing_pipeline_info.intersection_shaders = {intersection_shader_infos.data(), intersection_shader_infos.size()};
-        ray_tracing_pipeline_info.any_hit_shaders = {any_hit_shader_infos.data(), any_hit_shader_infos.size()};
-        ray_tracing_pipeline_info.callable_shaders = {callable_shader_infos.data(), callable_shader_infos.size()};
-        ray_tracing_pipeline_info.closest_hit_shaders = {closest_hit_shader_infos.data(), closest_hit_shader_infos.size()};
-        ray_tracing_pipeline_info.miss_hit_shaders = {miss_hit_shader_infos.data(), miss_hit_shader_infos.size()};
+        ray_tracing_pipeline_info.stages = {shader_infos.data(), shader_infos.size()};
 
         (*pipe_result.pipeline_ptr) = this->info.device.create_ray_tracing_pipeline(ray_tracing_pipeline_info);
         return Result<RayTracingPipelineState>(std::move(pipe_result));
@@ -699,29 +693,9 @@ namespace daxa
     {
         // DAXA_DBG_ASSERT_TRUE_M(!daxa::holds_alternative<daxa::Monostate>(a_info.shader_info.source), "must provide shader source");
         auto modified_info = a_info;
-        for (auto & shader_compile_info : modified_info.ray_gen_infos)
+        for (auto & shader_compile_info : modified_info.stages)
         {
-            shader_compile_info.compile_options.inherit(this->info.shader_compile_options);
-        }
-        for (auto & shader_compile_info : modified_info.intersection_infos)
-        {
-            shader_compile_info.compile_options.inherit(this->info.shader_compile_options);
-        }
-        for (auto & shader_compile_info : modified_info.any_hit_infos)
-        {
-            shader_compile_info.compile_options.inherit(this->info.shader_compile_options);
-        }
-        for (auto & shader_compile_info : modified_info.callable_infos)
-        {
-            shader_compile_info.compile_options.inherit(this->info.shader_compile_options);
-        }
-        for (auto & shader_compile_info : modified_info.closest_hit_infos)
-        {
-            shader_compile_info.compile_options.inherit(this->info.shader_compile_options);
-        }
-        for (auto & shader_compile_info : modified_info.miss_hit_infos)
-        {
-            shader_compile_info.compile_options.inherit(this->info.shader_compile_options);
+            shader_compile_info.shader_info.compile_options.inherit(this->info.shader_compile_options);
         }
 
         auto pipe_result = create_ray_tracing_pipeline(modified_info);
@@ -1644,7 +1618,7 @@ namespace daxa
             auto target_desc = slang::TargetDesc{};
             target_desc.format = SlangCompileTarget::SLANG_SPIRV;
             auto session_lock = std::lock_guard{slang_backend.session_mtx};
-            target_desc.profile = slang_backend.global_session->findProfile("spirv_1_4");
+            target_desc.profile = slang_backend.global_session->findProfile("spirv_1_5");
             target_desc.flags = SLANG_TARGET_FLAG_GENERATE_SPIRV_DIRECTLY;
 
             // NOTE(grundlett): Does GLSL here refer to SPIR-V?
@@ -1671,12 +1645,13 @@ namespace daxa
         {
             return Result<std::vector<u32>>(std::string_view{"internal error: session->createCompileRequest(&slangRequest) returned nullptr"});
         }
-        std::array<char const *, 3> cmd_args = {
+        std::array<char const *, 4> cmd_args = {
             // https://github.com/shader-slang/slang/issues/3532
             // Disables warning for aliasing bindings.
             // clang-format off
             "-warnings-disable", "39001",
             "-O0",
+            "-g2",
             // clang-format on
         };
         slangRequest->processCommandLineArguments(cmd_args.data(), static_cast<int>(cmd_args.size()));

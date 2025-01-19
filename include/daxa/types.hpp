@@ -361,6 +361,21 @@ namespace daxa
         }
         SmallString(SmallString const & other) = default;
         SmallString & operator=(SmallString const & other) = default;
+        bool operator<(SmallString const & other) const
+        {
+            for (FixedListSizeT i = 0; i < std::min(this->m_size, other.m_size); ++i)
+            {
+                if (this->m_data[i] < other.m_data[i])
+                {
+                    return true;
+                }
+                if (this->m_data[i] > other.m_data[i])
+                {
+                    return false;
+                }
+            }
+            return this->m_size < other.m_size;
+        }
         [[nodiscard]] auto view() const -> std::string_view
         {
             return {this->m_data.data(), static_cast<usize>(this->m_size)};
@@ -1856,12 +1871,22 @@ namespace daxa
         none = 1000165000,
     };
 
-    // TODO: distinguish between GENERAL(raygen, miss & callable) cause shader handles must be set in order (raygen, miss, hit, callable)?
-    enum struct ShaderGroup
+    enum struct ExtendedShaderGroupType
     {
-        GENERAL = 0,
-        TRIANGLES_HIT_GROUP = 1,
-        PROCEDURAL_HIT_GROUP = 2,
+        RAYGEN = 0,
+        MISS = 1,
+        TRIANGLES_HIT_GROUP = 2,
+        PROCEDURAL_HIT_GROUP = 3,
+        CALLABLE = 4,
+        MAX_ENUM = 0x7fffffff,
+    };
+
+    enum struct ShaderGroupType
+    {
+        RAYGEN = 0,
+        MISS = 1,
+        HIT = 2,
+        CALLABLE = 3,
         MAX_ENUM = 0x7fffffff,
     };
 

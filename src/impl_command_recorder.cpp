@@ -695,19 +695,18 @@ auto daxa_cmd_trace_rays(daxa_CommandRecorder self, daxa_TraceRaysInfo const * i
     }
     auto const & binding_table = info->shader_binding_table;
     auto raygen_handle = binding_table.raygen_region;
-    raygen_handle.deviceAddress += binding_table.raygen_region.stride * info->raygen_handle_offset;
     auto miss_handle = binding_table.miss_region;
-    miss_handle.deviceAddress += binding_table.miss_region.stride * info->miss_handle_offset;
+    miss_handle.device_address += binding_table.miss_region.stride * info->miss_handle_offset;
     auto hit_handle = binding_table.hit_region;
-    hit_handle.deviceAddress += binding_table.hit_region.stride * info->hit_handle_offset;
+    hit_handle.device_address += binding_table.hit_region.stride * info->hit_handle_offset;
     auto call_handle = binding_table.callable_region;
-    call_handle.deviceAddress += binding_table.callable_region.stride * info->callable_handle_offset;
+    call_handle.device_address += binding_table.callable_region.stride * info->callable_handle_offset;
     self->device->vkCmdTraceRaysKHR(
         self->current_command_data.vk_cmd_buffer,
-        &raygen_handle,
-        &miss_handle,
-        &hit_handle,
-        &call_handle,
+        reinterpret_cast<VkStridedDeviceAddressRegionKHR *>(&raygen_handle),
+        reinterpret_cast<VkStridedDeviceAddressRegionKHR *>(&miss_handle),
+        reinterpret_cast<VkStridedDeviceAddressRegionKHR *>(&hit_handle),
+        reinterpret_cast<VkStridedDeviceAddressRegionKHR *>(&call_handle),
         info->width, info->height, info->depth);
     return DAXA_RESULT_SUCCESS;
 }
@@ -721,19 +720,18 @@ auto daxa_cmd_trace_rays_indirect(daxa_CommandRecorder self, daxa_TraceRaysIndir
     }
     auto const & binding_table = info->shader_binding_table;
     auto raygen_handle = binding_table.raygen_region;
-    raygen_handle.deviceAddress += binding_table.raygen_region.stride * info->raygen_handle_offset;
     auto miss_handle = binding_table.miss_region;
-    miss_handle.deviceAddress += binding_table.miss_region.stride * info->miss_handle_offset;
+    miss_handle.device_address += binding_table.miss_region.stride * info->miss_handle_offset;
     auto hit_handle = binding_table.hit_region;
-    hit_handle.deviceAddress += binding_table.hit_region.stride * info->hit_handle_offset;
+    hit_handle.device_address += binding_table.hit_region.stride * info->hit_handle_offset;
     auto call_handle = binding_table.callable_region;
-    call_handle.deviceAddress += binding_table.callable_region.stride * info->callable_handle_offset;
+    call_handle.device_address += binding_table.callable_region.stride * info->callable_handle_offset;
     self->device->vkCmdTraceRaysIndirectKHR(
         self->current_command_data.vk_cmd_buffer,
-        &raygen_handle,
-        &miss_handle,
-        &hit_handle,
-        &call_handle,
+        reinterpret_cast<VkStridedDeviceAddressRegionKHR *>(&raygen_handle),
+        reinterpret_cast<VkStridedDeviceAddressRegionKHR *>(&miss_handle),
+        reinterpret_cast<VkStridedDeviceAddressRegionKHR *>(&hit_handle),
+        reinterpret_cast<VkStridedDeviceAddressRegionKHR *>(&call_handle),
         info->indirect_device_address);
     return DAXA_RESULT_SUCCESS;
 }

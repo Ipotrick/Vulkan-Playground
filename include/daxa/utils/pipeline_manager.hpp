@@ -64,15 +64,16 @@ namespace daxa
         ShaderCompileOptions compile_options = {};
     };
 
+    struct RayTracingShaderCompileInfo
+    {
+        ShaderCompileInfo shader_info = {};
+        RayTracingShaderType type = {};
+    };
+
     struct RayTracingPipelineCompileInfo
     {
-        std::vector<ShaderCompileInfo> ray_gen_infos = {};
-        std::vector<ShaderCompileInfo> intersection_infos = {};
-        std::vector<ShaderCompileInfo> any_hit_infos = {};
-        std::vector<ShaderCompileInfo> callable_infos = {};
-        std::vector<ShaderCompileInfo> closest_hit_infos = {};
-        std::vector<ShaderCompileInfo> miss_hit_infos = {};
-        std::vector<RayTracingShaderGroupInfo> shader_groups_infos = {};
+        std::vector<RayTracingShaderCompileInfo> stages = {};
+        std::vector<RayTracingShaderGroupInfo> groups = {};
         u32 max_ray_recursion_depth = {};
         u32 push_constant_size = {};
         std::string name = {};

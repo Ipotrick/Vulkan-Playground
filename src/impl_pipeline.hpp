@@ -35,6 +35,7 @@ struct daxa_ImplComputePipeline final : ImplPipeline
 struct daxa_ImplRayTracingPipeline final : ImplPipeline
 {
     // NOTE(grundlett): This is bogus. The state passed to info is in spans which means it does not persist...
-    std::vector<RayTracingShaderGroupInfo> shader_groups = {};
+    std::vector<RayTracingShaderInfo> stages = {};
+    std::vector<RayTracingShaderGroupInfo> groups = {};
     RayTracingPipelineInfo info = {};
 };

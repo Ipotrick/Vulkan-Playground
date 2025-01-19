@@ -36,11 +36,12 @@ namespace tests
             daxa::Device device = {};
             daxa::Swapchain swapchain = {};
             daxa::PipelineManager pipeline_manager = {};
-            // std::shared_ptr<daxa::ComputePipeline> comp_pipeline = {};
-            std::shared_ptr<daxa::RayTracingPipeline> rt_pipeline = {};
+            std::shared_ptr<daxa::RayTracingPipeline> rt_pipeline = {};daxa::BufferId sbt_buffer = {};
+            std::vector<daxa::GroupRegionInfo> regions = {};
             daxa::TlasId tlas = {};
             daxa::BlasId blas = {};
             daxa::BlasId proc_blas = {};
+            daxa::BufferId vertex_buffer = {};
             daxa::BufferId aabb_buffer = {};
             
             daxa::TaskBuffer blas_scratch_buffer = {};
@@ -54,7 +55,8 @@ namespace tests
             bool atomic_float = false;
 
             daxa_u32 frame = 0;
-            daxa_u32 raygen_shader_binding_table_offset = 0;
+            bool primary_rays = true;
+            daxa_u32 callable_index = 0;
 
             Camera my_camera = {
                 .position = {0.0f, 0.0f, -1.0f},
@@ -70,25 +72,83 @@ namespace tests
             daxa::BufferId cam_buffer = {};
             u32 cam_buffer_size = sizeof(CameraView);
 
+            // SHADER BINDING TABLE
+            u8 * handle_buffer = nullptr;
+
             App() : AppWindow<App>("ray query test") {}
 
             ~App()
             {
                 if (device.is_valid())
                 {
+                    device.destroy_buffer(sbt_buffer);
                     device.destroy_tlas(tlas);
                     device.destroy_blas(blas);
                     device.destroy_blas(proc_blas);
                     device.destroy_buffer(cam_buffer);
                     device.destroy_buffer(aabb_buffer);
+                    device.destroy_buffer(vertex_buffer);
                     device.destroy_buffer(blas_buffer);
                 }
+
+                if(handle_buffer) {
+                    delete[] handle_buffer;
+                }
+            }
+            
+            
+
+
+            enum StageIndex{
+                RAYGEN,
+                RAYGEN2,
+                MISS,
+                MISS2,
+                CLOSE_HIT,
+                CLOSE_HIT2,
+                ANY_HIT,
+                INTERSECTION,
+                CALLABLE,
+                CALLABLE2,
+                STAGES_COUNT,
+            };
+
+
+            enum GroupIndex : u32{
+                PRIMARY_RAY,
+                SECONDARY_RAY,
+                HIT_MISS,
+                SHADOW_MISS,
+                TRIANGLE_HIT,
+                PROCEDURAL_HIT,
+                DIRECTIONAL_LIGHT,
+                SPOT_LIGHT,
+                GROUPS_COUNT,
+            };
+
+            void recreate_sbt() {
+                u32 region_count = 0;
+
+                auto groups = daxa::BuildShaderBindingTableInfo({
+                                            std::array<u32, 8>{GroupIndex::PRIMARY_RAY, GroupIndex::SECONDARY_RAY, GroupIndex::HIT_MISS, GroupIndex::SHADOW_MISS, GroupIndex::TRIANGLE_HIT, GroupIndex::PROCEDURAL_HIT, GroupIndex::DIRECTIONAL_LIGHT, GroupIndex::SPOT_LIGHT},
+                                        });
+                
+                usize sbt_size = 0;
+
+                rt_pipeline->create_sbt(groups,
+                                        &region_count, nullptr, &sbt_size, nullptr);
+
+                regions.clear();
+                regions.resize(region_count);
+
+                rt_pipeline->create_sbt(groups,
+                                        &region_count, regions.data(), nullptr, &sbt_buffer);
             }
 
             void initialize()
             {
                 daxa_ctx = daxa::create_instance({});
-#if ACTIVATE_ATOMIC_FLOAT
+#if defined(ACTIVATE_ATOMIC_FLOAT)
                 atomic_float = true;
 #endif            
                 device = [&]()
@@ -154,13 +214,11 @@ namespace tests
                     std::array{0.0f, 0.25f, 0.5f},
                     std::array{0.25f, -0.25f, 0.5f},
                 };
-                auto vertex_buffer = device.create_buffer({
+                vertex_buffer = device.create_buffer({
                     .size = sizeof(decltype(vertices)),
                     .allocate_info = daxa::MemoryFlagBits::HOST_ACCESS_RANDOM,
                     .name = "vertex buffer",
                 });
-                defer { device.destroy_buffer(vertex_buffer); };
-                // *device.buffer_host_address_as<decltype(vertices)>(vertex_buffer).value() = vertices;
                 std::memcpy(device.buffer_host_address_as<daxa_f32vec3>(vertex_buffer).value(), vertices.data(), sizeof(daxa_f32vec3) * vertices.size());
 
                 /// Indices:
@@ -171,7 +229,6 @@ namespace tests
                     .name = "index buffer",
                 });
                 defer { device.destroy_buffer(index_buffer); };
-                // *device.buffer_host_address_as<decltype(indices)>(index_buffer).value() = indices;
                 std::memcpy(device.buffer_host_address_as<daxa_u32>(index_buffer).value(), indices.data(), sizeof(daxa_u32) * indices.size());
                 /// Transforms:
                 auto transform_buffer = device.create_buffer({
@@ -186,27 +243,25 @@ namespace tests
                     {0, 0, 1, 0},
                 };
 
-                // TODO: The fact that we delayed some parameters to the create info and afterwards, we add them for building the acceleration structure cause a crash.
-                // TODO: Could we improve the whole process?
                 /// Triangle Geometry Info:
                 auto geometries = std::array{
                     daxa::BlasTriangleGeometryInfo{
-                        .vertex_format = daxa::Format::R32G32B32_SFLOAT, // Is also default
-                        .vertex_data = device.device_address(vertex_buffer).value(),                               // Ignored in get_acceleration_structure_build_sizes.    // Is also default
-                        .vertex_stride = sizeof(daxa_f32vec3),           // Is also default
+                        .vertex_format = daxa::Format::R32G32B32_SFLOAT,
+                        .vertex_data = device.device_address(vertex_buffer).value(),
+                        .vertex_stride = sizeof(daxa_f32vec3),
                         .max_vertex = static_cast<u32>(vertices.size() - 1),
-                        .index_type = daxa::IndexType::uint32, // Is also default
-                        .index_data = device.device_address(index_buffer).value(),                      // Ignored in get_acceleration_structure_build_sizes. // Is also default
-                        .transform_data = device.device_address(transform_buffer).value(),                  // Ignored in get_acceleration_structure_build_sizes. // Is also default
+                        .index_type = daxa::IndexType::uint32,
+                        .index_data = device.device_address(index_buffer).value(),
+                        .transform_data = device.device_address(transform_buffer).value(),
                         .count = static_cast<daxa_u32>(indices.size() / 3),
-                        .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
+                        .flags = daxa::GeometryFlagBits::OPAQUE, 
                     }};
                 /// Create Triangle Blas:
                 auto blas_build_info = daxa::BlasBuildInfo{
                     .flags = daxa::AccelerationStructureBuildFlagBits::PREFER_FAST_TRACE | daxa::AccelerationStructureBuildFlagBits::ALLOW_DATA_ACCESS,
-                    .dst_blas = {}, // Ignored in get_acceleration_structure_build_sizes.       // Is also default
+                    .dst_blas = {},
                     .geometries = geometries,
-                    .scratch_data = {}, // Ignored in get_acceleration_structure_build_sizes.   // Is also default
+                    .scratch_data = {},
                 };
                 daxa::AccelerationStructureBuildSizesInfo build_size_info = device.blas_build_sizes(blas_build_info);
 
@@ -264,20 +319,20 @@ namespace tests
                         .data = device.device_address(aabb_buffer).value(),
                         .stride = sizeof(daxa_f32mat3x2),
                         .count = 1,
-                        .flags = daxa::GeometryFlagBits::OPAQUE, // Is also default
+                        .flags = daxa::GeometryFlagBits::OPAQUE,
                     },
                     daxa::BlasAabbGeometryInfo{
                         .data = device.device_address(aabb_buffer).value() + sizeof(daxa_f32mat3x2),
                         .stride = sizeof(daxa_f32mat3x2),
                         .count = 1,
-                        .flags = daxa::GeometryFlagBits::NO_DUPLICATE_ANY_HIT_INVOCATION, // Is also default
+                        .flags = daxa::GeometryFlagBits::NO_DUPLICATE_ANY_HIT_INVOCATION,
                     }};
                 /// Create Procedural Blas:
                 auto proc_blas_build_info = daxa::BlasBuildInfo{
-                    .flags = daxa::AccelerationStructureBuildFlagBits::PREFER_FAST_TRACE, // Is also default
-                    .dst_blas = {},                                                       // Ignored in get_acceleration_structure_build_sizes.       // Is also default
+                    .flags = daxa::AccelerationStructureBuildFlagBits::PREFER_FAST_TRACE,
+                    .dst_blas = {}, 
                     .geometries = proc_geometries,
-                    .scratch_data = {}, // Ignored in get_acceleration_structure_build_sizes.   // Is also default
+                    .scratch_data = {},
                 };
                 daxa::AccelerationStructureBuildSizesInfo proc_build_size_info = device.blas_build_sizes(proc_blas_build_info);
                 
@@ -416,137 +471,275 @@ namespace tests
                             DAXA_SHADER_INCLUDE_DIR,
                             "tests/2_daxa_api/10_raytracing/shaders",
                         },
+#if defined(DAXA_SHADERLANG_COMPILE_SLANG)
+            .language = daxa::ShaderLanguage::SLANG,
+#else
+            .language = daxa::ShaderLanguage::GLSL,
+#endif
                     },
                 }};
-                // auto const compute_pipe_info = daxa::ComputePipelineCompileInfo{
-                //     .shader_info = daxa::ShaderCompileInfo{
-                //         .source = daxa::ShaderFile{"shaders.glsl"},
-                //     },
-                //     .push_constant_size = sizeof(PushConstant),
-                //     .name = "ray query comp shader",
-                // };
-                // comp_pipeline = pipeline_manager.add_compute_pipeline(compute_pipe_info).value();
+#if defined(DAXA_SHADERLANG_COMPILE_SLANG)
+                std::string shader_file = "raytracing.slang";
+#else
+                std::string shader_file = "raytracing.glsl";
+#endif
 
-
-                daxa::ShaderCompileInfo prim_ray_gen_compile_info;
-                daxa::ShaderCompileInfo ray_gen_compile_info;
+                daxa::ShaderCompileInfo default_shader_info = daxa::ShaderCompileInfo{
+                    .source = daxa::ShaderFile{shader_file},
+                };
+                daxa::ShaderCompileInfo prim_raygen_compile_info;
+                daxa::ShaderCompileInfo raygen_compile_info;
                 if(invocation_reorder_mode == static_cast<daxa_u32>(daxa::InvocationReorderMode::ALLOW_REORDER)) {
-                    prim_ray_gen_compile_info = daxa::ShaderCompileInfo{
-                        .source = daxa::ShaderFile{"raytracing.glsl"},
+                    prim_raygen_compile_info = daxa::ShaderCompileInfo{
+                        .source = daxa::ShaderFile{shader_file},
+#if defined(DAXA_SHADERLANG_COMPILE_SLANG)
+                        .compile_options = {
+                            .entry_point = "primary_raygen_shader",
+                        },
+#else
                         .compile_options = {
                             .defines = std::vector{daxa::ShaderDefine{"PRIMARY_RAYS", "1"}, daxa::ShaderDefine{"SER_ON", "1"}, atomic_float ?
                                 daxa::ShaderDefine{"ATOMIC_FLOAT", "1"} : daxa::ShaderDefine{"ATOMIC_FLOAT", "0"
                             }},
                         },
+#endif
                     };
-                    ray_gen_compile_info = daxa::ShaderCompileInfo{
-                        .source = daxa::ShaderFile{"raytracing.glsl"},
+                    raygen_compile_info = daxa::ShaderCompileInfo{
+                        .source = daxa::ShaderFile{shader_file},
+#if defined(DAXA_SHADERLANG_COMPILE_SLANG)
+                        .compile_options = {
+                            .entry_point = "raygen_shader",
+                        },
+#else
                         .compile_options = {
                             .defines = std::vector{daxa::ShaderDefine{"SER_ON", "1"}, atomic_float ? daxa::ShaderDefine{"ATOMIC_FLOAT", "1"} : daxa::ShaderDefine{"ATOMIC_FLOAT", "0"}}},
+#endif
                     };
                 } else {
-                    prim_ray_gen_compile_info = daxa::ShaderCompileInfo{
-                        .source = daxa::ShaderFile{"raytracing.glsl"},
+                    prim_raygen_compile_info = daxa::ShaderCompileInfo{
+                        .source = daxa::ShaderFile{shader_file},
+#if defined(DAXA_SHADERLANG_COMPILE_SLANG)
+                        .compile_options = {
+                            .entry_point = "primary_raygen_shader",
+                        },
+#else
                         .compile_options = {
                             .defines = std::vector{daxa::ShaderDefine{"PRIMARY_RAYS", "1"}, atomic_float ?
                                 daxa::ShaderDefine{"ATOMIC_FLOAT", "1"} : daxa::ShaderDefine{"ATOMIC_FLOAT", "0"
                             }},
                         }
+#endif
                     };
-                    ray_gen_compile_info = daxa::ShaderCompileInfo{
-                        .source = daxa::ShaderFile{"raytracing.glsl"},
-                        .compile_options = {.defines = std::vector{daxa::ShaderDefine{"HIT_TRIANGLE", "1"}, atomic_float ?
-                                daxa::ShaderDefine{"ATOMIC_FLOAT", "1"} : daxa::ShaderDefine{"ATOMIC_FLOAT", "0"
-                            }}
+                    raygen_compile_info = daxa::ShaderCompileInfo{
+                        .source = daxa::ShaderFile{shader_file},
+#if defined(DAXA_SHADERLANG_COMPILE_SLANG)
+                        .compile_options = {
+                            .entry_point = "raygen_shader",
                         },
+#else
+                        .compile_options = {.defines = std::vector{atomic_float ? daxa::ShaderDefine{"ATOMIC_FLOAT", "1"} : daxa::ShaderDefine{"ATOMIC_FLOAT", "0"}}},
+#endif
                     };
                 }
 
+                daxa::ShaderCompileInfo miss_compile_info = daxa::ShaderCompileInfo{
+                    .source = daxa::ShaderFile{shader_file},
+#if defined(DAXA_SHADERLANG_COMPILE_SLANG)
+                        .compile_options = {
+                            .entry_point = "miss_shader",
+                        },
+#else
+#endif
+                };
+
+                daxa::ShaderCompileInfo shadow_miss_compile_info = daxa::ShaderCompileInfo{
+                    .source = daxa::ShaderFile{shader_file},
+#if defined(DAXA_SHADERLANG_COMPILE_SLANG)
+                        .compile_options = {
+                            .entry_point = "shadow_miss_shader",
+                        },
+#else
+                    .compile_options = {.defines = std::vector{daxa::ShaderDefine{"MISS_SHADOW", "1"}, atomic_float ? daxa::ShaderDefine{"ATOMIC_FLOAT", "1"} : daxa::ShaderDefine{"ATOMIC_FLOAT", "0"}}},
+#endif
+                };
+
+                daxa::ShaderCompileInfo procedural_closest_hit_compile_info = daxa::ShaderCompileInfo{
+                    .source = daxa::ShaderFile{shader_file},
+#if defined(DAXA_SHADERLANG_COMPILE_SLANG)
+                        .compile_options = {
+                            .entry_point = "procedural_closest_hit_shader",
+                        },
+#else
+#endif
+                };
+
+                daxa::ShaderCompileInfo closest_hit_compile_info = daxa::ShaderCompileInfo{
+                    .source = daxa::ShaderFile{shader_file},
+#if defined(DAXA_SHADERLANG_COMPILE_SLANG)
+                        .compile_options = {
+                            .entry_point = "closest_hit_shader",
+                        },
+#else
+                    .compile_options = {.defines = std::vector{daxa::ShaderDefine{"HIT_TRIANGLE", "1"}, atomic_float ? daxa::ShaderDefine{"ATOMIC_FLOAT", "1"} : daxa::ShaderDefine{"ATOMIC_FLOAT", "0"}}},
+#endif
+                };
+
+                daxa::ShaderCompileInfo any_hit_compile_info = daxa::ShaderCompileInfo{
+                    .source = daxa::ShaderFile{shader_file},
+#if defined(DAXA_SHADERLANG_COMPILE_SLANG)
+                        .compile_options = {
+                            .entry_point = "anyhit_shader",
+                        },
+#else
+#endif
+                };
+
+                daxa::ShaderCompileInfo intersection_compile_info = daxa::ShaderCompileInfo{
+                    .source = daxa::ShaderFile{shader_file},
+#if defined(DAXA_SHADERLANG_COMPILE_SLANG)
+                        .compile_options = {
+                            .entry_point = "intersection_shader",
+                        },
+#else
+#endif
+                };
+
+                daxa::ShaderCompileInfo callable_compile_info = daxa::ShaderCompileInfo{
+                    .source = daxa::ShaderFile{shader_file},
+#if defined(DAXA_SHADERLANG_COMPILE_SLANG)
+                        .compile_options = {
+                            .entry_point = "callable_shader",
+                        },
+#else
+#endif
+                };
+
+                daxa::ShaderCompileInfo spot_light_callable_compile_info = daxa::ShaderCompileInfo{
+                    .source = daxa::ShaderFile{shader_file},
+#if defined(DAXA_SHADERLANG_COMPILE_SLANG)
+                        .compile_options = {
+                            .entry_point = "spot_light_callable_shader",
+                        },
+#else
+                        .compile_options = {
+                            .defines = std::vector{daxa::ShaderDefine{"SPOT_LIGHT", "1"}}},
+#endif
+                };
+
+                std::vector<daxa::RayTracingShaderCompileInfo> stages(STAGES_COUNT);
+
+                stages[StageIndex::RAYGEN] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = prim_raygen_compile_info,
+                    .type = daxa::RayTracingShaderType::RAYGEN,
+                };
+
+                stages[StageIndex::RAYGEN2] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = raygen_compile_info,
+                    .type = daxa::RayTracingShaderType::RAYGEN,
+                };
+
+                stages[StageIndex::MISS] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = miss_compile_info,
+                    .type = daxa::RayTracingShaderType::MISS,
+                };
+
+                stages[StageIndex::MISS2] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = shadow_miss_compile_info,
+                    .type = daxa::RayTracingShaderType::MISS,
+                };
+
+                stages[StageIndex::CLOSE_HIT] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = procedural_closest_hit_compile_info,
+                    .type = daxa::RayTracingShaderType::CLOSEST_HIT,
+                };
+
+                stages[StageIndex::CLOSE_HIT2] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = closest_hit_compile_info,
+                    .type = daxa::RayTracingShaderType::CLOSEST_HIT,
+                };
+
+                stages[StageIndex::ANY_HIT] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = any_hit_compile_info,
+                    .type = daxa::RayTracingShaderType::ANY_HIT,
+                };
+
+                stages[StageIndex::INTERSECTION] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = intersection_compile_info,
+                    .type = daxa::RayTracingShaderType::INTERSECTION,
+                };
+
+                stages[StageIndex::CALLABLE] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = callable_compile_info,
+                    .type = daxa::RayTracingShaderType::CALLABLE,
+                };
+
+                stages[StageIndex::CALLABLE2] = daxa::RayTracingShaderCompileInfo{
+                    .shader_info = spot_light_callable_compile_info,
+                    .type = daxa::RayTracingShaderType::CALLABLE,
+                };
+
+                std::vector<daxa::RayTracingShaderGroupInfo> groups(GROUPS_COUNT);
+              
+                groups[GroupIndex::PRIMARY_RAY] = daxa::RayTracingShaderGroupInfo{
+                    .type = daxa::ExtendedShaderGroupType::RAYGEN,
+                    .general_shader_index = StageIndex::RAYGEN,
+                };
+
+                groups[GroupIndex::SECONDARY_RAY] = daxa::RayTracingShaderGroupInfo{
+                    .type = daxa::ExtendedShaderGroupType::RAYGEN,
+                    .general_shader_index = StageIndex::RAYGEN2,
+                };
+
+                groups[GroupIndex::HIT_MISS] = daxa::RayTracingShaderGroupInfo{
+                    .type = daxa::ExtendedShaderGroupType::MISS,
+                    .general_shader_index = StageIndex::MISS,
+                };
+
+                groups[GroupIndex::SHADOW_MISS] = daxa::RayTracingShaderGroupInfo{
+                    .type = daxa::ExtendedShaderGroupType::MISS,
+                    .general_shader_index = StageIndex::MISS2,
+                };
+
+                groups[GroupIndex::TRIANGLE_HIT] = daxa::RayTracingShaderGroupInfo{
+                    .type = daxa::ExtendedShaderGroupType::PROCEDURAL_HIT_GROUP,
+                    .closest_hit_shader_index = StageIndex::CLOSE_HIT,
+                    .any_hit_shader_index = StageIndex::ANY_HIT,
+                    .intersection_shader_index = StageIndex::INTERSECTION,
+                };
+
+                groups[GroupIndex::PROCEDURAL_HIT] = daxa::RayTracingShaderGroupInfo{
+                    .type = daxa::ExtendedShaderGroupType::TRIANGLES_HIT_GROUP,
+                    .closest_hit_shader_index = StageIndex::CLOSE_HIT2
+                };
+
+                groups[GroupIndex::DIRECTIONAL_LIGHT] = daxa::RayTracingShaderGroupInfo{
+                    .type = daxa::ExtendedShaderGroupType::CALLABLE,
+                    .general_shader_index = StageIndex::CALLABLE,
+                };
+
+                groups[GroupIndex::SPOT_LIGHT] = daxa::RayTracingShaderGroupInfo{
+                    .type = daxa::ExtendedShaderGroupType::CALLABLE,
+                    .general_shader_index = StageIndex::CALLABLE2,
+                };
                 
                 auto const ray_tracing_pipe_info = daxa::RayTracingPipelineCompileInfo{
-                    .ray_gen_infos = {
-                        prim_ray_gen_compile_info,
-                        ray_gen_compile_info
-                    },
-                    .intersection_infos = {daxa::ShaderCompileInfo{
-                        .source = daxa::ShaderFile{"raytracing.glsl"},
-                    }},
-                    .any_hit_infos = {daxa::ShaderCompileInfo{
-                        .source = daxa::ShaderFile{"raytracing.glsl"},
-                    }},
-                    .callable_infos = {
-                        daxa::ShaderCompileInfo{
-                            .source = daxa::ShaderFile{"raytracing.glsl"},
-                            .compile_options = {
-                                .defines = std::vector{daxa::ShaderDefine{"SPOT_LIGHT", "1"}}},
-                        },
-                        daxa::ShaderCompileInfo{
-                            .source = daxa::ShaderFile{"raytracing.glsl"},
-                        },
-                    },
-                    .closest_hit_infos = {
-                        daxa::ShaderCompileInfo{
-                            .source = daxa::ShaderFile{"raytracing.glsl"},
-                        },
-                        daxa::ShaderCompileInfo{
-                            .source = daxa::ShaderFile{"raytracing.glsl"},
-                            .compile_options = {.defines = std::vector{daxa::ShaderDefine{"HIT_TRIANGLE", "1"}, atomic_float ?
-                                daxa::ShaderDefine{"ATOMIC_FLOAT", "1"} : daxa::ShaderDefine{"ATOMIC_FLOAT", "0"
-                            }}
-                        }},
-                    },
-                    .miss_hit_infos = {
-                        daxa::ShaderCompileInfo{.source = daxa::ShaderFile{"raytracing.glsl"}},
-                        daxa::ShaderCompileInfo{
-                            .source = daxa::ShaderFile{"raytracing.glsl"},
-                            .compile_options = {.defines = std::vector{daxa::ShaderDefine{"MISS_SHADOW", "1"}, atomic_float ?
-                                daxa::ShaderDefine{"ATOMIC_FLOAT", "1"} : daxa::ShaderDefine{"ATOMIC_FLOAT", "0"
-                            }}
-                        }},
-                    },
-                    // Groups are in order of their shader indices.
-                    // NOTE: The order of the groups is important! raygen, miss, hit, callable
-                    .shader_groups_infos = {
-                        daxa::RayTracingShaderGroupInfo{
-                            .type = daxa::ShaderGroup::GENERAL,
-                            .general_shader_index = 0,
-                        },
-                        daxa::RayTracingShaderGroupInfo{
-                            .type = daxa::ShaderGroup::GENERAL,
-                            .general_shader_index = 1,
-                        },
-                        daxa::RayTracingShaderGroupInfo{
-                            .type = daxa::ShaderGroup::GENERAL,
-                            .general_shader_index = 8,
-                        },
-                        daxa::RayTracingShaderGroupInfo{
-                            .type = daxa::ShaderGroup::GENERAL,
-                            .general_shader_index = 9,
-                        },
-                        daxa::RayTracingShaderGroupInfo{
-                            .type = daxa::ShaderGroup::PROCEDURAL_HIT_GROUP,
-                            .closest_hit_shader_index = 6,
-                            .any_hit_shader_index = 3,
-                            .intersection_shader_index = 2,
-                        },
-                        daxa::RayTracingShaderGroupInfo{
-                            .type = daxa::ShaderGroup::TRIANGLES_HIT_GROUP,
-                            .closest_hit_shader_index = 7,
-                        },
-                        daxa::RayTracingShaderGroupInfo{
-                            .type = daxa::ShaderGroup::GENERAL,
-                            .general_shader_index = 4,
-                        },
-                        daxa::RayTracingShaderGroupInfo{
-                            .type = daxa::ShaderGroup::GENERAL,
-                            .general_shader_index = 5,
-                        },
-                    },
+                    .stages = stages,
+                    .groups = groups,
                     .max_ray_recursion_depth = 2,
                     .push_constant_size = sizeof(PushConstant),
                     .name = "basic ray tracing pipeline",
                 };
                 rt_pipeline = pipeline_manager.add_ray_tracing_pipeline(ray_tracing_pipe_info).value();
+
+
+                // test for get_shader_group_handles
+                usize handle_buffer_size = 0;
+                rt_pipeline->get_all_shader_group_handles(nullptr, &handle_buffer_size);
+                handle_buffer = new u8[handle_buffer_size];
+                rt_pipeline->get_all_shader_group_handles(handle_buffer, &handle_buffer_size);
+                rt_pipeline->get_shader_group_handles(handle_buffer, &handle_buffer_size, 0, 4);
+
+                recreate_sbt();
             }
 
             auto update() -> bool
@@ -555,8 +748,10 @@ namespace tests
 
                 if (auto * reload_err = daxa::get_if<daxa::PipelineReloadError>(&reload_result))
                     std::cout << reload_err->message << std::endl;
-                else if (daxa::get_if<daxa::PipelineReloadSuccess>(&reload_result))
+                else if (daxa::get_if<daxa::PipelineReloadSuccess>(&reload_result)) {
                     std::cout << "reload success" << std::endl;
+                    recreate_sbt();
+                }
                 glfwPollEvents();
                 if (glfwWindowShouldClose(glfw_window_ptr) != 0)
                 {
@@ -614,7 +809,7 @@ namespace tests
                 CameraView camera_view = {
                     .inv_view = glm_mat4_to_daxa_f32mat4x4(get_inverse_view_matrix(my_camera)),
                     .inv_proj = glm_mat4_to_daxa_f32mat4x4(get_inverse_projection_matrix(my_camera))
-#if ACTIVATE_ATOMIC_FLOAT 
+#if defined(ACTIVATE_ATOMIC_FLOAT) 
                     ,.hit_count = 0.0f,
 #endif
                     };
@@ -660,19 +855,34 @@ namespace tests
                     .frame = frame++,
                     .size = {width, height},
                     .tlas = tlas,
+                    .callable_index = callable_index,
                     .swapchain = swapchain_image.default_view(),
                     .camera_buffer = this->device.device_address(cam_buffer).value(),
+                    .vertex_buffer = this->device.device_address(vertex_buffer).value(),
                     .aabb_buffer = this->device.device_address(aabb_buffer).value(),
                 });
+
+                daxa::RayTracingShaderBindingTable shader_binding_table;
+                if(primary_rays) {
+                    shader_binding_table.raygen_region = regions.at(0).region;
+                    shader_binding_table.miss_region = regions.at(2).region;
+                    shader_binding_table.hit_region = regions.at(3).region;
+                    shader_binding_table.callable_region = regions.at(4).region;
+                } else {
+                    shader_binding_table.raygen_region = regions.at(1).region;
+                    shader_binding_table.miss_region = regions.at(2).region;
+                    shader_binding_table.hit_region = regions.at(3).region;
+                    shader_binding_table.callable_region = regions.at(4).region;
+                }
 
                 recorder.trace_rays({
                     .width = width,
                     .height = height,
                     .depth = 1,
-                    .raygen_shader_binding_table_offset = raygen_shader_binding_table_offset,
+                    .shader_binding_table = shader_binding_table,
                 });
 
-#if ACTIVATE_ATOMIC_FLOAT == 1      
+#if defined(ACTIVATE_ATOMIC_FLOAT)    
                 recorder.pipeline_barrier({
                     .src_access = daxa::AccessConsts::RAY_TRACING_SHADER_WRITE,
                     .dst_access = daxa::AccessConsts::TRANSFER_READ,
@@ -697,11 +907,6 @@ namespace tests
                     .image_id = swapchain_image,
                 });
 
-                // recorder.pipeline_barrier({
-                //     .src_access = daxa::AccessConsts::TRANSFER_WRITE,
-                //     .dst_access = daxa::AccessConsts::RAY_TRACING_SHADER_READ,
-                // });
-
                 auto executable_commands = recorder.complete_current_commands();
                 /// NOTE:
                 /// Must destroy the command recorder here as we call collect_garbage later in this scope!
@@ -719,7 +924,7 @@ namespace tests
                     .swapchain = swapchain,
                 });
 
-#if ACTIVATE_ATOMIC_FLOAT == 1
+#if defined(ACTIVATE_ATOMIC_FLOAT)
                 device.wait_idle();
                 float hit_count = 0.0f;
                 std::memcpy(&hit_count, buffer_ptr + sizeof(CameraView) - sizeof(float), sizeof(float));
@@ -733,7 +938,15 @@ namespace tests
             void on_mouse_button(i32 /*unused*/, i32 /*unused*/) {}
             void on_key(i32 key, i32 action) {
                 if(key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
-                    raygen_shader_binding_table_offset = (raygen_shader_binding_table_offset + 1) % 2;
+                    primary_rays = !primary_rays;
+                } else if(key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+                    glfwSetWindowShouldClose(glfw_window_ptr, GLFW_TRUE);
+                } else if(key == GLFW_KEY_1 && action == GLFW_PRESS) {
+                    callable_index = 0;
+                } else if(key == GLFW_KEY_2 && action == GLFW_PRESS) {
+                    callable_index = 1;
+                } else if(key == GLFW_KEY_3 && action == GLFW_PRESS) {
+                    callable_index = 2;
                 }
             }
 
